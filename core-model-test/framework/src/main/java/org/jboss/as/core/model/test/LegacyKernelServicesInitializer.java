@@ -31,7 +31,7 @@ import org.jboss.dmr.ModelNode;
  */
 public interface LegacyKernelServicesInitializer {
 
-    String VERSION = "7.2.0.Alpha1-SNAPSHOT";
+    String VERSION = "7.2.0.Final";
 
     LegacyKernelServicesInitializer initializerCreateModelResource(PathAddress parentAddress, PathElement relativeResourceAddress, ModelNode model);
 
