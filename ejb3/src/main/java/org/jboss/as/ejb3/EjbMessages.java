@@ -53,19 +53,21 @@ import javax.resource.spi.UnavailableException;
 import javax.resource.spi.endpoint.MessageEndpoint;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.transaction.RollbackException;
 import javax.transaction.Transaction;
 import javax.transaction.xa.Xid;
 import javax.xml.stream.Location;
 
+import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentCreateServiceFactory;
 import org.jboss.as.ee.component.ComponentDescription;
 import org.jboss.as.ee.component.ComponentInstance;
 import org.jboss.as.ee.component.ResourceInjectionTarget;
-import org.jboss.as.ejb3.cache.CacheFactory;
 import org.jboss.as.ejb3.component.EJBComponent;
 import org.jboss.as.ejb3.component.EJBComponentDescription;
+import org.jboss.as.ejb3.component.EJBComponentUnavailableException;
 import org.jboss.as.ejb3.component.EJBViewDescription;
 import org.jboss.as.ejb3.component.MethodIntf;
 import org.jboss.as.ejb3.component.entity.EntityBeanComponentInstance;
@@ -2222,51 +2224,66 @@ public interface EjbMessages {
     @Message(id = 14525, value = "Transaction propagation over IIOP is not supported")
     RemoteException transactionPropagationNotSupported();
 
+    @Deprecated
     @Message(id = 14526, value = "Cannot call method %s in afterCompletion callback")
     IllegalStateException cannotCallMethodInAfterCompletion(String methodName);
 
+    @Deprecated
     @Message(id = 14528, value = "%s is already associated with serialization group %s")
     IllegalStateException existingSerializationGroup(Object key, Object group);
 
+    @Deprecated
     @Message(id = 14529, value = "%s is not compatible with serialization group %s")
     IllegalStateException incompatibleSerializationGroup(Object object, Object group);
 
+    @Deprecated
     @Message(id = 14530, value = "Cache entry %s is in use")
     IllegalStateException cacheEntryInUse(Object entry);
 
+    @Deprecated
     @Message(id = 14531, value = "Cache entry %s is not in use")
     IllegalStateException cacheEntryNotInUse(Object entry);
 
+    @Deprecated
     @Message(id = 14532, value = "Failed to acquire lock on %s")
     RuntimeException lockAcquisitionInterrupted(@Cause Throwable cause, Object id);
 
+    @Deprecated
     @Message(id = 14533, value = "%s is already a member of serialization group %s")
     IllegalStateException duplicateSerializationGroupMember(Object id, Object groupId);
 
+    @Deprecated
     @Message(id = 14534, value = "%s is not a member of serialization group %s")
     IllegalStateException missingSerializationGroupMember(Object id, Object groupId);
 
+    @Deprecated
     @Message(id = 14535, value = "%s already exists in cache")
     IllegalStateException duplicateCacheEntry(Object id);
 
+    @Deprecated
     @Message(id = 14536, value = "%s is missing from cache")
     IllegalStateException missingCacheEntry(Object id);
 
     @Message(id = 14537, value = "Incompatible cache implementations in nested hierarchy")
     IllegalStateException incompatibleCaches();
 
+    @Deprecated
     @Message(id = 14538, value = "Failed to passivate %s")
     RuntimeException passivationFailed(@Cause Throwable cause, Object id);
 
+    @Deprecated
     @Message(id = 14539, value = "Failed to activate %s")
     RuntimeException activationFailed(@Cause Throwable cause, Object id);
 
+    @Deprecated
     @Message(id = 14540, value = "Failed to create passivation directory: %s")
     RuntimeException passivationDirectoryCreationFailed(String path);
 
+    @Deprecated
     @Message(id = 14541, value = "Failed to create passivation directory: %s")
     RuntimeException passivationPathNotADirectory(String path);
 
+    @Deprecated
     @Message(id = 14542, value = "Group creation context already exists")
     IllegalStateException groupCreationContextAlreadyExists();
 
@@ -2291,6 +2308,7 @@ public interface EjbMessages {
      * @param componentClassName The MDB component class name
      * @return
      */
+    @Deprecated
     @Message(id = 14547, value = "@Clustered annotation cannot be used with message driven beans. %s failed since %s bean is marked with @Clustered on class %s")
     DeploymentUnitProcessingException clusteredAnnotationIsNotApplicableForMDB(final DeploymentUnit unit, final String componentName, final String componentClassName);
 
@@ -2303,6 +2321,7 @@ public interface EjbMessages {
      * @param componentClassName The entity bean component class name
      * @return
      */
+    @Deprecated
     @Message(id = 14548, value = "@Clustered annotation cannot be used with entity beans. %s failed since %s bean is marked with @Clustered on class %s")
     DeploymentUnitProcessingException clusteredAnnotationIsNotApplicableForEntityBean(final DeploymentUnit unit, final String componentName, final String componentClassName);
 
@@ -2315,6 +2334,7 @@ public interface EjbMessages {
      * @param componentClassName The singleton bean component class name
      * @return
      */
+    @Deprecated
     @Message(id = 14549, value = "@Clustered annotation is currently not supported for singleton EJB. %s failed since %s bean is marked with @Clustered on class %s")
     DeploymentUnitProcessingException clusteredAnnotationNotYetImplementedForSingletonBean(final DeploymentUnit unit, final String componentName, final String componentClassName);
 
@@ -2327,6 +2347,7 @@ public interface EjbMessages {
      * @param componentClassName The component class name
      * @return
      */
+    @Deprecated
     @Message(id = 14550, value = "%s failed since @Clustered annotation cannot be used for %s bean on class %s")
     DeploymentUnitProcessingException clusteredAnnotationIsNotApplicableForBean(final DeploymentUnit unit, final String componentName, final String componentClassName);
 
@@ -2392,7 +2413,7 @@ public interface EjbMessages {
     IllegalStateException noEjbContextAvailable();
 
     @Message(id = 14559, value = "Invocation cannot proceed as component is shutting down")
-    EJBException componentIsShuttingDown();
+    EJBComponentUnavailableException componentIsShuttingDown();
 
     @Message(id = 14560, value = "Could not open message outputstream for writing to Channel")
     IOException failedToOpenMessageOutputStream(@Cause Throwable e);
@@ -2463,8 +2484,8 @@ public interface EjbMessages {
     @Message(id = 14582, value = "Timer service resource %s is not suitable for the target. Only a configuration with a single file-store and no other configured data-store is supported on target")
     String untransformableTimerService(PathAddress address);
 
-    @Message(id = 14583, value = "Stateful bean %s is disabled for passivation, but the cache factory %s has passivation enabled")
-    IllegalStateException requiresNonPassivatingCacheFactory(String ejbName, CacheFactory cacheFactory);
+    @Message(id = 14583, value = "Detected asymmetric usage of cache")
+    IllegalStateException asymmetricCacheUsage();
 
     /**
      * Creates an exception indicating that timer is active.
@@ -2473,6 +2494,21 @@ public interface EjbMessages {
      */
     @Message(id = 14584, value = "The timer '%s' is already active.")
     IllegalStateException timerIsActive(String timerId);
+
+    @Message(id = 14585, value = "Transaction '%s' was already rolled back")
+    RollbackException transactionAlreadyRolledBack(Transaction tx);
+
+    @Message(id = 14586, value = "Transaction '%s' is in unexpected state (%s)")
+    EJBException transactionInUnexpectedState(Transaction tx, String txStatus);
+
+    @Message(id = 14587, value = "Timerservice API is not allowed on stateful session bean %s")
+    String timerServiceMethodNotAllowedForSFSB(final String ejbComponent);
+
+    @Message(id = 14588, value = "CMP Entity Beans are not supported")
+    DeploymentUnitProcessingException cmpEntityBeansAreNotSupported();
+
+    @Message(id = 14589, value = "Attribute '%s' is not supported on current version servers; it is only allowed if its value matches '%s'")
+    OperationFailedException inconsistentAttributeNotSupported(String attributeName, String mustMatch);
 
     // STOP!!! Don't add message ids greater that 14599!!! If you need more first check what EjbLogger is
     // using and take more (lower) numbers from the available range for this module. If the range for the module is

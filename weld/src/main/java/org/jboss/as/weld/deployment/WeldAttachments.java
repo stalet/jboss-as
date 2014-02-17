@@ -21,11 +21,10 @@
  */
 package org.jboss.as.weld.deployment;
 
-import javax.enterprise.inject.spi.Extension;
-
 import org.jboss.as.server.deployment.AttachmentKey;
 import org.jboss.as.server.deployment.AttachmentList;
-import org.jboss.weld.bootstrap.spi.Metadata;
+import org.jboss.as.server.deployment.module.ResourceRoot;
+import org.jboss.as.weld.discovery.AnnotationType;
 
 /**
  * {@link AttachmentKey}s for weld attachments
@@ -43,12 +42,7 @@ public class WeldAttachments {
     /**
      * top level list of all additional bean deployment modules
      */
-    public static final AttachmentKey<AttachmentList<BeanDeploymentModule>> ADDITIONAL_BEAN_DEPLOYMENT_MODULES = AttachmentKey.createList(BeanDeploymentModule.class);
-
-    /**
-     * per DU list of all visible additional BDM's
-     */
-    public static final AttachmentKey<AttachmentList<BeanDeploymentModule>> VISIBLE_ADDITIONAL_BEAN_DEPLOYMENT_MODULE = AttachmentKey.createList(BeanDeploymentModule.class);
+    public static final AttachmentKey<AttachmentList<BeanDeploymentArchiveImpl>> ADDITIONAL_BEAN_DEPLOYMENT_MODULES = AttachmentKey.createList(BeanDeploymentArchiveImpl.class);
 
     /**
      * The {@link BeanDeploymentArchiveImpl} that corresponds to the main resource root of a deployment or sub deployment. For
@@ -57,8 +51,21 @@ public class WeldAttachments {
     public static final AttachmentKey<BeanDeploymentArchiveImpl> DEPLOYMENT_ROOT_BEAN_DEPLOYMENT_ARCHIVE = AttachmentKey.create(BeanDeploymentArchiveImpl.class);
 
     /**
-     * Portable extensions discovered in sub deployments. All sub deployments may contain portable extensions, even ones without
-     * beans.xml files
+     * A set of bean defining annotations, as defined by the CDI specification.
+     * @see CdiAnnotationProcessor
      */
-    public static final AttachmentKey<AttachmentList<Metadata<Extension>>> PORTABLE_EXTENSIONS = AttachmentKey.createList(Metadata.class);
+    public static final AttachmentKey<AttachmentList<AnnotationType>> BEAN_DEFINING_ANNOTATIONS = AttachmentKey.createList(AnnotationType.class);
+
+    /**
+     * A set of injection target defining annotations. These are annotations that are not enough to cause weld to activate,
+     * however if weld is activated these will be turned into beans.
+     * @see CdiAnnotationProcessor
+     */
+    public static final AttachmentKey<AttachmentList<AnnotationType>> INJECTION_TARGET_DEFINING_ANNOTATIONS = AttachmentKey.createList(AnnotationType.class);
+
+    /**
+     * The {@link ResourceRoot} for WEB-INF/classes of a web archive.
+     */
+    public static final AttachmentKey<ResourceRoot> CLASSES_RESOURCE_ROOT = AttachmentKey.create(ResourceRoot.class);
+
 }

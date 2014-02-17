@@ -48,10 +48,6 @@ import org.jboss.as.jmx.BaseMBeanServerPlugin;
 
 /**
  * An MBeanServer wrapper that exposes the ModelController via JMX.
- * <p/>
- * <b>Note:</b> This only gets invoked when connecting via JConsole
- * if you connect via a remote process URL. If you connect to a 'Local Process' the platform MBean
- * Server is used directly.
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
@@ -80,8 +76,18 @@ public class ModelControllerMBeanServerPlugin extends BaseMBeanServerPlugin {
 
         Pattern p = Pattern.compile(objectName.getDomain().replace("*", ".*"));
         return p.matcher(configuredDomains.getLegacyDomain()).matches() || p.matcher(configuredDomains.getExprDomain()).matches();
-
     }
+
+    @Override
+    public boolean shouldAuditLog() {
+        return false;
+    }
+
+    @Override
+    public boolean shouldAuthorize() {
+        return false;
+    }
+
 
     public Object getAttribute(ObjectName name, String attribute) throws MBeanException, AttributeNotFoundException, InstanceNotFoundException,
             ReflectionException {
@@ -96,14 +102,14 @@ public class ModelControllerMBeanServerPlugin extends BaseMBeanServerPlugin {
         if (getHelper(loaderName).resolvePathAddress(loaderName) != null) {
             return SecurityActions.getClassLoader(this.getClass());
         }
-        throw ModelControllerMBeanHelper.createInstanceNotFoundException(loaderName);
+        throw MESSAGES.mbeanNotFound(loaderName);
     }
 
     public ClassLoader getClassLoaderFor(ObjectName mbeanName) throws InstanceNotFoundException {
         if (getHelper(mbeanName).resolvePathAddress(mbeanName) != null) {
             return SecurityActions.getClassLoader(this.getClass());
         }
-        throw ModelControllerMBeanHelper.createInstanceNotFoundException(mbeanName);
+        throw MESSAGES.mbeanNotFound(mbeanName);
     }
 
     public String[] getDomains() {

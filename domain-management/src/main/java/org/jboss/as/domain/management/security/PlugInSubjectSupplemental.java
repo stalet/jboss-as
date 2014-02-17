@@ -22,6 +22,7 @@
 
 package org.jboss.as.domain.management.security;
 
+import static org.jboss.as.domain.management.DomainManagementLogger.SECURITY_LOGGER;
 import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
 
 import java.io.IOException;
@@ -32,18 +33,23 @@ import java.util.Set;
 
 import javax.security.auth.Subject;
 
+import org.jboss.as.core.security.RealmGroup;
+import org.jboss.as.core.security.RealmUser;
+import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.as.domain.management.plugin.AuthorizationPlugIn;
 import org.jboss.as.domain.management.plugin.PlugInConfigurationSupport;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceName;
 
 /**
+ * The {@link SubjectSupplementalService} for Plug-Ins
  *
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
 public class PlugInSubjectSupplemental extends AbstractPlugInService implements Service<SubjectSupplementalService>,
         SubjectSupplementalService {
 
-    public static final String SERVICE_SUFFIX = "plug-in-authorization";
+    private static final String SERVICE_SUFFIX = "plug-in-authorization";
 
     PlugInSubjectSupplemental(final String realmName, final String name, final Map<String, String> properties) {
         super(realmName, name, properties);
@@ -80,22 +86,34 @@ public class PlugInSubjectSupplemental extends AbstractPlugInService implements 
                 // In general we expect exactly one RealmUser, however we could cope with multiple
                 // identities so load the roles for them all.
                 for (RealmUser current : users) {
-                    principals.addAll(loadRoles(current));
+                    principals.addAll(loadGroups(current));
                 }
             }
 
-            private Set<RealmRole> loadRoles(final RealmUser user) throws IOException {
-                Set<RealmRole> response;
-                String[] roles = ap.loadRoles(user.getName(), getRealmName());
-                response = new HashSet<RealmRole>(roles.length);
-                for (String current : roles) {
-                    response.add(new RealmRole(current));
+            private Set<RealmGroup> loadGroups(final RealmUser user) throws IOException {
+                Set<RealmGroup> response;
+                String[] groups = ap.loadRoles(user.getName(), getRealmName());
+                response = new HashSet<RealmGroup>(groups.length);
+                for (String current : groups) {
+                    RealmGroup newGroup = new RealmGroup(getRealmName(), current);
+                    SECURITY_LOGGER.tracef("Adding group '%s' for user '%s'.", newGroup, user);
+                    response.add(newGroup);
                 }
                 return response;
             }
 
         };
 
+    }
+
+    public static final class ServiceUtil {
+
+        private ServiceUtil() {
+        }
+
+        public static ServiceName createServiceName(final String realmName) {
+            return SecurityRealm.ServiceUtil.createServiceName(realmName).append(SERVICE_SUFFIX);
+        }
     }
 
 }

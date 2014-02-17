@@ -27,6 +27,7 @@ import static org.jboss.dmr.ModelType.INT;
 import static org.jboss.dmr.ModelType.STRING;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 
 import org.jboss.as.controller.AttributeDefinition;
@@ -35,6 +36,9 @@ import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.PrimitiveListAttributeDefinition;
 import org.jboss.as.controller.SimpleOperationDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.constraint.ApplicationTypeConfig;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.ApplicationTypeAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -56,8 +60,6 @@ public class JMSTopicDefinition extends SimpleResourceDefinition {
     public static final PathElement PATH = PathElement.pathElement(CommonAttributes.JMS_TOPIC);
 
     public static final AttributeDefinition[] ATTRIBUTES = { CommonAttributes.DESTINATION_ENTRIES };
-
-    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { CommonAttributes.DESTINATION_ENTRIES };
 
     /**
      * Attributes for deployed JMS topic are stored in runtime
@@ -128,6 +130,8 @@ public class JMSTopicDefinition extends SimpleResourceDefinition {
 
     private final boolean deployed;
 
+    private final List<AccessConstraintDefinition> accessConstraints;
+
     public static JMSTopicDefinition newDeployedJMSTopicDefinition() {
         return new JMSTopicDefinition(true, true, null, null);
     }
@@ -143,6 +147,8 @@ public class JMSTopicDefinition extends SimpleResourceDefinition {
                 removeHandler);
         this.registerRuntimeOnly = registerRuntimeOnly;
         this.deployed = deployed;
+        ApplicationTypeConfig atc = new ApplicationTypeConfig(MessagingExtension.SUBSYSTEM_NAME, CommonAttributes.JMS_TOPIC);
+        accessConstraints = new ApplicationTypeAccessConstraintDefinition(atc).wrapAsList();
     }
 
     @Override
@@ -271,5 +277,10 @@ public class JMSTopicDefinition extends SimpleResourceDefinition {
                 return MessagingDescriptions.getRemoveMessages(locale);
             }
         }, runtimeOnly);
+    }
+
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return accessConstraints;
     }
 }

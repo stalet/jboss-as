@@ -22,24 +22,24 @@
 
 package org.jboss.as.jpa.processor;
 
-import static org.jboss.as.jpa.JpaLogger.JPA_LOGGER;
-import static org.jboss.as.jpa.JpaMessages.MESSAGES;
+import static org.jboss.as.jpa.messages.JpaLogger.JPA_LOGGER;
+import static org.jboss.as.jpa.messages.JpaMessages.MESSAGES;
 
 import java.util.Map;
 import java.util.ServiceLoader;
 
-import org.jboss.as.jpa.spi.JtaManager;
-import org.jboss.as.jpa.spi.ManagementAdaptor;
-import org.jboss.as.jpa.spi.PersistenceProviderAdaptor;
-import org.jboss.as.jpa.spi.PersistenceUnitMetadata;
+import javax.persistence.spi.PersistenceProvider;
+
 import org.jboss.as.jpa.transaction.JtaManagerImpl;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
 import org.jboss.modules.ModuleLoader;
-import org.jboss.msc.service.ServiceBuilder;
-import org.jboss.msc.service.ServiceRegistry;
-import org.jboss.msc.service.ServiceTarget;
+import org.jipijapa.plugin.spi.JtaManager;
+import org.jipijapa.plugin.spi.ManagementAdaptor;
+import org.jipijapa.plugin.spi.PersistenceProviderAdaptor;
+import org.jipijapa.plugin.spi.PersistenceUnitMetadata;
+import org.jipijapa.plugin.spi.Platform;
 
 /**
  * Loads persistence provider adaptors
@@ -55,11 +55,16 @@ public class PersistenceProviderAdaptorLoader {
         }
 
         @Override
+        public void injectPlatform(Platform platform) {
+
+        }
+
+        @Override
         public void addProviderProperties(Map properties, PersistenceUnitMetadata pu) {
         }
 
         @Override
-        public void addProviderDependencies(ServiceRegistry registry, ServiceTarget target, ServiceBuilder<?> builder, PersistenceUnitMetadata pu) {
+        public void addProviderDependencies(PersistenceUnitMetadata pu) {
         }
 
         @Override
@@ -92,7 +97,7 @@ public class PersistenceProviderAdaptorLoader {
      * @return the persistence provider adaptor for the provider class
      * @throws ModuleLoadException
      */
-    public static PersistenceProviderAdaptor loadPersistenceAdapterModule(String adapterModule) throws
+    public static PersistenceProviderAdaptor loadPersistenceAdapterModule(final String adapterModule, final Platform platform) throws
         ModuleLoadException {
         final ModuleLoader moduleLoader = Module.getBootModuleLoader();
 
@@ -115,9 +120,45 @@ public class PersistenceProviderAdaptorLoader {
             }
             if (persistenceProviderAdaptor != null) {
                 persistenceProviderAdaptor.injectJtaManager(JtaManagerImpl.getInstance());
+                persistenceProviderAdaptor.injectPlatform(platform);
             }
         }
 
         return persistenceProviderAdaptor;
     }
+
+    /**
+     * Loads the persistence provider adapter
+     *
+     * @param persistenceProvider classloader will be used to load the persistence provider adapter
+     * @return the persistence provider adaptor for the provider class
+     */
+    public static PersistenceProviderAdaptor loadPersistenceAdapter(final PersistenceProvider persistenceProvider, final Platform platform)
+        {
+        PersistenceProviderAdaptor persistenceProviderAdaptor=null;
+
+        final ServiceLoader<PersistenceProviderAdaptor> serviceLoader =
+                ServiceLoader.load(PersistenceProviderAdaptor.class, persistenceProvider.getClass().getClassLoader());
+
+        if (serviceLoader != null) {
+            for (PersistenceProviderAdaptor adaptor : serviceLoader) {
+                if (persistenceProviderAdaptor != null) {
+                    throw MESSAGES.classloaderHasMultipleAdapters(persistenceProvider.getClass().getClassLoader().toString());
+                }
+                persistenceProviderAdaptor = adaptor;
+                JPA_LOGGER.debugf("loaded persistence provider adapter %s from classloader %s",
+                        persistenceProviderAdaptor.getClass().getName(),
+                        persistenceProvider.getClass().getClassLoader().toString());
+            }
+            if (persistenceProviderAdaptor != null) {
+                persistenceProviderAdaptor.injectJtaManager(JtaManagerImpl.getInstance());
+                persistenceProviderAdaptor.injectPlatform(platform);
+            }
+        }
+
+        return persistenceProviderAdaptor == null ?
+                noopAdaptor:
+                persistenceProviderAdaptor;
+    }
+
 }

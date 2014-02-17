@@ -43,6 +43,7 @@ import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.COMPONENT_CLASS_NAME;
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.DECLARED_ROLES;
@@ -54,6 +55,7 @@ import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourc
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.POOL_REMOVE_COUNT;
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.RUN_AS_ROLE;
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.SECURITY_DOMAIN;
+
 /**
  * Base class for operation handlers that provide runtime management for {@link EJBComponent}s.
  *
@@ -76,7 +78,7 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
         String opName = operation.require(ModelDescriptionConstants.OP).asString();
         boolean forWrite = isForWrite(opName);
         PathAddress address = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
-        final ServiceName serviceName = getComponentConfiguration(address);
+        final ServiceName serviceName = getComponentConfiguration(context,address);
         T component = getComponent(serviceName, address, context, forWrite);
 
         if (ModelDescriptionConstants.READ_ATTRIBUTE_OPERATION.equals(opName)) {
@@ -174,7 +176,7 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
     protected void executeWriteAttribute(String attributeName, OperationContext context, ModelNode operation, T component,
                                          PathAddress address) throws OperationFailedException {
         if (componentType.hasPool() && POOL_MAX_SIZE.getName().equals(attributeName)) {
-            int newSize = POOL_MAX_SIZE.resolveModelAttribute(context, operation).asInt();
+            int newSize = POOL_MAX_SIZE.resolveValue(context, operation.get(VALUE)).asInt();
             final Pool<?> pool = componentType.getPool(component);
             final int oldSize = pool.getMaxSize();
             componentType.getPool(component).setMaxSize(newSize);
@@ -212,7 +214,7 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
         }
     }
 
-    private ServiceName getComponentConfiguration(final PathAddress operationAddress) throws OperationFailedException {
+    private ServiceName getComponentConfiguration(final OperationContext context, final PathAddress operationAddress) throws OperationFailedException {
 
       final List<PathElement> relativeAddress = new ArrayList<PathElement>();
       final String typeKey = this.componentType.getResourceType();
@@ -224,9 +226,14 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
           } else {
               skip = false;
           }
-          relativeAddress.add(0, pe);
+
           if (ModelDescriptionConstants.DEPLOYMENT.equals(pe.getKey())) {
+              final String runtimName = resolveRuntimeName(context,pe);
+              PathElement realPe = PathElement.pathElement(pe.getKey(), runtimName);
+              relativeAddress.add(0, realPe);
               break;
+          } else {
+              relativeAddress.add(0, pe);
           }
       }
 
@@ -259,8 +266,20 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
 
     T getComponent(OperationContext context, ModelNode operation) throws OperationFailedException{
         PathAddress address = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
-        final ServiceName serviceName = getComponentConfiguration(address);
+        final ServiceName serviceName = getComponentConfiguration(context,address);
         T component = getComponent(serviceName, address, context, false);
         return component;
+    }
+
+    /**
+     * Resolves runtime name of model resource.
+     * @param context - operation context in which handler is invoked
+     * @param address - deployment address
+     * @return runtime name of module. Value which is returned is never null.
+     */
+    protected String resolveRuntimeName(final OperationContext context, final PathElement address){
+        final ModelNode runtimeName = context.readResourceFromRoot(PathAddress.pathAddress(address),false).getModel()
+                .get(ModelDescriptionConstants.RUNTIME_NAME);
+            return runtimeName.asString();
     }
 }

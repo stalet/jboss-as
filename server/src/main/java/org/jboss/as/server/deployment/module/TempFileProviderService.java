@@ -22,17 +22,21 @@
 
 package org.jboss.as.server.deployment.module;
 
+import java.io.IOException;
+import java.util.concurrent.Executors;
+
 import org.jboss.as.server.ServerMessages;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
+import org.jboss.threads.JBossThreadFactory;
 import org.jboss.vfs.TempFileProvider;
 import org.jboss.vfs.VFSUtils;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
 
-import java.io.IOException;
-import java.util.concurrent.Executors;
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Service responsible for managing the life-cycle of a TempFileProvider.
@@ -45,7 +49,8 @@ public class TempFileProviderService implements Service<TempFileProvider> {
     private static final TempFileProvider PROVIDER;
     static {
        try {
-          PROVIDER = TempFileProvider.create("deployment", Executors.newScheduledThreadPool(2));
+           final JBossThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("TempFileProviderService-temp-threads"), true, null, "%G - %t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
+           PROVIDER = TempFileProvider.create("deployment", Executors.newScheduledThreadPool(0, threadFactory), true);
        }
        catch (final IOException ioe) {
           throw ServerMessages.MESSAGES.failedToCreateTempFileProvider(ioe);

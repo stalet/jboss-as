@@ -22,13 +22,13 @@
 
 package org.jboss.as.process;
 
+import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.process.ProcessMessages.MESSAGES;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -41,12 +41,14 @@ import java.util.logging.Logger;
 import javax.net.ServerSocketFactory;
 
 import org.jboss.as.process.protocol.ProtocolServer;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
 import org.jboss.as.version.ProductConfig;
 import org.jboss.as.version.Version;
 import org.jboss.logging.MDC;
 import org.jboss.logmanager.handlers.ConsoleHandler;
 import org.jboss.modules.Module;
 import org.jboss.threads.JBossThreadFactory;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * The main entry point for the process controller.
@@ -77,15 +79,15 @@ public final class Main {
     public static ProcessController start(String[] args) throws IOException {
         MDC.put("process", "process controller");
 
-        String javaHome = SecurityActions.getSystemProperty("java.home", ".");
+        String javaHome = WildFlySecurityManager.getPropertyPrivileged("java.home", ".");
         String jvmName = javaHome + "/bin/java";
-        String jbossHome = SecurityActions.getSystemProperty("jboss.home.dir", ".");
+        String jbossHome = WildFlySecurityManager.getPropertyPrivileged("jboss.home.dir", ".");
         String modulePath = null;
         String bootJar = null;
         String bootModule = HOST_CONTROLLER_MODULE;
         final PCSocketConfig pcSocketConfig = new PCSocketConfig();
 
-        String currentWorkingDir = SecurityActions.getSystemProperty("user.dir");
+        String currentWorkingDir = WildFlySecurityManager.getPropertyPrivileged("user.dir", null);
 
         final List<String> javaOptions = new ArrayList<String>();
         final List<String> smOptions = new ArrayList<String>();
@@ -121,12 +123,12 @@ public final class Main {
                             } else if (arg.startsWith("-D" + CommandLineConstants.PREFER_IPV4_STACK + "=")) {
                                 // AS7-5409 set the property for this process and pass it to HC via javaOptions
                                 String val = parseValue(arg, "-D" + CommandLineConstants.PREFER_IPV4_STACK);
-                                SecurityActions.setSystemProperty(CommandLineConstants.PREFER_IPV4_STACK, val);
+                                WildFlySecurityManager.setPropertyPrivileged(CommandLineConstants.PREFER_IPV4_STACK, val);
                                 addJavaOption(arg, javaOptions);
                             } else if (arg.startsWith("-D" + CommandLineConstants.PREFER_IPV6_ADDRESSES + "=")) {
                                 // AS7-5409 set the property for this process and pass it to HC via javaOptions
                                 String val = parseValue(arg, "-D" + CommandLineConstants.PREFER_IPV6_ADDRESSES);
-                                SecurityActions.setSystemProperty(CommandLineConstants.PREFER_IPV6_ADDRESSES, val);
+                                WildFlySecurityManager.setPropertyPrivileged(CommandLineConstants.PREFER_IPV6_ADDRESSES, val);
                                 addJavaOption(arg, javaOptions);
 
                             } else {
@@ -169,7 +171,7 @@ public final class Main {
             // if "-mp" (i.e. module path) wasn't part of the command line args, then check the system property.
             // if system property not set, then default to JBOSS_HOME/modules
             // TODO: jboss-modules setting module.path is not a reliable API; log a WARN or something if we get here
-            modulePath = SecurityActions.getSystemProperty("module.path", jbossHome + File.separator + "modules");
+            modulePath = WildFlySecurityManager.getPropertyPrivileged("module.path", jbossHome + File.separator + "modules");
         }
         if (bootJar == null) {
             // if "-jar" wasn't part of the command line args, then default to JBOSS_HOME/jboss-modules.jar
@@ -197,7 +199,7 @@ public final class Main {
         InetSocketAddress pcInetSocketAddress = new InetSocketAddress(pcInetAddress, pcSocketConfig.getBindPort());
         configuration.setBindAddress(pcInetSocketAddress);
         configuration.setSocketFactory(ServerSocketFactory.getDefault());
-        final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("ProcessController-threads"), Boolean.FALSE, null, "%G - %t", null, null, AccessController.getContext());
+        final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("ProcessController-threads"), Boolean.FALSE, null, "%G - %t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
         configuration.setThreadFactory(threadFactory);
         configuration.setReadExecutor(Executors.newCachedThreadPool(threadFactory));
 
@@ -296,8 +298,8 @@ public final class Main {
             if (bindAddress != null) {
                 return bindAddress;
             } else {
-                boolean v4Stack = Boolean.valueOf(SecurityActions.getSystemProperty(CommandLineConstants.PREFER_IPV4_STACK, "false"));
-                boolean useV6 = !v4Stack && Boolean.valueOf(SecurityActions.getSystemProperty(CommandLineConstants.PREFER_IPV6_ADDRESSES, "false"));
+                boolean v4Stack = Boolean.valueOf(WildFlySecurityManager.getPropertyPrivileged(CommandLineConstants.PREFER_IPV4_STACK, "false"));
+                boolean useV6 = !v4Stack && Boolean.valueOf(WildFlySecurityManager.getPropertyPrivileged(CommandLineConstants.PREFER_IPV6_ADDRESSES, "false"));
                 return useV6 ? "::1" : "127.0.0.1";
             }
         }

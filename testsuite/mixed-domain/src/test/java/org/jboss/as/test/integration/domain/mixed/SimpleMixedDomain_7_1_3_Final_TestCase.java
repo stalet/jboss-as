@@ -28,11 +28,16 @@ import org.junit.BeforeClass;
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-@Version(AsVersion.V_7_1_3_Final)
+@Version(AsVersion.AS_7_1_3_FINAL)
 public class SimpleMixedDomain_7_1_3_Final_TestCase extends SimpleMixedDomainTest {
 
     @BeforeClass
     public static void beforeClass() {
-        MixedDomainTestSuite.getSupport(SimpleMixedDomain_7_1_3_Final_TestCase.class);
+        MixedDomainTestSuite.getSupport(MixedDomain_7_1_3_Final_TestSuite.class);
+    }
+
+    @Override
+    protected String getProfile() {
+        return "full-ha-7.1.x";
     }
 }

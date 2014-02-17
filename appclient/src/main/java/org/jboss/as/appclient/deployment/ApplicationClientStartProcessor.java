@@ -52,6 +52,7 @@ import org.jboss.ejb.client.EJBClientConfiguration;
 import org.jboss.ejb.client.PropertiesBasedEJBClientConfiguration;
 import org.jboss.metadata.appclient.spec.ApplicationClientMetaData;
 import org.jboss.modules.Module;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 import static org.jboss.as.appclient.logging.AppClientMessages.MESSAGES;
 
@@ -106,9 +107,17 @@ public class ApplicationClientStartProcessor implements DeploymentUnitProcessor 
         }
         final ApplicationClientComponentDescription component = deploymentUnit.getAttachment(AppClientAttachments.APPLICATION_CLIENT_COMPONENT);
 
-        ClassReflectionIndex<?> index = deploymentReflectionIndex.getClassIndex(mainClass);
-        Method method = index.getMethod(void.class, "main", String[].class);
-        if (method == null) {
+        Method mainMethod = null;
+        Class<?> klass = mainClass;
+        while (klass != Object.class) {
+            final ClassReflectionIndex<?> index = deploymentReflectionIndex.getClassIndex(klass);
+            mainMethod = index.getMethod(void.class, "main", String[].class);
+            if (mainMethod != null) {
+                break;
+            }
+            klass = klass.getSuperclass();
+        }
+        if (mainMethod == null) {
             throw MESSAGES.cannotStartAppClient(deploymentUnit.getName(), mainClass);
         }
         final ApplicationClientStartService startService;
@@ -140,9 +149,9 @@ public class ApplicationClientStartProcessor implements DeploymentUnitProcessor 
                         }
                     }
                 }
-                final ClassLoader oldTccl = SecurityActions.getContextClassLoader();
+                final ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
                 try {
-                    SecurityActions.setContextClassLoader(module.getClassLoader());
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(module.getClassLoader());
                     configuration = new PropertiesBasedEJBClientConfiguration(properties);
 
                     //if there is no username or callback handler specified in the ejb-client properties file
@@ -157,16 +166,16 @@ public class ApplicationClientStartProcessor implements DeploymentUnitProcessor 
                         };
                     }
 
-                    startService = new ApplicationClientStartService(method, parameters, moduleDescription.getNamespaceContextSelector(), module.getClassLoader(), setupActions, configuration);
+                    startService = new ApplicationClientStartService(mainMethod, parameters, moduleDescription.getNamespaceContextSelector(), module.getClassLoader(), setupActions, configuration);
                 } finally {
-                    SecurityActions.setContextClassLoader(oldTccl);
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
                 }
             } catch (Exception e) {
                 throw AppClientMessages.MESSAGES.exceptionLoadingEjbClientPropertiesURL(connectionPropertiesUrl, e);
             }
         } else {
 
-            startService = new ApplicationClientStartService(method, parameters, moduleDescription.getNamespaceContextSelector(), module.getClassLoader(), setupActions, hostUrl, callbackHandler);
+            startService = new ApplicationClientStartService(mainMethod, parameters, moduleDescription.getNamespaceContextSelector(), module.getClassLoader(), setupActions, hostUrl, callbackHandler);
         }
 
         phaseContext.getServiceTarget()

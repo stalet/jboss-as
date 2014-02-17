@@ -118,7 +118,9 @@ public class ManagedDomainDeployableContainer extends CommonDomainDeployableCont
             boolean serverAvailable = false;
             long sleep = 1000;
             while (timeout > 0 && serverAvailable == false) {
+                long before = System.currentTimeMillis();
                 serverAvailable = getManagementClient().isDomainInRunningState();
+                timeout -= (System.currentTimeMillis() - before);
                 if (!serverAvailable) {
                     if (processHasDied(proc))
                         break;
@@ -227,8 +229,6 @@ public class ManagedDomainDeployableContainer extends CommonDomainDeployableCont
 
         String bundlesPath = modulesDir.getParent() + File.separator + "bundles";
         File bundlesDir = new File(bundlesPath);
-        if (bundlesDir.isDirectory() == false)
-            throw new IllegalStateException("Cannot find: " + bundlesDir);
 
         File modulesJar = new File(jbossHomeDir + File.separatorChar + "jboss-modules.jar");
         if (!modulesJar.exists())

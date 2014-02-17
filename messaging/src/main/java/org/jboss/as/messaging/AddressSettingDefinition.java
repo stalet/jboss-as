@@ -59,6 +59,13 @@ public class AddressSettingDefinition extends SimpleResourceDefinition {
             .setAllowExpression(true)
             .build();
 
+    public static final SimpleAttributeDefinition EXPIRY_DELAY = create("expiry-delay", ModelType.LONG)
+            .setDefaultValue(new ModelNode(AddressSettings.DEFAULT_EXPIRY_DELAY))
+            .setMeasurementUnit(MILLISECONDS)
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .build();
+
     public static final SimpleAttributeDefinition LAST_VALUE_QUEUE = create("last-value-queue", ModelType.BOOLEAN)
             .setDefaultValue(new ModelNode(AddressSettings.DEFAULT_LAST_VALUE_QUEUE))
             .setAllowNull(true)
@@ -130,6 +137,7 @@ public class AddressSettingDefinition extends SimpleResourceDefinition {
     static final SimpleAttributeDefinition[] ATTRIBUTES = new SimpleAttributeDefinition[] {
         DEAD_LETTER_ADDRESS,
         EXPIRY_ADDRESS,
+        EXPIRY_DELAY,
         REDELIVERY_DELAY,
         MAX_DELIVERY_ATTEMPTS,
         MAX_SIZE_BYTES,

@@ -22,6 +22,9 @@
 
 package org.jboss.as.connector.subsystems.common.pool;
 
+import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.AttributeMarshaller;
+import org.jboss.as.controller.PropertiesAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
@@ -32,8 +35,12 @@ import org.jboss.dmr.ModelType;
 import org.jboss.jca.common.api.metadata.Defaults;
 import org.jboss.jca.common.api.metadata.common.CommonPool;
 import org.jboss.jca.common.api.metadata.common.FlushStrategy;
+import org.jboss.jca.common.api.metadata.common.v11.ConnDefPool;
 import org.jboss.jca.common.api.metadata.ds.TimeOut;
 import org.jboss.jca.common.api.metadata.ds.Validation;
+
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
 
 /**
  * @author @author <a href="mailto:stefano.maestri@redhat.com">Stefano
@@ -42,6 +49,8 @@ import org.jboss.jca.common.api.metadata.ds.Validation;
 public class Constants {
 
     private static final String MIN_POOL_SIZE_NAME = "min-pool-size";
+
+    private static final String INITIAL_POOL_SIZE_NAME = "initial-pool-size";
 
     private static final String MAX_POOL_SIZE_NAME = "max-pool-size";
 
@@ -61,6 +70,14 @@ public class Constants {
 
     private static final String FLUSH_STRATEGY_NAME = "flush-strategy";
 
+    private static final String CAPACITY_INCREMENTER_CLASS_NAME = "capacity-incrementer-class";
+
+    private static final String CAPACITY_INCREMENTER_PROPERTIES_NAME = "capacity-incrementer-properties";
+
+    private static final String CAPACITY_DECREMENTER_CLASS_NAME = "capacity-decrementer-class";
+
+    private static final String CAPACITY_DECREMENTER_PROPERTIES_NAME = "capacity-decrementer-properties";
+
 
     public static final SimpleAttributeDefinition BLOCKING_TIMEOUT_WAIT_MILLIS = new SimpleAttributeDefinition(BLOCKING_TIMEOUT_WAIT_MILLIS_NAME, TimeOut.Tag.BLOCKING_TIMEOUT_MILLIS.getLocalName(),  new ModelNode(), ModelType.LONG, true , true, MeasurementUnit.MILLISECONDS);
 
@@ -76,6 +93,55 @@ public class Constants {
 
     public static final SimpleAttributeDefinition MIN_POOL_SIZE = new SimpleAttributeDefinition(MIN_POOL_SIZE_NAME, CommonPool.Tag.MIN_POOL_SIZE.getLocalName(), new ModelNode(Defaults.MIN_POOL_SIZE), ModelType.INT, true, true, MeasurementUnit.NONE);
 
+    public static final SimpleAttributeDefinition INITIAL_POOL_SIZE = new SimpleAttributeDefinitionBuilder(INITIAL_POOL_SIZE_NAME, ModelType.INT)
+            .setXmlName(ConnDefPool.Tag.INITIAL_POOL_SIZE.getLocalName())
+            .setAllowExpression(true)
+            .setAllowNull(true)
+            .build();
+
+    public static SimpleAttributeDefinition CAPACITY_INCREMENTER_CLASS = new SimpleAttributeDefinition(CAPACITY_INCREMENTER_CLASS_NAME, org.jboss.jca.common.api.metadata.common.Extension.Attribute.CLASS_NAME.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+
+    public static PropertiesAttributeDefinition CAPACITY_INCREMENTER_PROPERTIES = new PropertiesAttributeDefinition.Builder(CAPACITY_INCREMENTER_PROPERTIES_NAME, true)
+            .setXmlName(org.jboss.jca.common.api.metadata.common.Extension.Tag.CONFIG_PROPERTY.getLocalName())
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setAttributeMarshaller(new AttributeMarshaller() {
+                @Override
+                public void marshallAsElement(final AttributeDefinition attribute, final ModelNode resourceModel, final boolean marshallDefault, final XMLStreamWriter writer) throws XMLStreamException {
+                    for (ModelNode property : resourceModel.get(attribute.getName()).asList()) {
+                        writer.writeStartElement(attribute.getXmlName());
+                        writer.writeAttribute(org.jboss.as.controller.parsing.Attribute.NAME.getLocalName(), property.asProperty().getName());
+                        writer.writeCharacters(property.asProperty().getValue().asString());
+                        writer.writeEndElement();
+                    }
+
+                }
+
+            })
+            .build();
+
+    public static SimpleAttributeDefinition CAPACITY_DECREMENTER_CLASS = new SimpleAttributeDefinition(CAPACITY_DECREMENTER_CLASS_NAME, org.jboss.jca.common.api.metadata.common.Extension.Attribute.CLASS_NAME.getLocalName(), new ModelNode(), ModelType.STRING, true, true, MeasurementUnit.NONE);
+
+    public static PropertiesAttributeDefinition CAPACITY_DECREMENTER_PROPERTIES = new PropertiesAttributeDefinition.Builder(CAPACITY_DECREMENTER_PROPERTIES_NAME, true)
+            .setXmlName(org.jboss.jca.common.api.metadata.common.Extension.Tag.CONFIG_PROPERTY.getLocalName())
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setAttributeMarshaller(new AttributeMarshaller() {
+                @Override
+                public void marshallAsElement(final AttributeDefinition attribute, final ModelNode resourceModel, final boolean marshallDefault, final XMLStreamWriter writer) throws XMLStreamException {
+                    for (ModelNode property : resourceModel.get(attribute.getName()).asList()) {
+                        writer.writeStartElement(attribute.getXmlName());
+                        writer.writeAttribute(org.jboss.as.controller.parsing.Attribute.NAME.getLocalName(), property.asProperty().getName());
+                        writer.writeCharacters(property.asProperty().getValue().asString());
+                        writer.writeEndElement();
+                    }
+
+                }
+
+            })
+            .build();
+
+
     public static final SimpleAttributeDefinition POOL_PREFILL = new SimpleAttributeDefinition(POOL_PREFILL_NAME, CommonPool.Tag.PREFILL.getLocalName(), new ModelNode(Defaults.PREFILL), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
 
     public static final SimpleAttributeDefinition POOL_USE_STRICT_MIN = new SimpleAttributeDefinition(POOL_USE_STRICT_MIN_NAME, CommonPool.Tag.USE_STRICT_MIN.getLocalName(), new ModelNode(Defaults.USE_STRICT_MIN), ModelType.BOOLEAN, true, true, MeasurementUnit.NONE);
@@ -88,6 +154,13 @@ public class Constants {
             .setValidator(new EnumValidator<FlushStrategy>(FlushStrategy.class, true, true))
             .build();
 
-    public static final SimpleAttributeDefinition[] POOL_ATTRIBUTES = {BLOCKING_TIMEOUT_WAIT_MILLIS, IDLETIMEOUTMINUTES, BACKGROUNDVALIDATIONMILLIS,
+
+    public static final SimpleAttributeDefinition[] POOL_ATTRIBUTES_1 = {BLOCKING_TIMEOUT_WAIT_MILLIS, IDLETIMEOUTMINUTES, BACKGROUNDVALIDATIONMILLIS,
             BACKGROUNDVALIDATION, USE_FAST_FAIL, MAX_POOL_SIZE, MIN_POOL_SIZE, POOL_PREFILL, POOL_USE_STRICT_MIN, POOL_FLUSH_STRATEGY};
+
+    public static final AttributeDefinition[] POOL_ATTRIBUTES_2 = {INITIAL_POOL_SIZE, CAPACITY_INCREMENTER_CLASS, CAPACITY_DECREMENTER_CLASS, CAPACITY_INCREMENTER_PROPERTIES, CAPACITY_DECREMENTER_PROPERTIES};
+
+    public static final AttributeDefinition[] POOL_ATTRIBUTES = {BLOCKING_TIMEOUT_WAIT_MILLIS, IDLETIMEOUTMINUTES, BACKGROUNDVALIDATIONMILLIS,
+            BACKGROUNDVALIDATION, USE_FAST_FAIL, MAX_POOL_SIZE, MIN_POOL_SIZE, INITIAL_POOL_SIZE, POOL_PREFILL, POOL_USE_STRICT_MIN, POOL_FLUSH_STRATEGY,
+            CAPACITY_INCREMENTER_CLASS, CAPACITY_DECREMENTER_CLASS, CAPACITY_INCREMENTER_PROPERTIES, CAPACITY_DECREMENTER_PROPERTIES};
 }

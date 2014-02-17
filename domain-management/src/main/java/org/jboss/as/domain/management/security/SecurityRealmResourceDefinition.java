@@ -22,12 +22,22 @@
 
 package org.jboss.as.domain.management.security;
 
+import java.util.List;
+
 import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
+import org.jboss.as.controller.SimpleAttributeDefinition;
+import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.common.ControllerResolver;
+import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.ModelType;
 
 /**
  * {@link org.jboss.as.controller.ResourceDefinition} for a management security realm resource.
@@ -39,6 +49,14 @@ public class SecurityRealmResourceDefinition extends SimpleResourceDefinition {
 
     public static final SecurityRealmResourceDefinition INSTANCE = new SecurityRealmResourceDefinition();
 
+    public static final SimpleAttributeDefinition MAP_GROUPS_TO_ROLES = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.MAP_GROUPS_TO_ROLES, ModelType.BOOLEAN, true)
+            .setDefaultValue(new ModelNode(true))
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
+
+    private final List<AccessConstraintDefinition> sensitivity;
+
     private SecurityRealmResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.SECURITY_REALM),
                 ControllerResolver.getResolver("core.management.security-realm"),
@@ -46,6 +64,12 @@ public class SecurityRealmResourceDefinition extends SimpleResourceDefinition {
                 SecurityRealmRemoveHandler.INSTANCE,
                 OperationEntry.Flag.RESTART_NONE,
                 OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
+        sensitivity = SensitiveTargetAccessConstraintDefinition.SECURITY_REALM.wrapAsList();
+    }
+
+    @Override
+    public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
+        resourceRegistration.registerReadWriteAttribute(MAP_GROUPS_TO_ROLES, null, new ReloadRequiredWriteAttributeHandler(MAP_GROUPS_TO_ROLES));
     }
 
     @Override
@@ -62,5 +86,11 @@ public class SecurityRealmResourceDefinition extends SimpleResourceDefinition {
         resourceRegistration.registerSubModel(new PlugInAuthenticationResourceDefinition());
         resourceRegistration.registerSubModel(new PropertiesAuthorizationResourceDefinition());
         resourceRegistration.registerSubModel(new PlugInAuthorizationResourceDefinition());
+        resourceRegistration.registerSubModel(new LdapAuthorizationResourceDefinition());
+    }
+
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return sensitivity;
     }
 }

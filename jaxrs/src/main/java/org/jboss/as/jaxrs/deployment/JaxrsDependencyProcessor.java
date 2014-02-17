@@ -29,7 +29,7 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.module.ModuleDependency;
 import org.jboss.as.server.deployment.module.ModuleSpecification;
-import org.jboss.as.weld.WeldDeploymentMarker;
+import org.jboss.as.ee.weld.WeldDeploymentMarker;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoader;
@@ -43,15 +43,18 @@ public class JaxrsDependencyProcessor implements DeploymentUnitProcessor {
 
     public static final ModuleIdentifier RESTEASY_ATOM = ModuleIdentifier.create("org.jboss.resteasy.resteasy-atom-provider");
     public static final ModuleIdentifier RESTEASY_CDI = ModuleIdentifier.create("org.jboss.resteasy.resteasy-cdi");
-    public static final ModuleIdentifier RESTEASY_HIBERNATE_VALIDATOR = ModuleIdentifier.create("org.jboss.resteasy.resteasy-hibernatevalidator-provider");
+    public static final ModuleIdentifier RESTEASY_CRYPTO = ModuleIdentifier.create("org.jboss.resteasy.resteasy-crypto");
+    public static final ModuleIdentifier RESTEASY_VALIDATOR_11 = ModuleIdentifier.create("org.jboss.resteasy.resteasy-validator-provider-11");
     public static final ModuleIdentifier RESTEASY_JAXRS = ModuleIdentifier.create("org.jboss.resteasy.resteasy-jaxrs");
     public static final ModuleIdentifier RESTEASY_JAXB = ModuleIdentifier.create("org.jboss.resteasy.resteasy-jaxb-provider");
-    public static final ModuleIdentifier RESTEASY_JACKSON = ModuleIdentifier.create("org.jboss.resteasy.resteasy-jackson-provider");
-    public static final ModuleIdentifier RESTEASY_JETTISON = ModuleIdentifier.create("org.jboss.resteasy.resteasy-jettison-provider");
+   public static final ModuleIdentifier RESTEASY_JACKSON = ModuleIdentifier.create("org.jboss.resteasy.resteasy-jackson-provider");
+   public static final ModuleIdentifier RESTEASY_JSON_P_PROVIDER = ModuleIdentifier.create("org.jboss.resteasy.resteasy-json-p-provider");
+    //public static final ModuleIdentifier RESTEASY_JETTISON = ModuleIdentifier.create("org.jboss.resteasy.resteasy-jettison-provider");
     public static final ModuleIdentifier RESTEASY_JSAPI = ModuleIdentifier.create("org.jboss.resteasy.resteasy-jsapi");
     public static final ModuleIdentifier RESTEASY_MULTIPART = ModuleIdentifier.create("org.jboss.resteasy.resteasy-multipart-provider");
     public static final ModuleIdentifier RESTEASY_YAML = ModuleIdentifier.create("org.jboss.resteasy.resteasy-yaml-provider");
-    public static final ModuleIdentifier JAXB_API = ModuleIdentifier.create("javax.xml.bind.api");
+   public static final ModuleIdentifier JAXB_API = ModuleIdentifier.create("javax.xml.bind.api");
+   public static final ModuleIdentifier JSON_API = ModuleIdentifier.create("javax.json.api");
 
     /**
      * We include this so that jackson annotations will be available, otherwise they will be ignored which leads
@@ -66,20 +69,22 @@ public class JaxrsDependencyProcessor implements DeploymentUnitProcessor {
 
         final ModuleLoader moduleLoader = Module.getBootModuleLoader();
         addDependency(moduleSpecification, moduleLoader, JAXB_API);
+        addDependency(moduleSpecification, moduleLoader, JSON_API);
 
-        if (!JaxrsDeploymentMarker.isJaxrsDeployment(deploymentUnit)) {
-            return;
-        }
+        //we need to add these from all deployments, as they could be using the JAX-RS client
+
         addDependency(moduleSpecification, moduleLoader, RESTEASY_ATOM);
-        addDependency(moduleSpecification, moduleLoader, RESTEASY_HIBERNATE_VALIDATOR);
+        addDependency(moduleSpecification, moduleLoader, RESTEASY_VALIDATOR_11);
         addDependency(moduleSpecification, moduleLoader, RESTEASY_JAXRS);
         addDependency(moduleSpecification, moduleLoader, RESTEASY_JAXB);
         addDependency(moduleSpecification, moduleLoader, RESTEASY_JACKSON);
-        addDependency(moduleSpecification, moduleLoader, RESTEASY_JETTISON);
+        addDependency(moduleSpecification, moduleLoader, RESTEASY_JSON_P_PROVIDER);
+        //addDependency(moduleSpecification, moduleLoader, RESTEASY_JETTISON);
         addDependency(moduleSpecification, moduleLoader, RESTEASY_JSAPI);
         addDependency(moduleSpecification, moduleLoader, RESTEASY_MULTIPART);
         addDependency(moduleSpecification, moduleLoader, RESTEASY_YAML);
         addDependency(moduleSpecification, moduleLoader, JACKSON_CORE_ASL);
+        addDependency(moduleSpecification, moduleLoader, RESTEASY_CRYPTO);
 
         if (WeldDeploymentMarker.isPartOfWeldDeployment(deploymentUnit)) {
             addDependency(moduleSpecification, moduleLoader, RESTEASY_CDI);

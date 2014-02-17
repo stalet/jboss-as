@@ -635,7 +635,7 @@ public interface ServerMessages {
     XMLStreamException duplicateJBossXmlNamespace(QName namespace, @Param Location location);
 
     @Message(id = 18773, value = "Two different versions of the same namespaces are present in jboss-all.xml, %s and %s are both present")
-    DeploymentUnitProcessingException equivilentNamespacesInJBossXml(QName key, QName s);
+    DeploymentUnitProcessingException equivalentNamespacesInJBossXml(QName key, QName s);
 
     @Message(id = 18774, value = "Error loading jboss-all.xml from %s")
     DeploymentUnitProcessingException errorLoadingJBossXmlFile(String path, @Cause XMLStreamException e);
@@ -671,4 +671,9 @@ public interface ServerMessages {
     @Message(id = 18784, value = "Null '%s'")
     OperationFailedException nullParameter(String name);
 
+    @Message(id = 18785, value = "There is already a deployment called %s with the same runtime name %s")
+    OperationFailedException runtimeNameMustBeUnique(String existingDeployment, String runtimename);
+
+    @Message(id = 18786, value = "Multiple deployment unit processors registered with priority %s and class %s")
+    IllegalStateException duplicateDeploymentUnitProcessor(int priority, Class aClass);
 }

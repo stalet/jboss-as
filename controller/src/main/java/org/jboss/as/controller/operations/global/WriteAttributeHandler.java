@@ -23,21 +23,27 @@
 package org.jboss.as.controller.operations.global;
 
 import static org.jboss.as.controller.ControllerMessages.MESSAGES;
-import static org.jboss.as.controller.operations.global.GlobalOperationHandlers.NAME;
-import static org.jboss.as.controller.operations.global.GlobalOperationHandlers.VALUE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.controller.operations.global.GlobalOperationAttributes.NAME;
+import static org.jboss.as.controller.operations.global.GlobalOperationAttributes.VALUE;
 
+import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
+import org.jboss.as.controller.access.AuthorizationResult;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.ParametersValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
+import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.dmr.ModelNode;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * {@link org.jboss.as.controller.OperationStepHandler} writing a single attribute. The required request parameter "name" represents the attribute name.
@@ -56,25 +62,45 @@ public class WriteAttributeHandler implements OperationStepHandler {
     private ParametersValidator nameValidator = new ParametersValidator();
 
     WriteAttributeHandler() {
-        nameValidator.registerValidator(GlobalOperationHandlers.NAME.getName(), new StringLengthValidator(1));
+        nameValidator.registerValidator(NAME.getName(), new StringLengthValidator(1));
     }
 
     @Override
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
         nameValidator.validate(operation);
-        final String attributeName = operation.require(GlobalOperationHandlers.NAME.getName()).asString();
-        final AttributeAccess attributeAccess = context.getResourceRegistration().getAttributeAccess(PathAddress.EMPTY_ADDRESS, attributeName);
+        final String attributeName = operation.require(NAME.getName()).asString();
+        final ImmutableManagementResourceRegistration registry = context.getResourceRegistration();
+        if (registry == null) {
+            throw new OperationFailedException(ControllerMessages.MESSAGES.noSuchResourceType(PathAddress.pathAddress(operation.get(OP_ADDR))));
+        }
+        final AttributeAccess attributeAccess = registry.getAttributeAccess(PathAddress.EMPTY_ADDRESS, attributeName);
         if (attributeAccess == null) {
             throw new OperationFailedException(new ModelNode().set(MESSAGES.unknownAttribute(attributeName)));
         } else if (attributeAccess.getAccessType() != AttributeAccess.AccessType.READ_WRITE) {
             throw new OperationFailedException(new ModelNode().set(MESSAGES.attributeNotWritable(attributeName)));
         } else {
+
+            // Authorize
+            ModelNode currentValue;
+            if (attributeAccess.getStorageType() == AttributeAccess.Storage.CONFIGURATION) {
+                ModelNode model = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS).getModel();
+                currentValue = model.has(attributeName) ? model.get(attributeName) : new ModelNode();
+            } else {
+                currentValue = new ModelNode();
+            }
+            AuthorizationResult authorizationResult = context.authorize(operation, attributeName, currentValue);
+            if (authorizationResult.getDecision() == AuthorizationResult.Decision.DENY) {
+                throw ControllerMessages.MESSAGES.unauthorized(operation.require(OP).asString(),
+                        PathAddress.pathAddress(operation.get(OP_ADDR)),
+                        authorizationResult.getExplanation());
+            }
+
             OperationStepHandler handler = attributeAccess.getWriteHandler();
-            ClassLoader oldTccl = SecurityActions.setThreadContextClassLoader(handler.getClass());
+            ClassLoader oldTccl = WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(handler.getClass());
             try {
                 handler.execute(context, operation);
             } finally {
-                SecurityActions.setThreadContextClassLoader(oldTccl);
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
             }
         }
     }

@@ -25,7 +25,9 @@
  */
 package org.jboss.as.domain.controller.operations.coordination;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ACCESS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.AUDIT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CONTENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT_OVERLAY;
@@ -33,6 +35,8 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.GRO
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INTERFACE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.JVM;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.LOGGER;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MANAGEMENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
@@ -44,6 +48,7 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REP
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RUNTIME_NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_CONFIG;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_GROUP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_LOGGER;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING_GROUP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING_PORT_OFFSET;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SYSTEM_PROPERTY;
@@ -67,6 +72,7 @@ import java.util.Set;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationContext.AttachmentKey;
 import org.jboss.as.controller.PathAddress;
+import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.DomainOperationTransformer;
@@ -97,17 +103,18 @@ public class ServerOperationResolver {
     private enum DomainKey {
 
         UNKNOWN(null),
-        EXTENSION("extension"),
-        PATH("path"),
-        SYSTEM_PROPERTY("system-property"),
-        PROFILE("profile"),
-        INTERFACE("interface"),
-        SOCKET_BINDING_GROUP("socket-binding-group"),
-        DEPLOYMENT("deployment"),
-        SERVER_GROUP("server-group"),
-        MANAGMENT_CLIENT_CONTENT("management-client-content"),
-        HOST("host"),
-        DEPLOYMENT_OVERLAY("deployment-overlay"),;
+        EXTENSION(ModelDescriptionConstants.EXTENSION),
+        PATH(ModelDescriptionConstants.PATH),
+        SYSTEM_PROPERTY(ModelDescriptionConstants.SYSTEM_PROPERTY),
+        CORE_SERVICE(ModelDescriptionConstants.CORE_SERVICE),
+        PROFILE(ModelDescriptionConstants.PROFILE),
+        INTERFACE(ModelDescriptionConstants.INTERFACE),
+        SOCKET_BINDING_GROUP(ModelDescriptionConstants.SOCKET_BINDING_GROUP),
+        DEPLOYMENT(ModelDescriptionConstants.DEPLOYMENT),
+        SERVER_GROUP(ModelDescriptionConstants.SERVER_GROUP),
+        MANAGMENT_CLIENT_CONTENT(ModelDescriptionConstants.MANAGEMENT_CLIENT_CONTENT),
+        HOST(ModelDescriptionConstants.HOST),
+        DEPLOYMENT_OVERLAY(ModelDescriptionConstants.DEPLOYMENT_OVERLAY),;
 
         private final String name;
 
@@ -136,13 +143,13 @@ public class ServerOperationResolver {
     private enum HostKey {
 
         UNKNOWN(null),
-        PATH("path"),
-        SYSTEM_PROPERTY("system-property"),
-        CORE_SERVICE("core-service"),
-        INTERFACE("interface"),
-        JVM("jvm"),
-        SERVER("server"),
-        SERVER_CONFIG("server-config");
+        PATH(ModelDescriptionConstants.PATH),
+        SYSTEM_PROPERTY(ModelDescriptionConstants.SYSTEM_PROPERTY),
+        CORE_SERVICE(ModelDescriptionConstants.CORE_SERVICE),
+        INTERFACE(ModelDescriptionConstants.INTERFACE),
+        JVM(ModelDescriptionConstants.JVM),
+        SERVER(ModelDescriptionConstants.SERVER),
+        SERVER_CONFIG(ModelDescriptionConstants.SERVER_CONFIG);
 
         private final String name;
 
@@ -169,7 +176,7 @@ public class ServerOperationResolver {
     }
 
     private enum Level {
-        DOMAIN, SERVER_GROUP, HOST, SERVER;
+        DOMAIN, SERVER_GROUP, HOST, SERVER
     }
 
     private final String localHostName;
@@ -242,6 +249,9 @@ public class ServerOperationResolver {
                 case SYSTEM_PROPERTY: {
                     return getServerSystemPropertyOperations(operation, address, Level.DOMAIN, domain, null, host);
                 }
+                case CORE_SERVICE: {
+                    return getServerCoreServiceOperations(operation, host);
+                }
                 case PROFILE: {
                     return getServerProfileOperations(operation, address, domain, host);
                 }
@@ -288,6 +298,12 @@ public class ServerOperationResolver {
     }
 
     private Map<Set<ServerIdentity>, ModelNode> getDeploymentOverlayOperations(ModelNode operation,
+                                                                               ModelNode host) {
+        final Set<ServerIdentity> allServers = getAllRunningServers(host, localHostName, serverProxies);
+        return Collections.singletonMap(allServers, operation.clone());
+    }
+
+    private Map<Set<ServerIdentity>, ModelNode> getServerCoreServiceOperations(ModelNode operation,
                                                                                ModelNode host) {
         final Set<ServerIdentity> allServers = getAllRunningServers(host, localHostName, serverProxies);
         return Collections.singletonMap(allServers, operation.clone());
@@ -556,8 +572,7 @@ public class ServerOperationResolver {
                     return getServerSystemPropertyOperations(operation, address, Level.HOST, domain, null, host);
                 }
                 case CORE_SERVICE: {
-                    // TODO does server need to know about change?
-                    return Collections.emptyMap();
+                    return resolveCoreServiceOperations(operation, address, domain, host);
                 }
                 case INTERFACE: {
                     return getServerInterfaceOperations(operation, address, host, false);
@@ -755,9 +770,12 @@ public class ServerOperationResolver {
         if (address.size() > 1) {
             String type = address.getElement(1).getKey();
             if (PATH.equals(type) || INTERFACE.equals(type)) {
-                serverOp = operation.clone();
-                PathAddress serverAddress = address.subAddress(1);
-                serverOp.get(OP_ADDR).set(serverAddress.toModelNode());
+                final String serverName = address.getElement(0).getValue();
+                if (serverProxies.containsKey(serverName)) {
+                    PathAddress serverAddress = address.subAddress(1);
+                    serverOp = operation.clone();
+                    serverOp.get(OP_ADDR).set(serverAddress.toModelNode());
+                }
             } else if(JVM.equals(type)) {
                 final String serverName = address.getElement(0).getValue();
                 // If the server is running require a restart
@@ -769,8 +787,10 @@ public class ServerOperationResolver {
             } else if (SYSTEM_PROPERTY.equals(type) && isServerAffectingSystemPropertyOperation(operation)) {
                 String propName = address.getLastElement().getValue();
                 String serverName = address.getElement(0).getValue();
-                ServerIdentity serverId = getServerIdentity(serverName, host);
-                serverOp = getServerSystemPropertyOperation(operation, propName, serverId, Level.SERVER, domain, host);
+                if (serverProxies.containsKey(serverName)) {
+                    ServerIdentity serverId = getServerIdentity(serverName, host);
+                    serverOp = getServerSystemPropertyOperation(operation, propName, serverId, Level.SERVER, domain, host);
+                }
             }
 
         } else if (address.size() == 1) {
@@ -807,6 +827,49 @@ public class ServerOperationResolver {
         op.get(OP_ADDR).setEmptyList();
         return Collections.singletonMap(servers, op);
     }
+
+    private Map<Set<ServerIdentity>, ModelNode> resolveCoreServiceOperations(ModelNode operation, PathAddress address, ModelNode domain, ModelNode host) {
+        if (address.getElement(0).getValue().equals(MANAGEMENT)){
+            if (address.size() >= 2 && address.getElement(1).getKey().equals(ACCESS) && address.getElement(1).getValue().equals(AUDIT)) {
+                ModelNode op = operation.clone();
+                op.get(OP_ADDR).set(address.toModelNode());
+                if (address.size() >= 3) {
+                    PathAddress newAddr = PathAddress.EMPTY_ADDRESS;
+                    for (PathElement element : address) {
+                        if (element.getKey().equals(LOGGER)) {
+                            //logger=>audit-log is only for the HC
+                            return Collections.emptyMap();
+                        } else {
+                            PathElement myElement = element;
+                            if (myElement.getKey().equals(SERVER_LOGGER)) {
+                                //server-logger=audit-log gets sent to the servers as logger=>audit-log
+                                myElement = PathElement.pathElement(LOGGER, element.getValue());
+                            }
+                            newAddr = newAddr.append(myElement);
+                        }
+                    }
+                    op.get(OP_ADDR).set(newAddr.toModelNode());
+                }
+//                    String key = address.getElement(2).getKey();
+//                    if (key.equals(LOGGER)) {
+//                        //logger=>audit-log is only for the HC
+//                        return Collections.emptyMap();
+//                    } else if (key.equals(SERVER_LOGGER)) {
+//                        //server-logger=audit-log gets sent to the servers as logger=>audit-log
+//                        PathAddress newAddr = address.subAddress(0, 2);
+//                        newAddr = newAddr.append(PathElement.pathElement(LOGGER, address.getElement(2).getValue()));
+//                        op.get(OP_ADDR).set(newAddr.toModelNode());
+//                    }
+//                }
+                return Collections.singletonMap(getAllRunningServers(host, localHostName, serverProxies), op);
+            }
+            // TODO does server need to know about other changes?
+        }
+        return Collections.emptyMap();
+    }
+
+
+
 
 
     private ServerIdentity getServerIdentity(String serverName, ModelNode host) {

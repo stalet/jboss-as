@@ -22,25 +22,6 @@
 
 package org.jboss.as.ejb3.component;
 
-import org.jboss.as.controller.security.ServerSecurityManager;
-import org.jboss.as.ee.component.BasicComponentCreateService;
-import org.jboss.as.ee.component.ComponentConfiguration;
-import org.jboss.as.ee.component.ViewConfiguration;
-import org.jboss.as.ee.component.ViewDescription;
-import org.jboss.as.ejb3.component.interceptors.ShutDownInterceptorFactory;
-import org.jboss.as.ejb3.deployment.ApplicationExceptions;
-import org.jboss.as.ejb3.remote.EJBRemoteTransactionsRepository;
-import org.jboss.as.ejb3.security.EJBSecurityMetaData;
-import org.jboss.as.ejb3.util.MethodInfoHelper;
-import org.jboss.as.server.deployment.DeploymentUnit;
-import org.jboss.invocation.InterceptorFactory;
-import org.jboss.invocation.Interceptors;
-import org.jboss.invocation.proxy.MethodIdentifier;
-import org.jboss.msc.inject.Injector;
-import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.ServiceName;
-import org.jboss.msc.value.InjectedValue;
-
 import javax.ejb.TimerService;
 import javax.ejb.TransactionAttributeType;
 import javax.ejb.TransactionManagementType;
@@ -54,6 +35,24 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.jboss.as.core.security.ServerSecurityManager;
+import org.jboss.as.ee.component.BasicComponentCreateService;
+import org.jboss.as.ee.component.ComponentConfiguration;
+import org.jboss.as.ee.component.ViewConfiguration;
+import org.jboss.as.ee.component.ViewDescription;
+import org.jboss.as.ejb3.component.interceptors.ShutDownInterceptorFactory;
+import org.jboss.as.ejb3.deployment.ApplicationExceptions;
+import org.jboss.as.ejb3.remote.EJBRemoteTransactionsRepository;
+import org.jboss.as.ejb3.security.EJBSecurityMetaData;
+import org.jboss.as.server.deployment.DeploymentUnit;
+import org.jboss.invocation.InterceptorFactory;
+import org.jboss.invocation.Interceptors;
+import org.jboss.invocation.proxy.MethodIdentifier;
+import org.jboss.msc.inject.Injector;
+import org.jboss.msc.service.ServiceController;
+import org.jboss.msc.service.ServiceName;
+import org.jboss.msc.value.InjectedValue;
 
 /**
  * @author Jaikiran Pai
@@ -242,13 +241,9 @@ public class EJBComponentCreateService extends BasicComponentCreateService {
             return;
         }
 
-        String className = method.getDeclaringClass().getName();
-        String methodName = method.getName();
-        TransactionAttributeType txAttr = ejbComponentDescription.getTransactionAttributes().getAttribute(methodIntf, className, methodName, MethodInfoHelper.getCanonicalParameterTypes(method));
-        if (txAttr != TransactionAttributeType.REQUIRED) {
-            txAttrs.put(new MethodTransactionAttributeKey(methodIntf, MethodIdentifier.getIdentifierForMethod(method)), txAttr);
-        }
-        Integer txTimeout = ejbComponentDescription.getTransactionTimeouts().getAttribute(methodIntf, className, methodName, MethodInfoHelper.getCanonicalParameterTypes(method));
+        TransactionAttributeType txAttr = ejbComponentDescription.getTransactionAttributes().getAttribute(methodIntf, method);
+        txAttrs.put(new MethodTransactionAttributeKey(methodIntf, MethodIdentifier.getIdentifierForMethod(method)), txAttr);
+        Integer txTimeout = ejbComponentDescription.getTransactionTimeouts().getAttribute(methodIntf, method);
         if (txTimeout != null) {
             txTimeouts.put(new MethodTransactionAttributeKey(methodIntf, MethodIdentifier.getIdentifierForMethod(method)), txTimeout);
         }

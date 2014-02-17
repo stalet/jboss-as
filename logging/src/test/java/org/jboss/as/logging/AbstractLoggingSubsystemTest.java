@@ -22,14 +22,18 @@
 
 package org.jboss.as.logging;
 
+import static org.junit.Assert.*;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
@@ -45,6 +49,7 @@ import org.jboss.as.subsystem.test.KernelServices;
 import org.jboss.as.subsystem.test.SubsystemOperations;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
+import org.jboss.dmr.Property;
 import org.jboss.logmanager.LogContext;
 import org.jboss.logmanager.config.FormatterConfiguration;
 import org.jboss.logmanager.config.HandlerConfiguration;
@@ -134,7 +139,7 @@ public abstract class AbstractLoggingSubsystemTest extends AbstractSubsystemBase
         return PathAddress.pathAddress(
                 SUBSYSTEM_PATH,
                 PathElement.pathElement(resourceKey, resourceName)
-        );
+                                      );
     }
 
     static PathAddress createAddress(final String profileName, final String resourceKey, final String resourceName) {
@@ -145,7 +150,7 @@ public abstract class AbstractLoggingSubsystemTest extends AbstractSubsystemBase
                 SUBSYSTEM_PATH,
                 PathElement.pathElement(CommonAttributes.LOGGING_PROFILE, profileName),
                 PathElement.pathElement(resourceKey, resourceName)
-        );
+                                      );
     }
 
     static PathAddress createRootLoggerAddress() {
@@ -210,6 +215,14 @@ public abstract class AbstractLoggingSubsystemTest extends AbstractSubsystemBase
 
     static PathAddress createSyslogHandlerAddress(final String profileName, final String name) {
         return createAddress(profileName, SyslogHandlerResourceDefinition.SYSLOG_HANDLER, name);
+    }
+
+    static PathAddress createPatternFormatterAddress(final String name) {
+        return createAddress(PatternFormatterResourceDefinition.PATTERN_FORMATTER_PATH.getKey(), name);
+    }
+
+    static PathAddress createPatternFormatterAddress(final String profileName, final String name) {
+        return createAddress(profileName, PatternFormatterResourceDefinition.PATTERN_FORMATTER_PATH.getKey(), name);
     }
 
     protected KernelServices boot() throws Exception {
@@ -321,8 +334,8 @@ public abstract class AbstractLoggingSubsystemTest extends AbstractSubsystemBase
         for (String name : handlerNames) {
             final HandlerConfiguration handlerConfig = logContextConfig.getHandlerConfiguration(name);
             final ModelNode handlerModel = findHandlerModel(model, name);
-            final Set<String> modelPropertyNames = handlerModel.keys();
-            final List<String> configPropertyNames = handlerConfig.getPropertyNames();
+            final Set<String> modelPropertyNames = new HashSet<String>(handlerModel.keys());
+            final List<String> configPropertyNames = new ArrayList<String>(handlerConfig.getPropertyNames());
 
             // Remove unneeded properties
             modelPropertyNames.remove(CommonAttributes.FILTER.getName());
@@ -330,7 +343,7 @@ public abstract class AbstractLoggingSubsystemTest extends AbstractSubsystemBase
 
             // Process the properties
             for (String modelPropertyName : modelPropertyNames) {
-                final ModelNode modelValue = handlerModel.get(modelPropertyName);
+                ModelNode modelValue = handlerModel.get(modelPropertyName);
                 String modelStringValue = modelValue.asString();
                 final String configValue;
                 // Special properties
@@ -343,14 +356,26 @@ public abstract class AbstractLoggingSubsystemTest extends AbstractSubsystemBase
                     }
                 } else if (modelPropertyName.equals(CommonAttributes.ENCODING.getName())) {
                     configValue = handlerConfig.getEncoding();
-                } else if (modelPropertyName.equals(CommonAttributes.FORMATTER.getName())) {
-                    final String formatterName = handlerConfig.getFormatterName();
-                    if (formatterName == null) {
-                        configValue = null;
+                } else if (modelPropertyName.equals(AbstractHandlerDefinition.FORMATTER.getName()) || modelPropertyName.equals(AbstractHandlerDefinition.NAMED_FORMATTER.getName())) {
+                    // Formatters are handled differently than most attributes. A named-formatter must be separately defined.
+                    // The formatter attribute is really a PatternFormatter with the same name as the handler.
+
+                    // If there is a named formatter in the model, just match the names
+                    if (handlerModel.hasDefined(AbstractHandlerDefinition.NAMED_FORMATTER.getName())) {
+                        configValue = handlerConfig.getFormatterName();
+                        modelValue = handlerModel.get(AbstractHandlerDefinition.NAMED_FORMATTER.getName());
                     } else {
-                        final FormatterConfiguration formatterConfig = logContextConfig.getFormatterConfiguration(formatterName);
-                        configValue = formatterConfig.getPropertyValueString(CommonAttributes.PATTERN.getName());
+                        // Not a named-formatter, so attempt to match the pattern
+                        final String formatterName = handlerConfig.getFormatterName();
+                        if (formatterName == null) {
+                            configValue = null;
+                        } else {
+                            final FormatterConfiguration formatterConfig = logContextConfig.getFormatterConfiguration(formatterName);
+                            configValue = formatterConfig.getPropertyValueString(PatternFormatterResourceDefinition.PATTERN.getName());
+                            modelValue = handlerModel.get(AbstractHandlerDefinition.FORMATTER.getName());
+                        }
                     }
+                    modelStringValue = modelValue.asString();
                 } else if (modelPropertyName.equals(CommonAttributes.FILTER_SPEC.getName())) {
                     configValue = handlerConfig.getFilter();
                 } else if (modelPropertyName.equals(CommonAttributes.LEVEL.getName())) {
@@ -413,6 +438,28 @@ public abstract class AbstractLoggingSubsystemTest extends AbstractSubsystemBase
                 }
             }
         }
+    }
+
+    /**
+     * Validates that there are no extra attributes on the resource.
+     *
+     * @param resource   the resource to check for additional attributes
+     * @param attributes the attributes that should be on the resource
+     */
+    protected void validateResourceAttributes(final ModelNode resource, final AttributeDefinition[] attributes) {
+        final List<String> validAttributes = new ArrayList<String>();
+        for (AttributeDefinition attribute : attributes) {
+            validAttributes.add(attribute.getName());
+        }
+        // Get the attribute names from the resource
+        final List<String> resourceAttributes = new ArrayList<String>();
+        for (Property property : resource.asPropertyList()) {
+            resourceAttributes.add(property.getName());
+        }
+
+        // Remove all the known attributes
+        resourceAttributes.removeAll(validAttributes);
+        assertTrue(String.format("Additional attributes (%s) found on the resource %s", resourceAttributes, resource), resourceAttributes.isEmpty());
     }
 
     protected ModelNode findHandlerModel(final ModelNode model, final String name) {

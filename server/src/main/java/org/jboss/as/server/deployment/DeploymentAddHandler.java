@@ -19,6 +19,7 @@
 package org.jboss.as.server.deployment;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.server.controller.resources.DeploymentAttributes.CONTENT_ALL;
 import static org.jboss.as.server.controller.resources.DeploymentAttributes.CONTENT_ARCHIVE;
@@ -44,7 +45,9 @@ import org.jboss.as.controller.OperationContext.ResultAction;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
+import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.RunningMode;
+import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.protocol.StreamUtils;
 import org.jboss.as.repository.ContentRepository;
@@ -125,6 +128,16 @@ public class DeploymentAddHandler implements OperationStepHandler {
 
         newModel.get(CONTENT_ALL.getName()).set(content);
 
+        if (context.getProcessType() == ProcessType.STANDALONE_SERVER) {
+            // Add a step to validate uniqueness of runtime names
+            context.addStep(new OperationStepHandler() {
+                @Override
+                public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                    validateRuntimeNames(name, context);
+                }
+            }, OperationContext.Stage.MODEL);
+        }
+
         if (ENABLED.resolveModelAttribute(context, newModel).asBoolean() && context.isNormalServer()) {
             DeploymentHandlerUtil.deploy(context, runtimeName, name, vaultReader, contentItem);
         }
@@ -141,6 +154,34 @@ public class DeploymentAddHandler implements OperationStepHandler {
         } else {
             context.stepCompleted();
         }
+    }
+
+    private void validateRuntimeNames(String deploymentName, OperationContext context) throws OperationFailedException {
+        ModelNode deployment = context.readResource(PathAddress.EMPTY_ADDRESS).getModel();
+
+        if (ENABLED.resolveModelAttribute(context, deployment).asBoolean()) {
+            String runtimeName = getRuntimeName(deploymentName, deployment);
+            Resource root = context.readResourceFromRoot(PathAddress.EMPTY_ADDRESS);
+            for (Resource.ResourceEntry re : root.getChildren(DEPLOYMENT)) {
+                String reName = re.getName();
+                if (!deploymentName.equals(reName)) {
+                    ModelNode otherDepl = re.getModel();
+                    if (ENABLED.resolveModelAttribute(context, otherDepl).asBoolean()) {
+                        String otherRuntimeName = getRuntimeName(reName, otherDepl);
+                        if (runtimeName.equals(otherRuntimeName)) {
+                            throw ServerMessages.MESSAGES.runtimeNameMustBeUnique(reName, runtimeName);
+                        }
+                    }
+                }
+            }
+        }
+
+        context.stepCompleted();
+    }
+
+    private static String getRuntimeName(String name, ModelNode deployment) {
+        return deployment.hasDefined(ModelDescriptionConstants.RUNTIME_NAME)
+                ? deployment.get(ModelDescriptionConstants.RUNTIME_NAME).asString() : name;
     }
 
     DeploymentHandlerUtil.ContentItem addFromHash(byte[] hash, String deploymentName, OperationContext context) throws OperationFailedException {

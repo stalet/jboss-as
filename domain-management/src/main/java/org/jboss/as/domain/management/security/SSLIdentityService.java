@@ -24,18 +24,22 @@ package org.jboss.as.domain.management.security;
 
 import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
 
+import java.security.GeneralSecurityException;
 import java.security.KeyManagementException;
-import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
+import org.jboss.as.domain.management.DomainManagementMessages;
 import org.jboss.as.domain.management.SSLIdentity;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.StartContext;
@@ -50,16 +54,16 @@ import org.jboss.msc.value.InjectedValue;
  */
 class SSLIdentityService implements Service<SSLIdentity>, SSLIdentity {
 
-    static final String SERVICE_SUFFIX = "ssl";
-
     private final String protocol;
     private final char[] keystorePassword;
     private final char[] keyPassword;
-    private final InjectedValue<KeyStore> keystore = new InjectedValue<KeyStore>();
-    private final InjectedValue<KeyStore> truststore = new InjectedValue<KeyStore>();
+    private final InjectedValue<FileKeystore> keystore = new InjectedValue<FileKeystore>();
+    private final InjectedValue<FileKeystore> truststore = new InjectedValue<FileKeystore>();
 
     private volatile SSLContext fullContext;
     private volatile SSLContext trustOnlyContext;
+
+    private TrustManagerFactory trustManagerFactory;
 
     public SSLIdentityService(String protocol, char[] keystorePassword, char[] keyPassword) {
         this.protocol = protocol;
@@ -70,19 +74,24 @@ class SSLIdentityService implements Service<SSLIdentity>, SSLIdentity {
     public void start(StartContext context) throws StartException {
         try {
             KeyManager[] keyManagers = null;
-            KeyStore theKeyStore = keystore.getOptionalValue();
-            if (theKeyStore != null) {
+            FileKeystore theKeyStore = keystore.getOptionalValue();
+            if (theKeyStore != null && theKeyStore.getKeyStore() != null) {
                 KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-                keyManagerFactory.init(theKeyStore, keyPassword == null ? keystorePassword : keyPassword);
+                keyManagerFactory.init(theKeyStore.getKeyStore(), keyPassword == null ? keystorePassword : keyPassword);
                 keyManagers = keyManagerFactory.getKeyManagers();
             }
 
             TrustManager[] trustManagers = null;
-            KeyStore theTrustStore = truststore.getOptionalValue();
+            FileKeystore theTrustStore = truststore.getOptionalValue();
             if (theTrustStore != null) {
-                TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-                trustManagerFactory.init(theTrustStore);
-                trustManagers = trustManagerFactory.getTrustManagers();
+                trustManagerFactory = TrustManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+                trustManagerFactory.init(theTrustStore.getKeyStore());
+
+                TrustManager[] tmpTrustManagers = trustManagerFactory.getTrustManagers();
+                trustManagers = new TrustManager[tmpTrustManagers.length];
+                for (int i = 0; i < tmpTrustManagers.length; i++) {
+                    trustManagers[i] = new DelegatingTrustManager((X509TrustManager) tmpTrustManagers[i], theTrustStore);
+                }
             }
 
             SSLContext sslContext = SSLContext.getInstance(protocol);
@@ -96,7 +105,7 @@ class SSLIdentityService implements Service<SSLIdentity>, SSLIdentity {
                 sslContext.init(null, trustManagers, null);
             }
             trustOnlyContext = sslContext;
-       } catch (NoSuchAlgorithmException nsae) {
+        } catch (NoSuchAlgorithmException nsae) {
             throw MESSAGES.unableToStart(nsae);
         } catch (KeyManagementException kme) {
             throw MESSAGES.unableToStart(kme);
@@ -114,11 +123,11 @@ class SSLIdentityService implements Service<SSLIdentity>, SSLIdentity {
         return this;
     }
 
-    public InjectedValue<KeyStore> getKeyStoreInjector() {
+    public InjectedValue<FileKeystore> getKeyStoreInjector() {
         return keystore;
     }
 
-    public InjectedValue<KeyStore> getTrustStoreInjector() {
+    public InjectedValue<FileKeystore> getTrustStoreInjector() {
         return truststore;
     }
 
@@ -134,4 +143,61 @@ class SSLIdentityService implements Service<SSLIdentity>, SSLIdentity {
         return (truststore.getOptionalValue() != null);
     }
 
+    private class DelegatingTrustManager implements X509TrustManager {
+
+        private X509TrustManager delegate;
+        private final FileKeystore theTrustStore;
+
+        private DelegatingTrustManager(X509TrustManager trustManager, FileKeystore theTrustStore) {
+            this.delegate = trustManager;
+            this.theTrustStore = theTrustStore;
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            getDelegate().checkClientTrusted(chain, authType);
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            getDelegate().checkServerTrusted(chain, authType);
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return getDelegate().getAcceptedIssuers();
+        }
+
+        /*
+         * Internal Methods
+         */
+        private synchronized X509TrustManager getDelegate() {
+            if (theTrustStore.isModified()) {
+                try {
+                    theTrustStore.load();
+                } catch (StartException e1) {
+                    throw DomainManagementMessages.MESSAGES.unableToLoadKeyTrustFile(e1.getCause());
+                }
+                try {
+                    trustManagerFactory.init(theTrustStore.getKeyStore());
+                    TrustManager[] trustManagers = trustManagerFactory.getTrustManagers();
+                    for (TrustManager current : trustManagers) {
+                        if (current instanceof X509TrustManager) {
+                            delegate = (X509TrustManager) current;
+                            break;
+                        }
+                    }
+                } catch (GeneralSecurityException e) {
+                    throw DomainManagementMessages.MESSAGES.unableToOperateOnTrustStore(e);
+
+                }
+            }
+            if (delegate == null) {
+                throw DomainManagementMessages.MESSAGES.unableToCreateDelegateTrustManager();
+            }
+
+            return delegate;
+        }
+
+    }
 }

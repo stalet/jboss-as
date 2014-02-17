@@ -25,12 +25,17 @@ package org.jboss.as.server.mgmt;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HTTP_INTERFACE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MANAGEMENT_INTERFACE;
 
+import java.util.List;
+
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.constraint.SensitivityClassification;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
@@ -55,11 +60,13 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
 
     public static final SimpleAttributeDefinition SECURITY_REALM = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.SECURITY_REALM, ModelType.STRING, true)
                 .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
+                .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SECURITY_REALM_REF))
                 .build();
 
     public static final SimpleAttributeDefinition INTERFACE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.INTERFACE, ModelType.STRING, false)
                 .setAllowExpression(true).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, true))
                 .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING, ModelDescriptionConstants.SECURE_SOCKET_BINDING)
+                .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SOCKET_CONFIG))
                 .setDeprecated(ModelVersion.create(1,4))
                 .build();
 
@@ -67,6 +74,7 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
             .setAllowExpression(true).setValidator(new IntRangeValidator(0, 65535, true, true))
             .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING, ModelDescriptionConstants.SECURE_SOCKET_BINDING)
             .setRequires(ModelDescriptionConstants.INTERFACE)
+            .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SOCKET_CONFIG))
             .setDeprecated(ModelVersion.create(1,4))
             .build();
 
@@ -74,6 +82,7 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
             .setAllowExpression(true).setValidator(new IntRangeValidator(0, 65535, true, true))
             .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING, ModelDescriptionConstants.SECURE_SOCKET_BINDING)
             .setRequires(ModelDescriptionConstants.INTERFACE)
+            .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SOCKET_CONFIG))
             .setDeprecated(ModelVersion.create(1,4))
             .build();
 
@@ -81,12 +90,14 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
             .setXmlName(Attribute.HTTP.getLocalName())
             .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
             .setAlternatives(ModelDescriptionConstants.INTERFACE)
+            .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SOCKET_CONFIG))
             .build();
 
     public static final SimpleAttributeDefinition SECURE_SOCKET_BINDING = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.SECURE_SOCKET_BINDING, ModelType.STRING, true)
             .setXmlName(Attribute.HTTPS.getLocalName())
             .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
             .setAlternatives(ModelDescriptionConstants.INTERFACE)
+            .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SOCKET_CONFIG))
             .build();
 
     public static final SimpleAttributeDefinition CONSOLE_ENABLED = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.CONSOLE_ENABLED, ModelType.BOOLEAN, true)
@@ -94,15 +105,22 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
             .setDefaultValue(new ModelNode(true))
             .build();
 
-    public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = new AttributeDefinition[] {INTERFACE, HTTP_PORT, HTTPS_PORT, SECURITY_REALM, SOCKET_BINDING, SECURE_SOCKET_BINDING,CONSOLE_ENABLED};
+    public static final SimpleAttributeDefinition HTTP_UPGRADE_ENABLED = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.HTTP_UPGRADE_ENABLED, ModelType.BOOLEAN, true)
+            .setXmlName(Attribute.HTTP_UPGRADE_ENABLED.getLocalName())
+            .setDefaultValue(new ModelNode(false))
+            .build();
+    public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = new AttributeDefinition[] {INTERFACE, HTTP_PORT, HTTPS_PORT, SECURITY_REALM, SOCKET_BINDING, SECURE_SOCKET_BINDING,CONSOLE_ENABLED, HTTP_UPGRADE_ENABLED};
 
     public static final HttpManagementResourceDefinition INSTANCE = new HttpManagementResourceDefinition();
+
+    private final List<AccessConstraintDefinition> accessConstraints;
 
     private HttpManagementResourceDefinition() {
         super(RESOURCE_PATH,
                 ServerDescriptions.getResourceDescriptionResolver("core.management.http-interface"),
                 HttpManagementAddHandler.INSTANCE, HttpManagementRemoveHandler.INSTANCE,
                 OperationEntry.Flag.RESTART_NONE, OperationEntry.Flag.RESTART_NONE);
+        this.accessConstraints = SensitiveTargetAccessConstraintDefinition.MANAGEMENT_INTERFACES.wrapAsList();
     }
 
     @Override
@@ -110,5 +128,10 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
         for (AttributeDefinition attr : ATTRIBUTE_DEFINITIONS) {
             resourceRegistration.registerReadWriteAttribute(attr, null, HttpManagementWriteAttributeHandler.INSTANCE);
         }
+    }
+
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return accessConstraints;
     }
 }

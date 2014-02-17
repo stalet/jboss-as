@@ -22,6 +22,14 @@
 
 package org.jboss.as.controller;
 
+import static org.jboss.as.controller.ControllerMessages.MESSAGES;
+
+import java.io.InputStream;
+import java.util.Set;
+
+import org.jboss.as.controller.access.Action;
+import org.jboss.as.controller.access.AuthorizationResult;
+import org.jboss.as.controller.access.ResourceAuthorization;
 import org.jboss.as.controller.client.MessageSeverity;
 import org.jboss.as.controller.persistence.ConfigurationPersistenceException;
 import org.jboss.as.controller.persistence.ConfigurationPersister;
@@ -34,10 +42,6 @@ import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
 
-import java.io.InputStream;
-
-import static org.jboss.as.controller.ControllerMessages.MESSAGES;
-
 /**
  * A read-only {@linkplain OperationContext}, allowing read-only access to the current write model from a different
  * operation, preventing any writes from this context. Operations can acquire a controller lock to prevent other
@@ -49,14 +53,13 @@ class ReadOnlyContext extends AbstractOperationContext {
 
     private final int operationId;
     private final ModelControllerImpl controller;
-    private final OperationContext primaryContext;
-
+    private final AbstractOperationContext primaryContext;
     private Step lockStep;
 
     ReadOnlyContext(final ProcessType processType, final RunningMode runningMode, final ModelController.OperationTransactionControl transactionControl,
                     final ControlledProcessState processState, final boolean booting,
-                    final OperationContext primaryContext, final ModelControllerImpl controller, final int operationId) {
-        super(processType, runningMode, transactionControl, processState, booting);
+                    final AbstractOperationContext primaryContext, final ModelControllerImpl controller, final int operationId) {
+        super(processType, runningMode, transactionControl, processState, booting, controller.getAuditLogger());
         this.primaryContext = primaryContext;
         this.controller = controller;
         this.operationId = operationId;
@@ -280,8 +283,42 @@ class ReadOnlyContext extends AbstractOperationContext {
         throw readOnlyContext();
     }
 
+    @Override
+    public AuthorizationResult authorize(ModelNode operation) {
+        return primaryContext.authorize(operation);
+    }
+
+    @Override
+    public AuthorizationResult authorize(ModelNode operation, Set<Action.ActionEffect> effects) {
+        return primaryContext.authorize(operation, effects);
+    }
+
+    @Override
+    public AuthorizationResult authorize(ModelNode operation, String attribute, ModelNode currentValue) {
+        return primaryContext.authorize(operation, attribute, currentValue);
+    }
+
+    @Override
+    public AuthorizationResult authorize(ModelNode operation, String attribute, ModelNode currentValue, Set<Action.ActionEffect> effects) {
+        return primaryContext.authorize(operation, attribute, currentValue, effects);
+    }
+
     IllegalStateException readOnlyContext() {
         return ControllerMessages.MESSAGES.readOnlyContext();
+    }
+
+    @Override
+    public AuthorizationResult authorizeOperation(ModelNode operation) {
+        return primaryContext.authorizeOperation(operation);
+    }
+
+    @Override
+    public ResourceAuthorization authorizeResource(boolean attributes, boolean isDefaultResource) {
+        return primaryContext.authorizeResource(attributes, isDefaultResource);
+    }
+
+    Resource getModel() {
+        return primaryContext.getModel();
     }
 
 }

@@ -25,12 +25,17 @@ package org.jboss.as.server.mgmt;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MANAGEMENT_INTERFACE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NATIVE_INTERFACE;
 
+import java.util.List;
+
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.constraint.SensitivityClassification;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
@@ -56,12 +61,14 @@ public class NativeManagementResourceDefinition extends SimpleResourceDefinition
     public static final SimpleAttributeDefinition SECURITY_REALM = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.SECURITY_REALM, ModelType.STRING, true)
             .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SECURITY_REALM_REF))
             .build();
 
     public static final SimpleAttributeDefinition INTERFACE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.INTERFACE, ModelType.STRING, false)
                 .setAllowExpression(true).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, true))
                 .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING)
                 .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+                .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SOCKET_CONFIG))
                 .setDeprecated(ModelVersion.create(1, 4))
                 .build();
 
@@ -70,6 +77,7 @@ public class NativeManagementResourceDefinition extends SimpleResourceDefinition
             .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING)
             .setRequires(ModelDescriptionConstants.INTERFACE)
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SOCKET_CONFIG))
             .setDeprecated(ModelVersion.create(1,4))
             .build();
 
@@ -78,17 +86,21 @@ public class NativeManagementResourceDefinition extends SimpleResourceDefinition
             .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
             .setAlternatives(ModelDescriptionConstants.INTERFACE)
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .addAccessConstraint(new SensitiveTargetAccessConstraintDefinition(SensitivityClassification.SOCKET_CONFIG))
             .build();
 
     public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = new AttributeDefinition[] {INTERFACE, NATIVE_PORT, SECURITY_REALM, SOCKET_BINDING };
 
     public static final NativeManagementResourceDefinition INSTANCE = new NativeManagementResourceDefinition();
 
+    private final List<AccessConstraintDefinition> accessConstraints;
+
     private NativeManagementResourceDefinition() {
         super(RESOURCE_PATH,
                 ServerDescriptions.getResourceDescriptionResolver("core.management.native-interface"),
                 NativeManagementAddHandler.INSTANCE, NativeManagementRemoveHandler.INSTANCE,
                 OperationEntry.Flag.RESTART_NONE, OperationEntry.Flag.RESTART_NONE);
+        this.accessConstraints = SensitiveTargetAccessConstraintDefinition.MANAGEMENT_INTERFACES.wrapAsList();
     }
 
     @Override
@@ -96,5 +108,10 @@ public class NativeManagementResourceDefinition extends SimpleResourceDefinition
         for (AttributeDefinition attr : ATTRIBUTE_DEFINITIONS) {
             resourceRegistration.registerReadWriteAttribute(attr, null, NativeManagementWriteAttributeHandler.INSTANCE);
         }
+    }
+
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return accessConstraints;
     }
 }

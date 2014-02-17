@@ -30,11 +30,14 @@ import java.net.URL;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 import org.jboss.as.connector.metadata.deployment.ResourceAdapterDeployment;
 import org.jboss.as.connector.metadata.xmldescriptors.ConnectorXmlDescriptor;
 import org.jboss.as.connector.services.mdr.AS7MetadataRepository;
 import org.jboss.as.connector.services.resourceadapters.ResourceAdapterService;
+import org.jboss.as.connector.subsystems.resourceadapters.RaOperationUtil;
 import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.naming.WritableServiceBasedNamingStore;
 import org.jboss.jca.common.api.metadata.ironjacamar.IronJacamar;
@@ -54,6 +57,7 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A ResourceAdapterDeploymentService.
@@ -98,74 +102,81 @@ public final class ResourceAdapterDeploymentService extends AbstractResourceAdap
     public void start(StartContext context) throws StartException {
         final URL url = connectorXmlDescriptor == null ? null : connectorXmlDescriptor.getUrl();
         deploymentName = connectorXmlDescriptor == null ? null : connectorXmlDescriptor.getDeploymentName();
+        connectorServicesRegistrationName = deploymentName;
         final File root = connectorXmlDescriptor == null ? null : connectorXmlDescriptor.getRoot();
         DEPLOYMENT_CONNECTOR_LOGGER.debugf("DEPLOYMENT name = %s",deploymentName);
+        final boolean fromModule = duServiceName.getParent().equals(RaOperationUtil.RAR_MODULE);
         final AS7RaDeployer raDeployer =
-            new AS7RaDeployer(context.getChildTarget(), url, deploymentName, root, classLoader, cmd, ijmd, deploymentServiceName);
+            new AS7RaDeployer(context.getChildTarget(), url, deploymentName, root, classLoader, cmd, ijmd, deploymentServiceName, fromModule);
         raDeployer.setConfiguration(config.getValue());
 
-        ClassLoader old = SecurityActions.getThreadContextClassLoader();
+        ClassLoader old = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         try {
-            WritableServiceBasedNamingStore.pushOwner(duServiceName);
-            SecurityActions.setThreadContextClassLoader(classLoader);
-            raDeployment = raDeployer.doDeploy();
-            deploymentName = raDeployment.getDeploymentName();
-        } catch (Throwable t) {
-            unregisterAll(deploymentName);
-            throw MESSAGES.failedToStartRaDeployment(t, deploymentName);
-        } finally {
-            SecurityActions.setThreadContextClassLoader(old);
-            WritableServiceBasedNamingStore.popOwner();
-        }
-
-
-        if (raDeployer.checkActivation(cmd, ijmd)) {
-            DEPLOYMENT_CONNECTOR_LOGGER.debugf("Activating: %s", deploymentName);
-
-            ServiceName raServiceName = ConnectorServices.registerResourceAdapter(deploymentName);
-            value = new ResourceAdapterDeployment(raDeployment, deploymentName, raServiceName);
-
-            managementRepository.getValue().getConnectors().add(value.getDeployment().getConnector());
-            registry.getValue().registerResourceAdapterDeployment(value);
-
-            context.getChildTarget()
-                    .addService(raServiceName,
+            try {
+                WritableServiceBasedNamingStore.pushOwner(duServiceName);
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
+                raDeployment = raDeployer.doDeploy();
+                deploymentName = raDeployment.getDeploymentName();
+            } finally {
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(old);
+                WritableServiceBasedNamingStore.popOwner();
+            }
+            if (raDeployer.checkActivation(cmd, ijmd)) {
+                DEPLOYMENT_CONNECTOR_LOGGER.debugf("Activating: %s", deploymentName);
+                ServiceName raServiceName = ConnectorServices.getResourceAdapterServiceName(deploymentName);
+                value = new ResourceAdapterDeployment(raDeployment, deploymentName, raServiceName);
+                managementRepository.getValue().getConnectors().add(value.getDeployment().getConnector());
+                registry.getValue().registerResourceAdapterDeployment(value);
+                context.getChildTarget()
+                        .addService(raServiceName,
                                 new ResourceAdapterService(deploymentName, raServiceName, value.getDeployment().getResourceAdapter())).setInitialMode(Mode.ACTIVE)
-                    .install();
-        } else {
-            DEPLOYMENT_CONNECTOR_LOGGER.debugf("Not activating: %s", deploymentName);
+                        .install();
+            } else {
+                DEPLOYMENT_CONNECTOR_LOGGER.debugf("Not activating: %s", deploymentName);
+            }
+        } catch (Throwable t) {
+            cleanupStartAsync(context, deploymentName, t, duServiceName, classLoader);
         }
     }
 
+    // TODO this could be replaced by the superclass method if there is no need for the TCCL change and push/pop owner
+    // The stop() call doesn't do that so it's probably not needed
+    private void cleanupStartAsync(final StartContext context, final String deploymentName, final Throwable cause,
+            final ServiceName duServiceName, final ClassLoader toUse) {
+        ExecutorService executorService = getLifecycleExecutorService();
+        Runnable r = new Runnable() {
+            @Override
+            public void run() {
+                ClassLoader old = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+                try {
+                    WritableServiceBasedNamingStore.pushOwner(duServiceName);
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(toUse);
+                    unregisterAll(deploymentName);
+                } finally {
+                    try {
+                        context.failed(MESSAGES.failedToStartRaDeployment(cause, deploymentName));
+                    } finally {
+                        WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(old);
+                        WritableServiceBasedNamingStore.popOwner();
+                    }
+                }
+            }
+        };
+        try {
+            executorService.execute(r);
+        } catch (RejectedExecutionException e) {
+            r.run();
+        } finally {
+            context.asynchronous();
+        }
+    }
 
     /**
      * Stop
      */
     @Override
     public void stop(StopContext context) {
-        if (deploymentServiceName != null) {
-            ConnectorServices.unregisterDeployment(raDeployment.getDeploymentName(), deploymentServiceName);
-        }
-        DEPLOYMENT_CONNECTOR_LOGGER.debugf("Stopping sevice %s",
-                ConnectorServices.RESOURCE_ADAPTER_DEPLOYMENT_SERVICE_PREFIX.append(deploymentName));
-        unregisterAll(deploymentName);
-
-    }
-
-    @Override
-    public void unregisterAll(String deploymentName) {
-
-        ConnectorServices.unregisterResourceAdapterIdentifier(deploymentName);
-
-        super.unregisterAll(deploymentName);
-
-        if (mdr != null && mdr.getValue() != null && deploymentName != null) {
-            try {
-                mdr.getValue().unregisterResourceAdapter(deploymentName);
-            } catch (Throwable t) {
-                DEPLOYMENT_CONNECTOR_LOGGER.debug("Exception during unregistering deployment", t);
-            }
-        }
+        stopAsync(context, deploymentName, deploymentServiceName);
     }
 
     public CommonDeployment getRaDeployment() {
@@ -179,11 +190,13 @@ public final class ResourceAdapterDeploymentService extends AbstractResourceAdap
     private class AS7RaDeployer extends AbstractAS7RaDeployer {
 
         private final IronJacamar ijmd;
+        private final boolean fromModule;
 
         public AS7RaDeployer(ServiceTarget serviceContainer, URL url, String deploymentName, File root, ClassLoader cl,
-                Connector cmd, IronJacamar ijmd,  final ServiceName deploymentServiceName) {
+                Connector cmd, IronJacamar ijmd,  final ServiceName deploymentServiceName, final boolean fromModule) {
             super(serviceContainer, url, deploymentName, root, cl, cmd, deploymentServiceName);
             this.ijmd = ijmd;
+            this.fromModule = fromModule;
         }
 
         @Override
@@ -228,8 +241,8 @@ public final class ResourceAdapterDeploymentService extends AbstractResourceAdap
                         }
                     }
 
-                    // Pure inflow
-                    if (raMcfClasses.size() == 0 && raAoClasses.size() == 0)
+                    // Pure inflow always active except in case it is deployed as module
+                    if (raMcfClasses.size() == 0 && raAoClasses.size() == 0 && ! fromModule)
                         return true;
                 }
 

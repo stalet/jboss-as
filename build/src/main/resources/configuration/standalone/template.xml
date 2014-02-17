@@ -13,6 +13,9 @@
                     <local default-user="$local" />
                     <properties path="mgmt-users.properties" relative-to="jboss.server.config.dir"/>
                 </authentication>
+                <authorization map-groups-to-roles="false">
+                    <properties path="mgmt-groups.properties" relative-to="jboss.server.config.dir"/>
+                </authorization>
             </security-realm>
             <security-realm name="ApplicationRealm">
                 <authentication>
@@ -24,14 +27,33 @@
                 </authorization>
             </security-realm>
         </security-realms>
+        <audit-log>
+            <formatters>
+               <json-formatter name="json-formatter"/>
+            </formatters>        
+            <handlers>
+               <file-handler name="file" formatter="json-formatter" relative-to="jboss.server.data.dir" path="audit-log.log"/>
+            </handlers>
+            <logger log-boot="true" log-read-only="false" enabled="false">
+               <handlers>
+                  <handler name="file"/>
+               </handlers>
+            </logger>
+        </audit-log>
         <management-interfaces>
-            <native-interface security-realm="ManagementRealm">
-                <socket-binding native="management-native"/>
-            </native-interface>
-            <http-interface security-realm="ManagementRealm">
+            <http-interface security-realm="ManagementRealm" http-upgrade-enabled="true">
                 <socket-binding http="management-http"/>
             </http-interface>
         </management-interfaces>
+        <access-control provider="simple">
+            <role-mapping>
+                <role name="SuperUser">
+                    <include>
+                        <user name="$local"/>
+                    </include>
+                </role>
+            </role-mapping>
+        </access-control>
     </management>
 
     <profile>
@@ -56,9 +78,8 @@
     </interfaces>
 
     <socket-binding-group name="standard-sockets" default-interface="public" port-offset="${jboss.socket.binding.port-offset:0}">
-        <socket-binding name="management-native" interface="management" port="${jboss.management.native.port:9999}"/>
         <socket-binding name="management-http" interface="management" port="${jboss.management.http.port:9990}"/>
-        <socket-binding name="management-https" interface="management" port="${jboss.management.https.port:9443}"/>
+        <socket-binding name="management-https" interface="management" port="${jboss.management.https.port:9993}"/>
 
         <?SOCKET-BINDINGS?>
 

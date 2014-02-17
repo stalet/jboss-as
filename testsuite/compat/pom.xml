@@ -27,13 +27,13 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <artifactId>jboss-as-testsuite</artifactId>
-        <groupId>org.jboss.as</groupId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <artifactId>wildfly-testsuite</artifactId>
+        <groupId>org.wildfly</groupId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-testsuite-compat</artifactId>
-    <name>JBoss Application Server Test Suite: Compatibility Tests</name>
+    <artifactId>wildfly-testsuite-compat</artifactId>
+    <name>WildFly Test Suite: Compatibility Tests</name>
     <properties>
 
         <!-- This project's testsuite dir. To be changed for every submodule (until we figure out how to do it automatically). -->
@@ -44,7 +44,7 @@
 
         <!-- Used to provide an absolute location for the distribution under test. -->
         <!-- This value is overridden in modules with the correct relative pathname. -->
-        <jboss.dist>${jbossas.project.dir}/build/target/jboss-as-${jboss.as.release.version}</jboss.dist>
+        <jboss.dist>${jbossas.project.dir}/${wildfly.build.output.dir}</jboss.dist>
         <jboss.home>${jboss.dist}</jboss.home>
 
         <!-- Used to provide an absolute location for the XSLT scripts. -->
@@ -52,6 +52,13 @@
         <xslt.scripts.dir>${basedir}/../integration/src/test/xslt</xslt.scripts.dir>
 
         <version.org.hibernate3>3.6.6.Final</version.org.hibernate3>
+
+        <!-- EclipseLink -->
+        <eclipselink.version.2.3.stable>2.3.2</eclipselink.version.2.3.stable>
+        <eclipselink.version.2.3.milestone>2.3.3-M3</eclipselink.version.2.3.milestone>
+        <eclipselink.version.2.4.milestone>2.4.2</eclipselink.version.2.4.milestone>
+        <eclipselink.version>${eclipselink.version.2.4.milestone}</eclipselink.version>
+
     </properties>
 
     <!--
@@ -88,6 +95,41 @@
             <artifactId>slf4j-simple</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.jipijapa</groupId>
+            <artifactId>jipijapa-eclipselink</artifactId>
+            <version>1.0.0.Beta3</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.eclipse.persistence</groupId>
+            <artifactId>eclipselink</artifactId>
+            <version>${eclipselink.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.eclipse.persistence</groupId>
+                    <artifactId>javax.persistence</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.openjpa</groupId>
+            <artifactId>openjpa-all</artifactId>
+            <version>2.2.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>net.sourceforge.serp</groupId>
+            <artifactId>serp</artifactId>
+            <version>1.14.1</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <dependencyManagement>
@@ -134,6 +176,41 @@
                 <version>3.2.0.Final</version>
                 <scope>test</scope>
             </dependency>
+
+            <dependency>
+                <groupId>org.jipijapa</groupId>
+                <artifactId>jipijapa-eclipselink</artifactId>
+                <version>1.0.0.Beta3</version>
+                <scope>test</scope>
+            </dependency>
+
+            <dependency>
+            <groupId>org.eclipse.persistence</groupId>
+            <artifactId>eclipselink</artifactId>
+            <version>${eclipselink.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.eclipse.persistence</groupId>
+                    <artifactId>javax.persistence</artifactId>
+                </exclusion>
+            </exclusions>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.openjpa</groupId>
+                <artifactId>openjpa-all</artifactId>
+                <version>2.2.2</version>
+                <scope>test</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>net.sourceforge.serp</groupId>
+                <artifactId>serp</artifactId>
+                <version>1.14.1</version>
+                <scope>test</scope>
+            </dependency>
+
         </dependencies>
     </dependencyManagement>
 
@@ -159,11 +236,17 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!-- Setup standalone server IP and logging configuration -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>xml-maven-plugin</artifactId>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <skipTests>${ts.skipTests}</skipTests>
                     <!-- Prevent test and server output appearing in console. -->
                     <redirectTestOutputToFile>${testLogToFile}</redirectTestOutputToFile>
                     <enableAssertions>true</enableAssertions>
@@ -191,7 +274,7 @@
                             Used in arquillian.xml - arguments for all JBoss AS instances.
                             System properties are duplicated here until ARQ-647 is implemented.
                         -->
-                        <server.jvm.args>${surefire.system.args} ${jvm.args.ip.server} ${jvm.args.security} ${jvm.args.timeouts} -Dnode0=${node0} -Dnode1=${node1} -Dmcast=${mcast}</server.jvm.args>
+                        <server.jvm.args>${surefire.system.args} ${jvm.args.ip.server} ${jvm.args.security} ${jvm.args.timeouts} -Dnode0=${node0} -Dnode1=${node1} -Dmcast=${mcast} -Declipselink.archive.factory=org.jipijapa.eclipselink.JBossArchiveFactoryImpl</server.jvm.args>
                     </systemPropertyVariables>
 
                 </configuration>
@@ -207,8 +290,8 @@
             </activation>
             <dependencies>
                 <dependency>
-                    <groupId>org.jboss.as</groupId>
-                    <artifactId>jboss-as-arquillian-container-managed</artifactId>
+                    <groupId>org.wildfly</groupId>
+                    <artifactId>wildfly-arquillian-container-managed</artifactId>
                     <scope>test</scope>
                 </dependency>
             </dependencies>
@@ -223,12 +306,30 @@
             </activation>
             <dependencies>
                 <dependency>
-                    <groupId>org.jboss.as</groupId>
-                    <artifactId>jboss-as-arquillian-container-remote</artifactId>
+                    <groupId>org.wildfly</groupId>
+                    <artifactId>wildfly-arquillian-container-remote</artifactId>
                     <scope>test</scope>
                 </dependency>
             </dependencies>
         </profile>
     </profiles>
+
+  <repositories>
+
+    <repository>
+      <id>jboss-public-repository-group</id>
+      <name>JBoss Public Repository Group</name>
+      <url>http://repository.jboss.org/nexus/content/groups/public/</url>
+      <layout>default</layout>
+      <releases>
+        <enabled>true</enabled>
+        <updatePolicy>never</updatePolicy>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+        <updatePolicy>never</updatePolicy>
+      </snapshots>
+    </repository>
+  </repositories>
 
 </project>

@@ -25,6 +25,10 @@ package org.jboss.as.controller;
 import java.util.LinkedList;
 import java.util.List;
 
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
+
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.operations.validation.ModelTypeValidator;
 import org.jboss.as.controller.operations.validation.ParameterValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
@@ -36,12 +40,14 @@ import org.jboss.dmr.ModelType;
  */
 public final class StringListAttributeDefinition extends PrimitiveListAttributeDefinition {
 
-    private StringListAttributeDefinition(final String name, final String xmlName, final boolean allowNull,final boolean allowExpressions, final int minSize, final int maxSize, final String[] alternatives,
-                                          final String[] requires, ParameterValidator elementValidator, final AttributeMarshaller attributeMarshaller, final boolean resourceOnly,
-                                          final DeprecationData deprecated, final AttributeAccess.Flag... flags) {
-        super(name, xmlName, allowNull, allowExpressions, ModelType.STRING, minSize, maxSize, alternatives, requires, elementValidator, attributeMarshaller, resourceOnly, deprecated, flags);
+    private StringListAttributeDefinition(final String name, final String xmlName, final boolean allowNull, final boolean allowExpressions,
+                                          final int minSize, final int maxSize, ParameterValidator elementValidator, final String[] alternatives,
+                                          final String[] requires, final AttributeMarshaller attributeMarshaller, final boolean resourceOnly,
+                                          final DeprecationData deprecated, final AccessConstraintDefinition[] accessConstraints,
+                                          final Boolean nullSignificant, final AttributeAccess.Flag... flags) {
+        super(name, xmlName, allowNull, allowExpressions, ModelType.STRING, minSize, maxSize, elementValidator, alternatives, requires,
+                attributeMarshaller, resourceOnly, deprecated, accessConstraints, nullSignificant, flags);
     }
-
 
     public List<String> unwrap(final OperationContext context, final ModelNode model) throws OperationFailedException {
         if (!model.hasDefined(getName())) {
@@ -55,6 +61,14 @@ public final class StringListAttributeDefinition extends PrimitiveListAttributeD
         return result;
     }
 
+    public void parseAndSetParameter(String value, ModelNode operation, XMLStreamReader reader) throws XMLStreamException {
+        if (value != null) {
+            for (String element : value.split(",")) {
+                parseAndAddParameterElement(element, operation, reader);
+            }
+        }
+    }
+
     public static class Builder extends AbstractAttributeDefinitionBuilder<Builder, StringListAttributeDefinition> {
         public Builder(final String name) {
             super(name, ModelType.STRING);
@@ -63,14 +77,16 @@ public final class StringListAttributeDefinition extends PrimitiveListAttributeD
 
         public Builder(final StringListAttributeDefinition basic) {
             super(basic);
-            if (validator==null){
+            if (validator == null) {
                 validator = new ModelTypeValidator(ModelType.STRING);
             }
         }
 
         @Override
         public StringListAttributeDefinition build() {
-            return new StringListAttributeDefinition(name, xmlName, allowNull, allowExpression, minSize, maxSize, alternatives, requires, validator, attributeMarshaller, resourceOnly, deprecated, flags);
+            return new StringListAttributeDefinition(name, xmlName, allowNull, allowExpression, minSize, maxSize,
+                    validator, alternatives, requires,
+                    attributeMarshaller, resourceOnly, deprecated, accessConstraints, nullSignficant, flags);
         }
     }
 }

@@ -31,6 +31,7 @@
         <system export="true">
             <paths>
                 <path name="com/sun/script/javascript"/>
+                <path name="jdk/nashorn/api/scripting"/>
                 <path name="com/sun/image/codec/jpeg"/>
                 <path name="com/sun/imageio/plugins/bmp"/>
                 <path name="com/sun/imageio/plugins/common"/>
@@ -80,7 +81,10 @@
                 <path name="sun/io"/>
                 <path name="sun/nio"/>
                 <path name="sun/nio/ch"/>
+                <path name="sun/nio/cs"/>
+                <path name="sun/nio/cs/ext"/>
                 <path name="sun/security"/>
+                <path name="sun/security/util"/>
                 <path name="sun/security/krb5"/>
                 <path name="sun/util"/>
                 <path name="sun/util/calendar"/>

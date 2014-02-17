@@ -87,7 +87,10 @@ public enum Element {
    GROUP_ADDRESS(CommonAttributes.GROUP_ADDRESS),
    GROUP_PORT(CommonAttributes.GROUP_PORT),
    GROUPING_HANDLER(CommonAttributes.GROUPING_HANDLER),
+   GROUP_TIMEOUT(GroupingHandlerDefinition.GROUP_TIMEOUT),
    HORNETQ_SERVER(CommonAttributes.HORNETQ_SERVER),
+   HTTP_ACCEPTOR(CommonAttributes.HTTP_ACCEPTOR),
+   HTTP_CONNECTOR(CommonAttributes.HTTP_CONNECTOR),
    ID_CACHE_SIZE(CommonAttributes.ID_CACHE_SIZE),
    INITIAL_WAIT_TIMEOUT(DiscoveryGroupDefinition.INITIAL_WAIT_TIMEOUT),
    IN_VM_ACCEPTOR(CommonAttributes.IN_VM_ACCEPTOR),
@@ -116,6 +119,7 @@ public enum Element {
    MANAGEMENT_ADDRESS(CommonAttributes.MANAGEMENT_ADDRESS),
    MANAGEMENT_NOTIFICATION_ADDRESS(CommonAttributes.MANAGEMENT_NOTIFICATION_ADDRESS),
    MAX_HOPS(ClusterConnectionDefinition.MAX_HOPS),
+   MAX_SAVED_REPLICATED_JOURNAL_SIZE(CommonAttributes.MAX_SAVED_REPLICATED_JOURNAL_SIZE),
    MEMORY_MEASURE_INTERVAL(CommonAttributes.MEMORY_MEASURE_INTERVAL),
    MEMORY_WARNING_THRESHOLD(CommonAttributes.MEMORY_WARNING_THRESHOLD),
    MESSAGE_COUNTER_ENABLED(CommonAttributes.MESSAGE_COUNTER_ENABLED),
@@ -134,6 +138,7 @@ public enum Element {
    PERSIST_ID_CACHE(CommonAttributes.PERSIST_ID_CACHE),
    PERSISTENCE_ENABLED(CommonAttributes.PERSISTENCE_ENABLED),
    QUEUE(CommonAttributes.QUEUE),
+   REAPER_PERIOD(GroupingHandlerDefinition.REAPER_PERIOD),
    REFRESH_TIMEOUT(DiscoveryGroupDefinition.REFRESH_TIMEOUT),
    REMOTING_INTERCEPTORS(CommonAttributes.REMOTING_INTERCEPTORS),
    REMOTING_INCOMING_INTERCEPTORS(CommonAttributes.REMOTING_INCOMING_INTERCEPTORS),
@@ -147,6 +152,7 @@ public enum Element {
    SECURITY_SETTINGS(CommonAttributes.SECURITY_SETTINGS),
    SERVER_DUMP_INTERVAL(CommonAttributes.SERVER_DUMP_INTERVAL),
    SHARED_STORE(CommonAttributes.SHARED_STORE),
+   STATISTICS_ENABLED(CommonAttributes.STATISTICS_ENABLED),
    SUBSYSTEM(CommonAttributes.SUBSYSTEM),
    TRANSACTION_TIMEOUT(CommonAttributes.TRANSACTION_TIMEOUT),
    TRANSACTION_TIMEOUT_SCAN_PERIOD(CommonAttributes.TRANSACTION_TIMEOUT_SCAN_PERIOD),
@@ -163,6 +169,7 @@ public enum Element {
    ADDRESS_SETTING(CommonAttributes.ADDRESS_SETTING),
    DEAD_LETTER_ADDRESS(CommonAttributes.DEAD_LETTER_ADDRESS),
    EXPIRY_ADDRESS(CommonAttributes.EXPIRY_ADDRESS),
+   EXPIRY_DELAY(AddressSettingDefinition.EXPIRY_DELAY),
    REDELIVERY_DELAY(AddressSettingDefinition.REDELIVERY_DELAY),
    MAX_DELIVERY_ATTEMPTS(AddressSettingDefinition.MAX_DELIVERY_ATTEMPTS),
    MAX_SIZE_BYTES(AddressSettingDefinition.MAX_SIZE_BYTES),
@@ -203,7 +210,7 @@ public enum Element {
    FAILOVER_ON_SERVER_SHUTDOWN(Common.FAILOVER_ON_SERVER_SHUTDOWN),
    GROUP_ID(Common.GROUP_ID),
    HA(CommonAttributes.HA),
-   INITIAL_CONNECT_ATTEMPTS(Pooled.INITIAL_CONNECT_ATTEMPTS),
+   INITIAL_CONNECT_ATTEMPTS(getInitialConnectAttemptsDefinitions()),
    INITIAL_MESSAGE_PACKET_SIZE(Pooled.INITIAL_MESSAGE_PACKET_SIZE),
    JMS_DESTINATIONS(CommonAttributes.JMS_DESTINATIONS),
    JMS_TOPIC(CommonAttributes.JMS_TOPIC),
@@ -221,6 +228,7 @@ public enum Element {
    PRODUCER_MAX_RATE(Common.PRODUCER_MAX_RATE),
    QUEUE_NAME(BridgeDefinition.QUEUE_NAME),
    RECONNECT_ATTEMPTS(getReconnectAttemptsDefinitions()),
+   RECONNECT_ATTEMPTS_ON_SAME_NODE(BridgeDefinition.RECONNECT_ATTEMPTS_ON_SAME_NODE),
    RETRY_INTERVAL(getRetryIntervalDefinitions()),
    RETRY_INTERVAL_MULTIPLIER(getRetryIntervalMultiplierDefinitions()),
    SELECTOR(CommonAttributes.SELECTOR),
@@ -487,5 +495,14 @@ public enum Element {
         result.put("target", JMSBridgeDefinition.TARGET_CONTEXT);
         return result;
     }
+
+    private static Map<String, AttributeDefinition>  getInitialConnectAttemptsDefinitions() {
+        final Map<String, AttributeDefinition> result = new HashMap<String, AttributeDefinition>();
+        result.put("bridge", BridgeDefinition.INITIAL_CONNECT_ATTEMPTS);
+        result.put("cluster", ClusterConnectionDefinition.INITIAL_CONNECT_ATTEMPTS);
+        result.put("pooled", Pooled.INITIAL_CONNECT_ATTEMPTS);
+        return result;
+    }
+
 
 }

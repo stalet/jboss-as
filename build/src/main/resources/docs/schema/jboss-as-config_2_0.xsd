@@ -44,6 +44,7 @@
                 <xs:element name="extensions" type="extensionsType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="system-properties" type="properties-with-boottime" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="paths" type="named-pathsType" minOccurs="0" maxOccurs="1" />
+                <xs:element name="management" type="domain-managementType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="profiles" type="profilesType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="interfaces" type="named-interfacesType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="socket-binding-groups" type="socket-binding-groupsType" minOccurs="0" maxOccurs="1"/>
@@ -53,11 +54,11 @@
                 <xs:element name="management-client-content" type="management-client-contentType" minOccurs="0" maxOccurs="1"/>
             </xs:sequence>
             <xs:attribute name="name" type="xs:string" use="optional" default="Unnamed Domain">
-               <xs:annotation>
-                  <xs:documentation>
-                     The name to use for the domain controller. Useful for administrators who need to work with multiple domains.
-                  </xs:documentation>
-               </xs:annotation>
+                <xs:annotation>
+                    <xs:documentation>
+                        The name to use for the domain controller. Useful for administrators who need to work with multiple domains.
+                    </xs:documentation>
+                </xs:annotation>
             </xs:attribute>
         </xs:complexType>
     </xs:element>
@@ -140,7 +141,7 @@
         </xs:complexType>
     </xs:element>
 
-    <xs:complexType name="domain-managementType">
+    <xs:complexType name="base-managementType">
         <xs:annotation>
             <xs:documentation>
                 Domain-wide default configuration settings for the management of standalone servers and a Host Controller.
@@ -158,7 +159,7 @@
             <xs:element name="outbound-connections" minOccurs="0">
                 <xs:complexType>
                     <xs:sequence>
-                      <xs:element name="ldap" type="ldapType" minOccurs="1" /> <!-- TODO minOccurs only while ldap is only supported connection. -->
+                        <xs:element name="ldap" type="ldapConnectionType" minOccurs="1" /> <!-- TODO minOccurs only while ldap is only supported connection. -->
                     </xs:sequence>
                 </xs:complexType>
             </xs:element>
@@ -172,8 +173,18 @@
             </xs:documentation>
         </xs:annotation>
         <xs:complexContent>
-            <xs:extension base="domain-managementType">
+            <xs:extension base="base-managementType">
                 <xs:sequence>
+                    <xs:element name="audit-log" minOccurs="0">
+                        <xs:complexType>
+                            <xs:sequence minOccurs="0">
+                                <xs:element name="formatters" type="audit-log-formattersType"/>
+                                <xs:element name="handlers" type="audit-log-handlersType"/>
+                                <xs:element name="logger" type="audit-log-loggerType"/>
+                                <xs:element name="server-logger" type="audit-log-loggerType" minOccurs="0"/>
+                            </xs:sequence>
+                        </xs:complexType>
+                    </xs:element>
                     <xs:element name="management-interfaces" type="host-management-interfacesType" minOccurs="1"/>
                 </xs:sequence>
             </xs:extension>
@@ -187,20 +198,44 @@
             </xs:documentation>
         </xs:annotation>
         <xs:complexContent>
-            <xs:extension base="domain-managementType">
+            <xs:extension base="base-managementType">
                 <xs:sequence>
+                    <xs:element name="audit-log" minOccurs="0">
+                        <xs:complexType>
+                            <xs:sequence minOccurs="0">
+                                <xs:element name="formatters" type="audit-log-formattersType"/>
+                                <xs:element name="handlers" type="audit-log-handlersType"/>
+                                <xs:element name="logger" type="audit-log-loggerType"/>
+                            </xs:sequence>
+                        </xs:complexType>
+                    </xs:element>
                     <xs:element name="management-interfaces" type="server-management-interfacesType" minOccurs="0"/>
+                    <xs:element name="access-control" type="server-access-controlType" minOccurs="0"/>
                 </xs:sequence>
             </xs:extension>
         </xs:complexContent>
     </xs:complexType>
 
-    <xs:complexType name="ldapType">
+    <xs:complexType name="domain-managementType">
+        <xs:annotation>
+            <xs:documentation>
+                The centralized configuration for domain-wide management.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="access-control" type="domain-access-controlType" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="ldapConnectionType">
         <xs:annotation>
             <xs:documentation>
                 The LDAP connection definition.
             </xs:documentation>
         </xs:annotation>
+        <xs:sequence>
+            <xs:element name="properties" type="properties" minOccurs="0" />
+        </xs:sequence>
         <xs:attribute name="name" type="xs:string" use="required">
             <xs:annotation>
                 <xs:documentation>
@@ -313,18 +348,18 @@
             </xs:annotation>
         </xs:attribute>
         <xs:attribute name="mechanism" default="DIGEST" use="optional">
-           <xs:annotation>
-              <xs:documentation>
-                   By default plug-ins will be assumed to be used with the DIGEST authentication mechanism,
-                   this attribute can override the plug-in for use with the PLAIN mechanism.
-              </xs:documentation>
-           </xs:annotation>
-           <xs:simpleType>
-              <xs:restriction base="xs:string">
-                 <xs:enumeration value="DIGEST" />
-                 <xs:enumeration value="PLAIN" />
-              </xs:restriction>
-           </xs:simpleType>
+            <xs:annotation>
+                <xs:documentation>
+                    By default plug-ins will be assumed to be used with the DIGEST authentication mechanism,
+                    this attribute can override the plug-in for use with the PLAIN mechanism.
+                </xs:documentation>
+            </xs:annotation>
+            <xs:simpleType>
+                <xs:restriction base="xs:string">
+                    <xs:enumeration value="DIGEST" />
+                    <xs:enumeration value="PLAIN" />
+                </xs:restriction>
+            </xs:simpleType>
         </xs:attribute>
     </xs:complexType>
 
@@ -333,7 +368,7 @@
             <xs:documentation>
                 Configuration defining how to load the authorization information for the authenticated user.
 
-                After a user has been authenticated additional information such as roles can be loaded and
+                After a user has been authenticated additional information such as groups or roles can be loaded and
                 associated with the user for subsequent authorization checks, this type is used to define
                 how the roles are loaded.
             </xs:documentation>
@@ -341,7 +376,17 @@
         <xs:choice>
             <xs:element name="properties" type="propertiesFileType" minOccurs="0" />
             <xs:element name="plug-in" type="plug-inAuthType" minOccurs="0" />
+            <xs:element name="ldap" type="ldapAuthorizationType" minOccurs="0" />
         </xs:choice>
+        <xs:attribute name="map-groups-to-roles" type="xs:boolean" default="true" use="optional">
+            <xs:annotation>
+                <xs:documentation>
+                    The membership information loaded is the authenticated identities group membership, commonly there
+                    is a 1:1 mapping between group membership and the applicable roles, this attribute allows for the
+                    mapping to be performed automatically.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
     </xs:complexType>
 
     <xs:complexType name="server-identitiesType">
@@ -351,8 +396,8 @@
             </xs:documentation>
         </xs:annotation>
         <xs:sequence>
-          <xs:element name="ssl" type="sslType" minOccurs="0" />
-          <xs:element name="secret" type="secretType" minOccurs="0" />
+            <xs:element name="ssl" type="sslType" minOccurs="0" />
+            <xs:element name="secret" type="secretType" minOccurs="0" />
         </xs:sequence>
     </xs:complexType>
 
@@ -428,7 +473,7 @@
                 and key password to be specified.
             </xs:documentation>
         </xs:annotation>
-	    <xs:complexContent>
+        <xs:complexContent>
             <xs:extension base="keyStoreType">
                 <xs:attribute name="alias" type="xs:string" use="optional">
                     <xs:annotation>
@@ -445,8 +490,8 @@
                         </xs:documentation>
                     </xs:annotation>
                 </xs:attribute>
-		    </xs:extension>
-	    </xs:complexContent>
+            </xs:extension>
+        </xs:complexContent>
     </xs:complexType>
 
     <xs:complexType name="localType">
@@ -534,41 +579,12 @@
         </xs:attribute>
     </xs:complexType>
 
-    <xs:complexType name="ldapAuthenticationType">
+    <xs:complexType name="baseLdapAuthType" abstract="true">
         <xs:annotation>
             <xs:documentation>
-                Definition to use LDAP as the user repository.
+                The base type used for LDAP authentication and authorization definitions.
             </xs:documentation>
         </xs:annotation>
-        <xs:choice>
-            <xs:element name="username-filter">
-                <xs:complexType>
-                    <xs:attribute name="attribute" type="xs:string" use="required">
-                        <xs:annotation>
-                            <xs:documentation>
-                                The name of the attribute to search for the user, this filter will then perform
-                                a simple search where the username entered by the user matches the attribute
-                                specified here.
-                            </xs:documentation>
-                        </xs:annotation>
-                    </xs:attribute>
-                </xs:complexType>
-            </xs:element>
-            <xs:element name="advanced-filter">
-                <xs:complexType>
-                    <xs:attribute name="filter" type="xs:string" use="required">
-                        <xs:annotation>
-                            <xs:documentation>
-                                The fully defined filter to be used to search for the user based on their entered
-                                user ID. The filter should contain a variable in the form {0} - this will be
-                                replaced with the username supplied by the user.
-                            </xs:documentation>
-                        </xs:annotation>
-                    </xs:attribute>
-                </xs:complexType>
-            </xs:element>
-        </xs:choice>
-
         <xs:attribute name="connection" type="xs:string" use="required">
             <xs:annotation>
                 <xs:documentation>
@@ -576,10 +592,118 @@
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="ldapAuthenticationType">
+        <xs:annotation>
+            <xs:documentation>
+                Definition to use LDAP as the user repository.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="baseLdapAuthType">
+                <xs:sequence>
+                    <xs:element name="cache" type="ldapCacheType" minOccurs="0" />
+                    <xs:choice>
+                        <xs:element name="username-filter">
+                            <xs:complexType>
+                                <xs:attribute name="attribute" type="xs:string" use="required">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The name of the attribute to search for the user, this filter will then perform
+                                            a simple search where the username entered by the user matches the attribute
+                                            specified here.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                            </xs:complexType>
+                        </xs:element>
+                        <xs:element name="advanced-filter">
+                            <xs:complexType>
+                                <xs:attribute name="filter" type="xs:string" use="required">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The fully defined filter to be used to search for the user based on their entered
+                                            user ID. The filter should contain a variable in the form {0} - this will be
+                                            replaced with the username supplied by the user.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                            </xs:complexType>
+                        </xs:element>
+                    </xs:choice>
+                </xs:sequence>
+                <xs:attribute name="base-dn" type="xs:string" use="required">
+                    <xs:annotation>
+                        <xs:documentation>
+                            The base distinguished name to commence the search for the user.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="recursive" type="xs:boolean" default="false">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Should the search be recursive.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="user-dn" type="xs:string" default="dn">
+                    <xs:annotation>
+                        <xs:documentation>
+                            The name of the attribute which is the users distinguished name.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="username-load" type="xs:string" use="optional">
+                    <xs:annotation>
+                        <xs:documentation>
+                            This attribute is independent of the filtering configuration, if this attribute is set then after
+                            the users entry in LDAP is identified this attribute will be read to discover the users actual username.
+
+                            This is optional but could be useful in a few scenarios e.g. authenticate with an e-mail address but be identified by a username,
+                            correcting the case of an entered username or even in the future ensuring consistency after a different
+                            authentication approach.
+                            
+                            Note: This value will become the username used for any subsequent group loading. 
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="allow-empty-passwords" type="xs:boolean" default="false">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Should users be allowed to supply an empty password? Some LDAP servers will
+                            allow an anonymous bind
+                            so an empty password could appear as a successful authentication
+                            even though no password was sent to verify.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="ldapAuthorizationType">
+        <xs:complexContent>
+            <xs:extension base="baseLdapAuthType">
+                <xs:sequence>                    
+                    <xs:element name="username-to-dn" type="ldapUserSearchType" minOccurs="0" />
+                    <xs:element name="group-search" type="ldapGroupSearchType" />
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="baseLdapSearchType" abstract="true">
+        <xs:annotation>
+            <xs:documentation>
+                Base type of common attributes used for
+                LDAP searches.
+            </xs:documentation>
+        </xs:annotation>
         <xs:attribute name="base-dn" type="xs:string" use="required">
             <xs:annotation>
                 <xs:documentation>
-                    The base distinguished name to commence the search for the user.
+                    The base distinguished name to commence the search.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -590,27 +714,230 @@
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
-        <xs:attribute name="user-dn" type="xs:string" default="dn">
+    </xs:complexType>
+
+    <xs:complexType name="ldapUserSearchType">
+        <xs:annotation>
+            <xs:documentation>
+                Search definition to locate a user from
+                the supplied username.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="cache" type="ldapCacheType" minOccurs="0" />
+            <xs:choice>
+                <xs:element name="username-is-dn" />
+                <xs:element name="username-filter">
+                    <xs:complexType>
+                        <xs:complexContent>
+                            <xs:extension base="baseLdapSearchType">
+                                <xs:attribute name="user-dn-attribute" type="xs:string" use="optional" default="dn">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The attribute on the user entry which is their distinguished name.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                                <xs:attribute name="attribute" type="xs:string" use="optional" default="uid">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The name of the attribute to search for the user, this filter will then perform a
+                                            simple search where the username entered by the user matches the attribute specified here.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                            </xs:extension>
+                        </xs:complexContent>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="advanced-filter">
+                    <xs:complexType>
+                        <xs:complexContent>
+                            <xs:extension base="baseLdapSearchType">
+                                <xs:attribute name="user-dn-attribute" type="xs:string" use="optional" default="dn">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The attribute on the user entry which is their distinguished name.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                                <xs:attribute name="filter" type="xs:string" use="required">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The fully defined filter to be used to search for the user based on their entered user
+                                            ID. The filter should contain a variable in
+                                            the form {0} - this will be replaced with the username
+                                            supplied by the user.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                            </xs:extension>
+                        </xs:complexContent>
+                    </xs:complexType>
+                </xs:element>
+            </xs:choice>
+        </xs:sequence>
+        <xs:attribute name="force" type="xs:boolean" default="false">
             <xs:annotation>
                 <xs:documentation>
-                    The name of the attribute which is the users distinguished name.
-                </xs:documentation>
-            </xs:annotation>
-        </xs:attribute>
-        <xs:attribute name="allow-empty-passwords" type="xs:boolean" default="false">
-            <xs:annotation>
-                <xs:documentation>
-                    Should users be allowed to supply an empty password?  Some LDAP servers will
-                    allow an anonymous bind so an empty password could appear as a successful authentication
-                    even though no password was sent to verify.
+                    If the username was already converted to a distinguished name during authentication this attribute forces
+                    the search to be repeated
+                    before loading group information.
+
+                    This would most likely be required if a different LDAP server
+                    was being used to load group information as was used for authentication.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
     </xs:complexType>
 
+    <xs:simpleType name="groupMode">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="SIMPLE" />
+            <xs:enumeration value="DISTINGUISHED_NAME" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="membershipFilterType">
+        <xs:attribute name="principal-attribute" type="xs:string" default="member">
+            <xs:annotation>
+                <xs:documentation>
+                    The attribute on the group entry that references the principal.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="ldapGroupSearchType">
+        <xs:sequence>
+            <xs:element name="cache" type="ldapCacheType" minOccurs="0" />
+            <xs:choice>
+                <xs:element name="group-to-principal">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Group search definition where an attribute on the group references the principal.
+                        </xs:documentation>
+                    </xs:annotation>
+                    <xs:complexType>
+                        <xs:complexContent>
+                            <xs:extension base="baseLdapSearchType">
+                                <xs:sequence>
+                                    <xs:element name="membership-filter" type="membershipFilterType" minOccurs="1" />
+                                </xs:sequence>
+                                <xs:attribute name="search-by" type="groupMode" default="DISTINGUISHED_NAME">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            Should searching use the simple name or distinguished name of the principal.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                            </xs:extension>
+                        </xs:complexContent>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="principal-to-group">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Group search definition where an attribute on the principal references the group.
+                        </xs:documentation>
+                    </xs:annotation>
+                    <xs:complexType>
+                        <xs:attribute name="group-attribute" type="xs:string" default="memberOf">
+                            <xs:annotation>
+                                <xs:documentation>
+                                    The name of the attribute on the principal that references the group.
+                                </xs:documentation>
+                            </xs:annotation>
+                        </xs:attribute>
+                    </xs:complexType>
+                </xs:element>
+            </xs:choice>
+        </xs:sequence>
+        <xs:attribute name="group-name" type="groupMode" use="optional" default="SIMPLE">
+            <xs:annotation>
+                <xs:documentation>
+                    Defines the form the name of the group should take, either it's simple name or it's complete
+                    distringuished name.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="iterative" type="xs:boolean" default="false">
+            <xs:annotation>
+                <xs:documentation>
+                    Should any group searching be iterative, i.e. should additional searches be performed to identify the
+                    groups that the groups are members of.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="group-dn-attribute" type="xs:string" default="dn">
+            <xs:annotation>
+                <xs:documentation>
+                    On the group entry which of it's attributes is it's distingushed name.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="group-name-attribute" type="xs:string" default="uid">
+            <xs:annotation>
+                <xs:documentation>
+                    On the group entry which of it's attributes is it's simple name.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+    
+    <xs:simpleType name="cacheType">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="by-search-time" />
+            <xs:enumeration value="by-access-time" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="ldapCacheType">
+        <xs:attribute name="type" type="cacheType" default="by-search-time">
+            <xs:annotation>
+                <xs:documentation>
+                    The type of cache, by-search-time and the entries are evicted based on search time and search order, by-access-time and
+                    the entires are evicted based on the time they were last accessed.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="eviction-time" type="xs:int" default="900">
+            <xs:annotation>
+                <xs:documentation>
+                    The time until an entry is evicted from the cache in seconds, a time of &lt;=0 means no eviction based
+                    on time.
+
+                    If items are not going to be evicted based on time then max-cache-size should be set otherwise the cache
+                    could grow without restriction.
+                    
+                    Note: The eviction time is handled on a best-efforts basis, during times of many concurrent authentications 
+                    there could be small delay before the evictions fire.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="cache-failures" type="xs:boolean" default="false">
+            <xs:annotation>
+                <xs:documentation>
+                    Should non IO failures be cached? e.g. should searches for a non-existant user be cached to avoid
+                    repeating the same search.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="max-cache-size" type="xs:int" default="0">
+            <xs:annotation>
+                <xs:documentation>
+                    The maximum number of items to hold in the cache before items are evicted, or &lt;=0 where the size of
+                    the cache is unlimited.
+
+                    This value should be higher than the anticipated cache size for current users otherwise items
+                    will be continually evicted.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
 
     <xs:complexType name="usersAuthenticationType">
-           <xs:annotation>
+        <xs:annotation>
             <xs:documentation>
                 A set of users
             </xs:documentation>
@@ -682,14 +1009,516 @@
                             of 'username : realm : password'.
                         </xs:documentation>
                     </xs:annotation>
-            </xs:attribute>
+                </xs:attribute>
             </xs:extension>
         </xs:complexContent>
     </xs:complexType>
 
+   <xs:complexType name="audit-log-formattersType">
+        <xs:annotation>
+            <xs:documentation>
+                Declaration of management operation audit logging formatters.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:choice minOccurs="1" maxOccurs="unbounded">
+            <xs:element name="json-formatter" type="json-audit-log-formatterType"/>
+        </xs:choice>
+   </xs:complexType>
+
+   <xs:complexType name="base-audit-log-formatterType">
+        <xs:annotation>
+            <xs:documentation>
+                Shared configuration for audit log formatters..
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="name" type="xs:string" use="required">
+            <xs:annotation>
+               <xs:documentation>
+                  The name of the formatter. Must be unique across all types of formatter
+                  (there is only the JSON formatter at present but more are planned for the
+                  future)
+               </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="include-date" type="xs:boolean" default="true">
+            <xs:annotation>
+               <xs:documentation>
+                  Whether or not to include the date in the formatted log record
+               </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="date-format" type="xs:string" default="yyyy-MM-dd HH:mm:ss">
+            <xs:annotation>
+               <xs:documentation>
+                  The date format to use as understood by {@link java.text.SimpleDateFormat}.
+                  Will be ignored if include-date="false".
+               </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="date-separator" type="xs:string" default=" - ">
+            <xs:annotation>
+               <xs:documentation>
+                  The separator between the date and the rest of the formatted log message.
+                  Will be ignored if include-date="false".
+               </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+   </xs:complexType>
+
+   <xs:complexType name="json-audit-log-formatterType">
+        <xs:annotation>
+            <xs:documentation>
+                Configuration of a JSON formatter for the audit log.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="base-audit-log-formatterType">
+    	        <xs:attribute name="compact" type="xs:boolean" default="false">
+		            <xs:annotation>
+		               <xs:documentation>
+		                   If true will format the JSON on one line. There may still be
+		                   values containing new lines, so if having the whole record on
+		                   one line is important, set escape-new-line or escape-control-characters to true.
+		               </xs:documentation>
+		            </xs:annotation>
+		        </xs:attribute>
+              <xs:attribute name="escape-new-line" type="xs:boolean" default="false">
+                  <xs:annotation>
+                     <xs:documentation>
+                         If true will escape all new lines with the ascii code in octal,
+                         e.g. #012.
+                     </xs:documentation>
+                  </xs:annotation>
+              </xs:attribute>
+              <xs:attribute name="escape-control-characters" type="xs:boolean" default="false">
+                  <xs:annotation>
+                     <xs:documentation>
+                         If true will escape all control characters (ascii entries with a decimal
+                         value less than 32) with the ascii code in octal, e.g.'\n\ becomes '#012'.
+                         If this is true, it will override escape-new-line="false"
+                     </xs:documentation>
+                  </xs:annotation>
+              </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+   </xs:complexType>
+
+    <xs:complexType name="audit-log-handlersType">
+        <xs:annotation>
+            <xs:documentation>
+                Declaration of management operation audit logging handlers.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:choice minOccurs="1" maxOccurs="unbounded">
+            <xs:element name="file-handler" type="file-audit-log-handlerType"/>
+            <xs:element name="syslog-handler" type="syslog-audit-log-handlerType"/>
+        </xs:choice>
+    </xs:complexType>
+
+    <xs:complexType name="base-audit-log-handlerType">
+        <xs:annotation>
+            <xs:documentation>
+                Common configuration of a handler for the audit log.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="name" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation>
+                    The name of the handler. The name must be unique across all types of handler.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="formatter" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation>
+                    The name of the formatter to use for the handler.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="max-failure-count" type="xs:string" default="10">
+            <xs:annotation>
+                <xs:documentation>
+                    The number of logging failures before this handler is disabled.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="file-audit-log-handlerType">
+        <xs:annotation>
+            <xs:documentation>
+                Configuration of a simple file handler for the audit log. This writes to a local file.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="base-audit-log-handlerType">
+			        <xs:attribute name="path" type="xs:string" use="required">
+			            <xs:annotation>
+			                <xs:documentation>
+			                    The path of the audit log.
+			                </xs:documentation>
+			            </xs:annotation>
+			        </xs:attribute>
+			        <xs:attribute name="relative-to" use="optional" type="xs:string">
+			            <xs:annotation>
+			                <xs:documentation>
+			                    The name of another previously named path, or of one of the
+			                    standard paths provided by the system. If 'relative-to' is
+			                    provided, the value of the 'path' attribute is treated as
+			                    relative to the path specified by this attribute.
+			                </xs:documentation>
+			            </xs:annotation>
+			        </xs:attribute>
+			   </xs:extension>
+			</xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="syslog-audit-log-handlerType">
+        <xs:annotation>
+            <xs:documentation>
+                Configuration of a syslog file handler for the audit log on a server. This writes to syslog server.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="base-audit-log-handlerType">
+                <xs:choice minOccurs="1">
+                    <xs:annotation>
+                        <xs:documentation>
+                            The configuration of the protocol to use communication with the syslog server. See your
+                            syslog provider's documentation for configuration options.
+                        </xs:documentation>
+                    </xs:annotation>
+                    <xs:element name="udp" type="udp-audit-log-protocolType">
+                    </xs:element>
+                    <xs:element name="tcp" type="tcp-audit-log-protocolType">
+                    </xs:element>
+                    <xs:element name="tls" type="tls-audit-log-protocolType">
+                    </xs:element>
+                </xs:choice>
+                <xs:attribute name="syslog-format" default="RFC5424">
+		            <xs:annotation>
+		                <xs:documentation>
+		                    The format to use for the syslog messages. See your syslog provider's documentation for what is supported.
+		                </xs:documentation>
+		            </xs:annotation>
+		            <xs:simpleType>
+		                <xs:restriction base="xs:token">
+		                    <xs:enumeration value="RFC5424">
+		                        <xs:annotation>
+		                            <xs:documentation>Format the syslog data according to the RFC-5424 standard</xs:documentation>
+		                        </xs:annotation>
+		                    </xs:enumeration>
+		                    <xs:enumeration value="RFC3164">
+		                        <xs:annotation>
+		                            <xs:documentation>Format the syslog data according to the RFC-3164 standard</xs:documentation>
+		                        </xs:annotation>
+		                    </xs:enumeration>
+		                </xs:restriction>
+		            </xs:simpleType>
+		        </xs:attribute>
+		        <xs:attribute name="max-length" type="xs:int">
+		          <xs:annotation>
+		             <xs:documentation>
+		                The maximum length in bytes a log message, including the header, is allowed to be. If undefined, it will default to 1024 bytes if the syslog-format is RFC3164, or 2048 bytes if the syslog-format is RFC5424.
+		             </xs:documentation>
+		          </xs:annotation>
+		        </xs:attribute>
+              <xs:attribute name="truncate" type="xs:boolean" default="true">
+                <xs:annotation>
+                   <xs:documentation>
+                      Whether or not a message, including the header, should truncate the message if the length in bytes is greater than the maximum length. If set to false messages will be split and sent with the same header values.
+                   </xs:documentation>
+                </xs:annotation>
+              </xs:attribute>
+              <xs:attribute name="facility" default="USER_LEVEL">
+                <xs:annotation>
+                   <xs:documentation>
+                      The facility to use for syslog logging as defined in section 6.2.1 of RFC-5424, and section 4.1.1 of RFC-3164.
+                      The numerical values in the enumeration entries, is the numerical value as defined in the RFC.
+                   </xs:documentation>
+                </xs:annotation>
+                <xs:simpleType>                
+	                <xs:restriction base="xs:token">
+		                <xs:enumeration value="KERNEL">
+			                <xs:annotation>
+			                   <xs:documentation>0</xs:documentation>
+			                </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="USER_LEVEL">
+                         <xs:annotation>
+                            <xs:documentation>1</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="MAIL_SYSTEM">
+                         <xs:annotation>
+                            <xs:documentation>2</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="SYSTEM_DAEMONS">
+                         <xs:annotation>
+                            <xs:documentation>3</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="SECURITY">
+                         <xs:annotation>
+                            <xs:documentation>4</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="SYSLOGD">
+                         <xs:annotation>
+                            <xs:documentation>5</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LINE_PRINTER">
+                         <xs:annotation>
+                            <xs:documentation>6</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="NETWORK_NEWS">
+                         <xs:annotation>
+                            <xs:documentation>7</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="UUCP">
+                         <xs:annotation>
+                            <xs:documentation>8</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="CLOCK_DAEMON">
+                         <xs:annotation>
+                            <xs:documentation>9</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="SECURITY2">
+                         <xs:annotation>
+                            <xs:documentation>10</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="FTP_DAEMON">
+                         <xs:annotation>
+                            <xs:documentation>11</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="NTP">
+                         <xs:annotation>
+                            <xs:documentation>12</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOG_AUDIT">
+                         <xs:annotation>
+                            <xs:documentation>13</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOG_ALERT">
+                         <xs:annotation>
+                            <xs:documentation>14</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="CLOCK_DAEMON2">
+                         <xs:annotation>
+                            <xs:documentation>15</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOCAL_USE_0">
+                         <xs:annotation>
+                            <xs:documentation>16</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOCAL_USE_1">
+                         <xs:annotation>
+                            <xs:documentation>17</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOCAL_USE_2">
+                         <xs:annotation>
+                            <xs:documentation>18</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOCAL_USE_3">
+                         <xs:annotation>
+                            <xs:documentation>19</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOCAL_USE_4">
+                         <xs:annotation>
+                            <xs:documentation>20</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOCAL_USE_5">
+                         <xs:annotation>
+                            <xs:documentation>21</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOCAL_USE_6">
+                         <xs:annotation>
+                            <xs:documentation>22</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+		                <xs:enumeration value="LOCAL_USE_7">
+                         <xs:annotation>
+                            <xs:documentation>23</xs:documentation>
+                         </xs:annotation>
+		                </xs:enumeration>
+	                </xs:restriction>
+                </xs:simpleType>
+              </xs:attribute>
+              <xs:attribute name="app-name" type="xs:string">
+                <xs:annotation>
+                   <xs:documentation>
+                      The application name to add to the syslog records as defined in section 6.2.5 of RFC-5424. If not specified it will default to the name of the product.
+                   </xs:documentation>
+                </xs:annotation>
+              </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="base-audit-log-protocolType">
+        <xs:attribute name="host" default="localhost">
+            <xs:annotation>
+                <xs:documentation>
+                    The host of the syslog server.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="port" default="514">
+            <xs:annotation>
+                <xs:documentation>
+                    The port of the syslog server.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="udp-audit-log-protocolType">
+        <xs:annotation>
+            <xs:documentation>Configure udp as the protocol for communicating with the syslog server</xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="base-audit-log-protocolType"/>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="tcp-audit-log-protocolType">
+        <xs:annotation>
+            <xs:documentation>Configure tcp as the protocol for communicating with the syslog server</xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="base-audit-log-protocolType">
+                <xs:attribute name="message-transfer" default="NON_TRANSPARENT_FRAMING">
+                    <xs:annotation>
+                        <xs:documentation>
+                            The message transfer setting as described in section 3.4 of RFC-6587. See your syslog provider's
+                            documentation for what is supported
+                        </xs:documentation>
+                    </xs:annotation>
+                    <xs:simpleType>
+                        <xs:restriction base="xs:token">
+                            <xs:enumeration value="OCTET_COUNTING">
+                                <xs:annotation>
+                                    <xs:documentation>
+                                        Use the octet counting format for message transfer as described in section 3.4.1 of RFC-6587.
+                                    </xs:documentation>
+                                </xs:annotation>
+                            </xs:enumeration>
+                            <xs:enumeration value="NON_TRANSPARENT_FRAMING">
+                                <xs:annotation>
+                                    <xs:documentation>
+                                        Use the non-transparent-framing format for message transfer as described in section 3.4.1 of RFC-6587.
+                                    </xs:documentation>
+                                </xs:annotation>
+                            </xs:enumeration>
+                        </xs:restriction>
+                    </xs:simpleType>
+                </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="tls-audit-log-protocolType">
+        <xs:annotation>
+            <xs:documentation>Configure tls as the protocol for communicating with the syslog server</xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="tcp-audit-log-protocolType">
+                <xs:sequence>
+                    <xs:element name="truststore" type="keyStoreType" minOccurs="0">
+                        <xs:annotation>
+                            <xs:documentation>
+                                Configuration of a keystore to use to create a trust manager to verify the server
+                                certificate for encrypted comminications. If the server certificate is signed off by a
+                                signing authority, tls can be used without a truststore.
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:element>
+                    <xs:element name="client-certificate-store" type="extendedKeyStoreType" minOccurs="0">
+                        <xs:annotation>
+                            <xs:documentation>
+                                Configuration of a keystore containing a client certificate and a private key, e.g. in
+                                PKCS12 format. This turns on authenticating the clients against the syslog server.
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:element>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="audit-log-loggerType">
+        <xs:annotation>
+            <xs:documentation>
+                Declaration of management operation audit logging configuration coming from the model controller core.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="handlers" type="audit-log-handlers-refType"/>
+        </xs:choice>
+        <xs:attribute name="log-boot" type="xs:boolean" default="false">
+            <xs:annotation>
+                <xs:documentation>
+                    Whether operations should be logged on boot.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="log-read-only" type="xs:boolean" default="false">
+            <xs:annotation>
+                <xs:documentation>
+                    Whether operations that do not modify the configuration or any runtime services should be logged.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="enabled" type="xs:boolean" default="true">
+            <xs:annotation>
+                <xs:documentation>
+                    Whether audit logging is enabled.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="audit-log-handlers-refType">
+        <xs:annotation>
+            <xs:documentation>
+                References to audit-log-handlers defined in the audit-log-handlers section
+            </xs:documentation>
+        </xs:annotation>
+        <xs:choice minOccurs="0">
+            <xs:element name="handler" type="audit-log-handler-refType" minOccurs="0"/>
+        </xs:choice>
+    </xs:complexType>
+
+    <xs:complexType name="audit-log-handler-refType">
+        <xs:annotation>
+            <xs:documentation>
+                A reference to an audit-log-handler defined in the audit-log-appenders section
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+
     <xs:complexType name="host-management-interfacesType">
         <xs:sequence>
-            <xs:element name="native-interface" type="host-native-management-interfaceType"/>
+            <xs:element name="native-interface" type="host-native-management-interfaceType" />
             <xs:element name="http-interface" type="host-http-management-interfaceType" minOccurs="0"/>
         </xs:sequence>
     </xs:complexType>
@@ -769,6 +1598,7 @@
                     <xs:element name="socket" type="http-management-socketType"/>
                 </xs:sequence>
                 <xs:attribute name="console-enabled" type="xs:boolean" use="optional" default="true"/>
+                <xs:attribute name="http-upgrade-enabled" type="xs:boolean" use="optional" default="true"/>
             </xs:extension>
         </xs:complexContent>
     </xs:complexType>
@@ -880,6 +1710,7 @@
                     <xs:element name="socket-binding" type="http-management-socket-binding-refType"/>
                 </xs:choice>
                 <xs:attribute name="console-enabled" type="xs:boolean" use="optional" default="true"/>
+                <xs:attribute name="http-upgrade-enabled" type="xs:boolean" use="optional" default="true"/>
             </xs:extension>
         </xs:complexContent>
     </xs:complexType>
@@ -951,13 +1782,73 @@
         <xs:attribute name="username" type="xs:string" use="optional" />
         <xs:attribute name="ignore-unused-configuration" type="xs:boolean" default="false">
             <xs:annotation>
-               <xs:documentation>
-                   Set to true to instruct the master Host Controller to automatically not forward configuration and
-                   operations for profiles, socket binding groups and server groups which do not affect our servers.
-               </xs:documentation>
+                <xs:documentation>
+                    Set to true to instruct the master Host Controller to automatically not forward configuration and
+                    operations for profiles, socket binding groups and server groups which do not affect our servers.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="admin-only-policy" type="admin-only-policyType" default="allow-no-config">
+            <xs:annotation>
+                <xs:documentation>
+                    <![CDATA[
+                    Policy options for how a slave host controller started in 'admin-only' mode and
+                    without the use of the '--cached-dc' startup option should deal with the absence
+                    of a local copy of the domain-wide configuration.
+
+                    This question is particularly relevant when fine grained management operation
+                    authorization scheme is used, as the configuration for management authorization
+                    in a managed domain comes from the domain wide configuration.
+                        ]]>
+                </xs:documentation>
             </xs:annotation>
         </xs:attribute>
     </xs:complexType>
+
+    <xs:simpleType name="admin-only-policyType">
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="allow-no-config">
+                <xs:annotation>
+                    <xs:documentation>
+                        <![CDATA[
+                        Allow the host to function without any domain wide configuration.
+
+                        The management authorization configuration system (which is ordinarily
+                        configured according to policies set in the domain wide configuration)
+                        will use default settings, whereby user who can authenticate to the security
+                        realm associated with the management interface to which they connect
+                        will have all permissions.
+                        ]]>
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="fetch-from-master">
+                <xs:annotation>
+                    <xs:documentation>
+                        <![CDATA[
+                        Contact the master host controller to pull down the current domain wide configuration,
+                        but do not actually register with the master as a member of the domain. If the master
+                        cannot be reached, the start of the host controller will fail.
+                        ]]>
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="require-local-config">
+                <xs:annotation>
+                    <xs:documentation>
+                        <![CDATA[
+                        Require the presence of a locally cached copy of the domain wide configuration
+                        policy. If not present, the start of the host controller will fail.
+
+                        The '--cached-dc' startup option is used to indicate to the host controller
+                        process that a locally cached copy of the domain wide configuration
+                        policy should be used.
+                        ]]>
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:enumeration>
+        </xs:restriction>
+    </xs:simpleType>
 
     <xs:complexType name="ignored-resourcesType">
         <xs:annotation>
@@ -973,8 +1864,8 @@
                 Supports the following attributes:
 
                 type -- the type of resource (e.g. 'profile' or 'socket-binding-group') certain instances of which
-                        should be ignored. The value corresponds to the 'key' portion of the first element in the
-                        resource's address (e.g. 'profile' in the address /profile=ha/subsystem=web)
+                should be ignored. The value corresponds to the 'key' portion of the first element in the
+                resource's address (e.g. 'profile' in the address /profile=ha/subsystem=web)
 
                 wildcard -- if 'true', all resources of the given type should be ignored.
 
@@ -1109,7 +2000,7 @@
     <xs:complexType name="server-socket-bindingsType">
         <xs:annotation>
             <xs:documentation>
-            <![CDATA[
+                <![CDATA[
                 Server-specific overrides to the default socket binding configuration inherited from the server group.
             ]]>
             </xs:documentation>
@@ -1117,7 +2008,7 @@
         <xs:attribute name="socket-binding-group" type="xs:string" use="optional">
             <xs:annotation>
                 <xs:documentation>
-                <![CDATA[
+                    <![CDATA[
                     The socket binding group to use for the server. If undefined, the socket binding group
                     specified for the server group is used.
                 ]]>
@@ -1127,7 +2018,7 @@
         <xs:attribute name="port-offset" type="xs:int" default="0" use="optional">
             <xs:annotation>
                 <xs:documentation>
-                <![CDATA[
+                    <![CDATA[
                     Increment to apply to the base port values defined in the
                     referenced socket binding group to derive the values to use on this
                     server.
@@ -1471,15 +2362,15 @@
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
-	    <xs:attribute name="port-offset" type="xs:int" use="optional" default="0">
-	        <xs:annotation>
+        <xs:attribute name="port-offset" type="xs:int" use="optional" default="0">
+            <xs:annotation>
                 <xs:documentation>
-	                    Increment to apply to the base port values defined in the
-	                    socket group to derive the values to use on this
-	                    server.
-	            </xs:documentation>
-	        </xs:annotation>
-	    </xs:attribute>
+                    Increment to apply to the base port values defined in the
+                    socket group to derive the values to use on this
+                    server.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
     </xs:complexType>
 
     <xs:complexType name="socket-bindingType">
@@ -1550,13 +2441,13 @@
 
     <xs:complexType name="socket-binding-client-mappingType">
         <xs:annotation>
-                <xs:documentation>
-                    Type definition for a client mapping on a socket binding. A client
-                    mapping specifies how external clients should connect to this
-                    socket's port, provided that the client's outbound interface
-                    match the specified source network value.
-                </xs:documentation>
-            </xs:annotation>
+            <xs:documentation>
+                Type definition for a client mapping on a socket binding. A client
+                mapping specifies how external clients should connect to this
+                socket's port, provided that the client's outbound interface
+                match the specified source network value.
+            </xs:documentation>
+        </xs:annotation>
         <xs:attribute name="source-network" type="xs:string" use="optional">
             <xs:annotation>
                 <xs:documentation>
@@ -1931,6 +2822,11 @@
             <xs:documentation>
                 Empty element indicating that sockets using this interface
                 should be bound to the IPv6 wildcard address (::).
+
+                Deprecated. The name of this type implies sockets will be
+                reachable only via IPv6 addresses and not via IPv4, but this
+                is not the case. Since using any-addressType provides the same effect,
+                this any-ipv6-addressType will be removed in a future release.
             </xs:documentation>
         </xs:annotation>
     </xs:complexType>
@@ -1940,6 +2836,13 @@
             <xs:documentation>
                 Empty element indicating that sockets using this interface
                 should be bound to the IPv4 wildcard address (0.0.0.0).
+
+                Deprecated. In the absence of -Djava.net.preferIPv4Stack=true,
+                the JVM cannot be instructed to bind a socket to all IPv4 addresses,
+                but only to IPv4 addresses, so the intended semantic cannot be
+                obtained via this setting alone. Since using any-addressType
+                and setting -Djava.net.preferIPv4Stack=true provides the same effect,
+                this any-ipv4-addressType will be removed in a future release.
             </xs:documentation>
         </xs:annotation>
     </xs:complexType>
@@ -2038,20 +2941,20 @@
                 <xs:attribute name="name" type="xs:string" use="required">
                     <xs:annotation>
                         <xs:documentation>
-                        The name of the path. Cannot be one of the standard fixed paths
-                        provided by the system:
+                            The name of the path. Cannot be one of the standard fixed paths
+                            provided by the system:
 
-                        jboss.home.dir - the root directory of the JBoss AS distribution
-                        user.home - user's home directory
-                        user.dir - user's current working directory
-                        java.home - java installation directory
-                        jboss.server.base.dir - root directory for an individual server
-                                                instance
+                            jboss.home.dir - the root directory of the JBoss AS distribution
+                            user.home - user's home directory
+                            user.dir - user's current working directory
+                            java.home - java installation directory
+                            jboss.server.base.dir - root directory for an individual server
+                            instance
 
-                        Note that the system provides other standard paths that can be
-                        overridden by declaring them in the configuration file. See
-                        the 'relative-to' attribute documentation for a complete
-                        list of standard paths.
+                            Note that the system provides other standard paths that can be
+                            overridden by declaring them in the configuration file. See
+                            the 'relative-to' attribute documentation for a complete
+                            list of standard paths.
                         </xs:documentation>
                     </xs:annotation>
                 </xs:attribute>
@@ -2063,21 +2966,21 @@
         <xs:attribute name="path">
             <xs:annotation>
                 <xs:documentation>
-                The actual filesystem path. Treated as an absolute path, unless the
-                'relative-to' attribute is specified, in which case the value
-                is treated as relative to that path.
+                    The actual filesystem path. Treated as an absolute path, unless the
+                    'relative-to' attribute is specified, in which case the value
+                    is treated as relative to that path.
 
-                If treated as an absolute path, the actual runtime pathname specified
-                by the value of this attribute will be determined as follows:
+                    If treated as an absolute path, the actual runtime pathname specified
+                    by the value of this attribute will be determined as follows:
 
-                If this value is already absolute, then the value is directly
-                used.  Otherwise the runtime pathname is resolved in a
-                system-dependent way.  On UNIX systems, a relative pathname is
-                made absolute by resolving it against the current user directory.
-                On Microsoft Windows systems, a relative pathname is made absolute
-                by resolving it against the current directory of the drive named by the
-                pathname, if any; if not, it is resolved against the current user
-                directory.
+                    If this value is already absolute, then the value is directly
+                    used.  Otherwise the runtime pathname is resolved in a
+                    system-dependent way.  On UNIX systems, a relative pathname is
+                    made absolute by resolving it against the current user directory.
+                    On Microsoft Windows systems, a relative pathname is made absolute
+                    by resolving it against the current directory of the drive named by the
+                    pathname, if any; if not, it is resolved against the current user
+                    directory.
                 </xs:documentation>
             </xs:annotation>
             <xs:simpleType>
@@ -2089,29 +2992,29 @@
         <xs:attribute name="relative-to" type="xs:string" use="optional">
             <xs:annotation>
                 <xs:documentation>
-                The name of another previously named path, or of one of the
-                standard paths provided by the system. If 'relative-to' is
-                provided, the value of the 'path' attribute is treated as
-                relative to the path specified by this attribute. The standard
-                paths provided by the system include:
+                    The name of another previously named path, or of one of the
+                    standard paths provided by the system. If 'relative-to' is
+                    provided, the value of the 'path' attribute is treated as
+                    relative to the path specified by this attribute. The standard
+                    paths provided by the system include:
 
-                jboss.home.dir - the root directory of the JBoss AS distribution
-                user.home - user's home directory
-                user.dir - user's current working directory
-                java.home - java installation directory
-                jboss.server.base.dir - root directory for an individual server
-                                        instance
-                jboss.server.config.dir - directory in which server configuration
-                                          files are stored.
-                jboss.server.data.dir - directory the server will use for persistent
-                                        data file storage
-                jboss.server.log.dir - directory the server will use for
-                                       log file storage
-                jboss.server.temp.dir - directory the server will use for
-                                       temporary file storage
-                jboss.domain.servers.dir - directory under which a host controller
-                                           will create the working area for
-                                           individual server instances
+                    jboss.home.dir - the root directory of the JBoss AS distribution
+                    user.home - user's home directory
+                    user.dir - user's current working directory
+                    java.home - java installation directory
+                    jboss.server.base.dir - root directory for an individual server
+                    instance
+                    jboss.server.config.dir - directory in which server configuration
+                    files are stored.
+                    jboss.server.data.dir - directory the server will use for persistent
+                    data file storage
+                    jboss.server.log.dir - directory the server will use for
+                    log file storage
+                    jboss.server.temp.dir - directory the server will use for
+                    temporary file storage
+                    jboss.domain.servers.dir - directory under which a host controller
+                    will create the working area for
+                    individual server instances
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -2137,43 +3040,43 @@
         <xs:attribute name="name" type="xs:string" use="required">
             <xs:annotation>
                 <xs:documentation>
-                The name of the path. Cannot be one of the standard fixed paths
-                provided by the system:
+                    The name of the path. Cannot be one of the standard fixed paths
+                    provided by the system:
 
-                jboss.home.dir - the root directory of the JBoss AS distribution
-                user.home - user's home directory
-                user.dir - user's current working directory
-                java.home - java installation directory
-                jboss.server.base.dir - root directory for an individual server
-                                        instance
+                    jboss.home.dir - the root directory of the JBoss AS distribution
+                    user.home - user's home directory
+                    user.dir - user's current working directory
+                    java.home - java installation directory
+                    jboss.server.base.dir - root directory for an individual server
+                    instance
 
-                Note that the system provides other standard paths that can be
-                overridden by declaring them in the configuration file. See
-                the 'relative-to' attribute documentation for a complete
-                list of standard paths.
+                    Note that the system provides other standard paths that can be
+                    overridden by declaring them in the configuration file. See
+                    the 'relative-to' attribute documentation for a complete
+                    list of standard paths.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
         <xs:attribute name="path" use="required">
             <xs:annotation>
                 <xs:documentation>
-                The actual filesystem path. Treated as an absolute path, unless the
-                'relative-to' attribute is specified, in which case the value
-                is treated as relative to that path.
+                    The actual filesystem path. Treated as an absolute path, unless the
+                    'relative-to' attribute is specified, in which case the value
+                    is treated as relative to that path.
 
-                If treated as an absolute path, the actual runtime pathname specified
-                by the value of this attribute will be determined as follows:
+                    If treated as an absolute path, the actual runtime pathname specified
+                    by the value of this attribute will be determined as follows:
 
-                If this value is already absolute, then the value is directly
-                used.  Otherwise the runtime pathname is resolved in a
-                system-dependent way.  On UNIX systems, a relative pathname is
-                made absolute by resolving it against the current user directory.
-                On Microsoft Windows systems, a relative pathname is made absolute
-                by resolving it against the current directory of the drive named by the
-                pathname, if any; if not, it is resolved against the current user
-                directory.
+                    If this value is already absolute, then the value is directly
+                    used.  Otherwise the runtime pathname is resolved in a
+                    system-dependent way.  On UNIX systems, a relative pathname is
+                    made absolute by resolving it against the current user directory.
+                    On Microsoft Windows systems, a relative pathname is made absolute
+                    by resolving it against the current directory of the drive named by the
+                    pathname, if any; if not, it is resolved against the current user
+                    directory.
 
-                Note relative path declarations have to use '/' as file separator.
+                    Note relative path declarations have to use '/' as file separator.
                 </xs:documentation>
             </xs:annotation>
             <xs:simpleType>
@@ -2185,29 +3088,29 @@
         <xs:attribute name="relative-to" type="xs:string" use="optional">
             <xs:annotation>
                 <xs:documentation>
-                The name of another previously named path, or of one of the
-                standard paths provided by the system. If 'relative-to' is
-                provided, the value of the 'path' attribute is treated as
-                relative to the path specified by this attribute. The standard
-                paths provided by the system include:
+                    The name of another previously named path, or of one of the
+                    standard paths provided by the system. If 'relative-to' is
+                    provided, the value of the 'path' attribute is treated as
+                    relative to the path specified by this attribute. The standard
+                    paths provided by the system include:
 
-                jboss.home.dir - the root directory of the JBoss AS distribution
-                user.home - user's home directory
-                user.dir - user's current working directory
-                java.home - java installation directory
-                jboss.server.base.dir - root directory for an individual server
-                                        instance
-                jboss.server.config.dir - directory in which server configuration
-                                          files are stored.
-                jboss.server.data.dir - directory the server will use for persistent
-                                        data file storage
-                jboss.server.log.dir - directory the server will use for
-                                       log file storage
-                jboss.server.temp.dir - directory the server will use for
-                                       temporary file storage
-                jboss.domain.servers.dir - directory under which a host controller
-                                           will create the working area for
-                                           individual server instances
+                    jboss.home.dir - the root directory of the JBoss AS distribution
+                    user.home - user's home directory
+                    user.dir - user's current working directory
+                    java.home - java installation directory
+                    jboss.server.base.dir - root directory for an individual server
+                    instance
+                    jboss.server.config.dir - directory in which server configuration
+                    files are stored.
+                    jboss.server.data.dir - directory the server will use for persistent
+                    data file storage
+                    jboss.server.log.dir - directory the server will use for
+                    log file storage
+                    jboss.server.temp.dir - directory the server will use for
+                    temporary file storage
+                    jboss.domain.servers.dir - directory under which a host controller
+                    will create the working area for
+                    individual server instances
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -2238,9 +3141,9 @@
             <xs:simpleType>
                 <xs:restriction base="xs:token">
                     <xs:enumeration value="SUN">
-			            <xs:annotation>
-			                <xs:documentation>Allows the full set of JVM options to be set via the jvm schema elements</xs:documentation>
-			            </xs:annotation>
+                        <xs:annotation>
+                            <xs:documentation>Allows the full set of JVM options to be set via the jvm schema elements</xs:documentation>
+                        </xs:annotation>
                     </xs:enumeration>
                     <xs:enumeration value="IBM">
                         <xs:annotation>
@@ -2361,19 +3264,19 @@
         </xs:complexContent>
     </xs:complexType>
 
-   <xs:complexType name="vaultType">
-      <xs:annotation>
-         <xs:documentation>
-               <![CDATA[
+    <xs:complexType name="vaultType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
                     Vault Configuration.
                 ]]>
-         </xs:documentation>
-      </xs:annotation>
-      <xs:sequence>
-          <xs:element name="vault-option" type="propertyType" minOccurs="0" maxOccurs="unbounded"/>
-      </xs:sequence>
-      <xs:attribute name="code" type="xs:string" use="optional"/>
-   </xs:complexType>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="vault-option" type="propertyType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="code" type="xs:string" use="optional"/>
+    </xs:complexType>
 
     <xs:complexType name="management-client-contentType">
         <xs:annotation>
@@ -2470,5 +3373,452 @@
         <xs:attribute name="name" type="xs:string" use="required"/>
     </xs:complexType>
 
+    <xs:complexType name="domain-access-controlType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Contains the central access control configuration for a domain.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="server-group-scoped-roles" type="server-group-scoped-rolesType" minOccurs="0"/>
+            <xs:element name="host-scoped-roles" type="host-scoped-rolesType" minOccurs="0"/>
+            <xs:element name="role-mapping" type="role-mappingType" minOccurs="0"/>
+            <xs:element name="constraints" type="constraintsType" minOccurs="0"/>
+        </xs:sequence>
+        <xs:attribute name="provider" type="access-control-providerType" use="optional" default="simple"/>
+        <xs:attribute name="permission-combination-policy" type="permission-combination-policyType" use="optional" default="permissive"/>
+    </xs:complexType>
 
+    <xs:simpleType name="access-control-providerType">
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="simple">
+                <xs:annotation>
+                    <xs:documentation>
+                        <![CDATA[
+                        Simple access control implementation that gives all permissions to any authenticated
+                        user.
+                        ]]>
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="rbac">
+                <xs:annotation>
+                    <xs:documentation>
+                        <![CDATA[
+                        WildFly's standard Role Based Access Control implementation.
+                        ]]>
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:enumeration>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="permission-combination-policyType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                  The policy for combining access control permissions when the configuration grants the user
+                  more than one type of permission for a given action. For example, in the standard WildFly role based
+                  access control system, a user may map to more than one role. This attribute would control how the permissions
+                   associated with those roles should be combined to make access control decisions.
+                        ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:token">
+            <xs:enumeration value="permissive">
+                <xs:annotation>
+                    <xs:documentation>
+                        <![CDATA[
+                        If multiple permissions for the same action exist, if any of them allow the action,
+                        the action is allowed.
+                        ]]>
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="rejecting">
+                <xs:annotation>
+                    <xs:documentation>
+                        <![CDATA[
+                        If multiple permissions for the same action exist an exception should be thrown and the action
+                        should not be allowed. This value indicates that creating multiple permissions (e.g. by
+                        mapping a user to multiple roles) should be treated as a configuration error.
+                        ]]>
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:enumeration>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="server-access-controlType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Contains the access control configuration for a standalone server.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="role-mapping" type="role-mappingType" minOccurs="0"/>
+            <xs:element name="constraints" type="constraintsType" minOccurs="0"/>
+        </xs:sequence>
+        <xs:attribute name="provider" type="access-control-providerType" use="optional" default="simple"/>
+    </xs:complexType>
+
+    <xs:complexType name="role-mappingType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                    Contains the mapping of authenticated users to roles.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="role" type="roleType" minOccurs="0" maxOccurs="unbounded" />
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="roleType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                    An individual role definition.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="include" type="include-excludeType" minOccurs="0"/>
+            <xs:element name="exclude" type="include-excludeType" minOccurs="0"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation>
+                    <![CDATA[
+                        The name of the role, this should either be one of the standard roles or a scoped role.
+
+                        A user is added to a role if any of the following are true: -
+                          1 - The user is a member of a group listed in the includes element.
+                          2 - The user is explicitly listed in the includes element.
+                        AND neither of the following are true: -
+                          1 - The user is a member of a group listed in the excludes element.
+                          2 - The user is explicitly listed in the groups element.
+
+                        i.e. Any excludes definition takes priority over any includes definition.
+                    ]]>
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="include-all" type="xs:boolean" use="optional" default="false">
+            <xs:annotation>
+                <xs:documentation>
+                    <![CDATA[
+                        If set to true all authenticated users will be granted this role provided that they
+                        have not been matched to the exclude list.
+                    ]]>
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="include-excludeType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                    A list of users or groups to be included/excluded from the role containing this type.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="user" type="principalType" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="group" type="principalType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="principalType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                  Representation of a single principal to indicate role assignment.
+
+                  If the realm attribute is specified then the realm used to authenticated the user
+                  will also be taken into account when performing the comparison.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="alias" type="xs:string" use="optional">
+            <xs:annotation>
+                <xs:documentation>
+                    <![CDATA[
+                        If you are editing the XML configuration directly you do not need to be adding
+                        this attribute and in general you should not be adding this attribute.
+
+                        When the management tools are used to add include and exclude definitions for
+                        groups and users the name used in the address is an arbitrary String, this attribute
+                        is used when non-standard forms of the address are used so that it can be persisted
+                        and the model will be consistent when it is reloaded.
+
+                        But as in the first sentence, if you are questioning if you should use this attribute
+                        yourself - DON'T.
+                    ]]>
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="realm" type="xs:string" use="optional">
+            <xs:annotation>
+                <xs:documentation>
+                    <![CDATA[
+                        The name of the realm the user used to authenticate.
+                    ]]>
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="name" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation>
+                    <![CDATA[
+                        The name of the principal.
+                    ]]>
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="server-group-scoped-rolesType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Roles scoped to a given set of server groups
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:choice>
+            <xs:element name="role" type="server-group-scoped-roleType" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:choice>
+    </xs:complexType>
+
+    <xs:complexType name="host-scoped-rolesType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Roles scoped to a given set of hosts
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:choice>
+            <xs:element name="role" type="host-scoped-roleType" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:choice>
+    </xs:complexType>
+
+    <xs:complexType name="base-scoped-roleType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Basic attributes of a scoped-role.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="base-role" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation>
+                    <![CDATA[
+                   The name of the standard role upon which the scoped role is based.
+                ]]>
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="server-group-scoped-roleType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   A role scoped to a given set of server groups
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="base-scoped-roleType">
+                <xs:choice>
+                    <xs:element name="server-group" type="namedType" minOccurs="1" maxOccurs="unbounded">
+                        <xs:annotation>
+                            <xs:documentation>
+                                <![CDATA[
+                                   One of the server groups to which the role is constrained.
+                                ]]>
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:element>
+                </xs:choice>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="host-scoped-roleType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   A role scoped to a given set of hosts
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="base-scoped-roleType">
+                <xs:choice>
+                    <xs:element name="host" type="namedType" minOccurs="1" maxOccurs="unbounded">
+                        <xs:annotation>
+                            <xs:documentation>
+                                <![CDATA[
+                                   One of the hosts to which the role is constrained.
+                                ]]>
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:element>
+                </xs:choice>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="constraintsType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Stores information about configured access constraints.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="vault-expression-sensitivity" type="vault-expression-sensitivityType" minOccurs="0"/>
+            <xs:element name="sensitive-classifications" type="sensitive-classificationsType" minOccurs="0"/>
+            <xs:element name="application-classifications" type="application-classificationsType" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="base-sensitivityType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Common configuration of a sensitivity constraint
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="requires-read" type="xs:boolean">
+          <xs:annotation>
+             <xs:documentation>
+                Configuration of if a classification's read is sensitive
+             </xs:documentation>
+          </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="requires-write" type="xs:boolean">
+          <xs:annotation>
+             <xs:documentation>
+                Configuration of if a classification's write is sensitive
+             </xs:documentation>
+          </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="vault-expression-sensitivityType">
+        <xs:complexContent>
+            <xs:extension base="base-sensitivityType"/>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="sensitive-classificationsType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Stores information about a configured sensitive classification
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:choice minOccurs="1" maxOccurs="unbounded">
+            <xs:element name="sensitive-classification" type="typed-sensitivityType"/>
+        </xs:choice>
+    </xs:complexType>
+
+    <xs:complexType name="typed-sensitivityType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Stores information about a configured sensitive classification
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="base-sensitivityType">
+                <xs:attribute name="requires-addressable" type="xs:boolean">
+                      <xs:annotation>
+                         <xs:documentation>
+                            Configuration of if a classification's addressability is sensitive
+                         </xs:documentation>
+                      </xs:annotation>
+                  </xs:attribute>
+                <xs:attribute name="name" type="xs:string" use="required">
+                  <xs:annotation>
+                     <xs:documentation>
+                        The name of the constraint, must be unique for each name
+                     </xs:documentation>
+                  </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="type" type="xs:string" use="required">
+                  <xs:annotation>
+                     <xs:documentation>
+                        'core' or the name of the subsystem defining the constraint
+                     </xs:documentation>
+                  </xs:annotation>
+                </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="application-classificationsType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Stores information about a configured application classifications
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:choice minOccurs="1" maxOccurs="unbounded">
+            <xs:element name="application-classification" type="application-classificationType"/>
+        </xs:choice>
+
+    </xs:complexType>
+    <xs:complexType name="application-classificationType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Stores information about a configured application classification
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+           <xs:attribute name="name" type="xs:string" use="required">
+             <xs:annotation>
+                <xs:documentation>
+                   The name of the constraint, must be unique for each name
+                </xs:documentation>
+             </xs:annotation>
+           </xs:attribute>
+           <xs:attribute name="type" type="xs:string" use="required">
+             <xs:annotation>
+                <xs:documentation>
+                   'core' or the name of the subsystem defining the constraint
+                </xs:documentation>
+             </xs:annotation>
+           </xs:attribute>
+           <xs:attribute name="application" type="xs:boolean" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="namedType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   A type with a 'name' attribute
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
 </xs:schema>

@@ -22,7 +22,7 @@
 
 package org.jboss.as.jpa.processor;
 
-import static org.jboss.as.jpa.JpaMessages.MESSAGES;
+import static org.jboss.as.jpa.messages.JpaMessages.MESSAGES;
 
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
@@ -34,7 +34,6 @@ import javax.persistence.spi.PersistenceProvider;
 
 import org.jboss.as.jpa.config.PersistenceProviderDeploymentHolder;
 import org.jboss.as.jpa.persistenceprovider.PersistenceProviderResolverImpl;
-import org.jboss.as.jpa.spi.PersistenceProviderAdaptor;
 import org.jboss.as.jpa.transaction.JtaManagerImpl;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
@@ -44,6 +43,8 @@ import org.jboss.as.server.deployment.DeploymentUtils;
 import org.jboss.as.server.deployment.ServicesAttachment;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleClassLoader;
+import org.jipijapa.plugin.spi.PersistenceProviderAdaptor;
+import org.jipijapa.plugin.spi.Platform;
 
 /**
  * Deploy JPA Persistence providers that are found in the application deployment.
@@ -54,7 +55,7 @@ public class PersistenceProviderHandler {
 
     private static final String PERSISTENCE_PROVIDER_CLASSNAME = PersistenceProvider.class.getName();
 
-    public static void deploy(final DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
+    public static void deploy(final DeploymentPhaseContext phaseContext, final Platform platform) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
         final Module module = deploymentUnit.getAttachment(Attachments.MODULE);
 
@@ -86,6 +87,7 @@ public class PersistenceProviderHandler {
                     try {
                         adaptor = (PersistenceProviderAdaptor) deploymentModuleClassLoader.loadClass(adapterClass).newInstance();
                         adaptor.injectJtaManager(JtaManagerImpl.getInstance());
+                        adaptor.injectPlatform(platform);
                         savePersistenceProviderInDeploymentUnit(deploymentUnit, new PersistenceProviderDeploymentHolder(providerList, adaptor));
                     } catch (InstantiationException e) {
                         throw MESSAGES.cannotCreateAdapter(e, adapterClass);

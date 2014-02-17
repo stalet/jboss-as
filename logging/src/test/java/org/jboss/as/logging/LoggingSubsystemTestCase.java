@@ -24,6 +24,9 @@ package org.jboss.as.logging;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.STEPS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
+import static org.jboss.as.logging.CommonAttributes.APPEND;
+import static org.jboss.as.logging.CommonAttributes.AUTOFLUSH;
+import static org.jboss.as.logging.CommonAttributes.FILE;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -42,13 +45,16 @@ import org.jboss.as.controller.services.path.PathResourceDefinition;
 import org.jboss.as.controller.transform.OperationTransformer.TransformedOperation;
 import org.jboss.as.logging.logmanager.ConfigurationPersistence;
 import org.jboss.as.model.test.FailedOperationTransformationConfig;
+import org.jboss.as.model.test.FailedOperationTransformationConfig.NewAttributesConfig;
 import org.jboss.as.model.test.FailedOperationTransformationConfig.RejectExpressionsConfig;
+import org.jboss.as.model.test.ModelFixer;
 import org.jboss.as.model.test.ModelTestControllerVersion;
 import org.jboss.as.model.test.ModelTestUtils;
 import org.jboss.as.subsystem.test.KernelServices;
 import org.jboss.as.subsystem.test.KernelServicesBuilder;
 import org.jboss.as.subsystem.test.SubsystemOperations;
 import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.Property;
 import org.jboss.logmanager.LogContext;
 import org.junit.Assert;
 import org.junit.Test;
@@ -99,6 +105,11 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
     }
 
     @Test
+    public void testTransformers720() throws Exception {
+        testTransformer1_2_0(ModelTestControllerVersion.V7_2_0_FINAL);
+    }
+
+    @Test
     public void testRejectExpressions712() throws Exception {
         testRejectExpressions1_1_0(ModelTestControllerVersion.V7_1_2_FINAL);
     }
@@ -108,6 +119,11 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
         testRejectExpressions1_1_0(ModelTestControllerVersion.V7_1_3_FINAL);
     }
 
+    @Test
+    public void testFailedTransformedBootOperations720() throws Exception {
+        testFailedTransformedBootOperations1_2_0(ModelTestControllerVersion.V7_2_0_FINAL);
+    }
+
     private void testTransformer1_1_0(ModelTestControllerVersion controllerVersion) throws Exception {
         final String subsystemXml = readResource("/logging_1_1.xml");
         final ModelVersion modelVersion = ModelVersion.create(1, 1, 0);
@@ -115,18 +131,14 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
                 .setSubsystemXml(subsystemXml);
 
         // Create the legacy kernel
-        builder.createLegacyKernelServicesBuilder(LoggingTestEnvironment.getManagementInstance(), controllerVersion, modelVersion)
+        builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
                 .addMavenResourceURL("org.jboss.as:jboss-as-logging:" + controllerVersion.getMavenGavVersion())
-                //TODO storing the model triggers the weirdness mentioned in SubsystemTestDelegate.LegacyKernelServiceInitializerImpl.install()
-                //which is strange since it should be loading it all from the current jboss modules
-                //Also this works in several other tests
-                .dontPersistXml()
                 .configureReverseControllerCheck(LoggingTestEnvironment.getManagementInstance(), null);
 
         KernelServices mainServices = builder.build();
         KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
         Assert.assertNotNull(legacyServices);
-        final ModelNode legacyModel = checkSubsystemModelTransformation(mainServices, modelVersion);
+        final ModelNode legacyModel = checkSubsystemModelTransformation(mainServices, modelVersion, AsyncModelFixer.INSTANCE);
 
         testTransformOperations(mainServices, modelVersion, legacyModel);
     }
@@ -136,12 +148,8 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
         final KernelServicesBuilder builder = createKernelServicesBuilder(LoggingTestEnvironment.getManagementInstance());
 
         // Create the legacy kernel
-        builder.createLegacyKernelServicesBuilder(LoggingTestEnvironment.getManagementInstance(), controllerVersion, modelVersion)
-                .addMavenResourceURL("org.jboss.as:jboss-as-logging:" + controllerVersion.getMavenGavVersion())
-                //TODO storing the model triggers the weirdness mentioned in SubsystemTestDelegate.LegacyKernelServiceInitializerImpl.install()
-                //which is strange since it should be loading it all from the current jboss modules
-                //Also this works in several other tests
-                .dontPersistXml();
+        builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-logging:" + controllerVersion.getMavenGavVersion());
 
 
         KernelServices mainServices = builder.build();
@@ -154,6 +162,8 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
         final List<ModelNode> ops = builder.parseXmlResource("/expressions.xml");
         ModelTestUtils.checkFailedTransformedBootOperations(mainServices, modelVersion, ops,
                 new FailedOperationTransformationConfig()
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS,
+                                new NewAttributesConfig(LoggingRootResource.ATTRIBUTES))
                         .addFailedAttribute(createRootLoggerAddress(),
                                 new RejectExpressionsConfig(RootLoggerResourceDefinition.EXPRESSION_ATTRIBUTES))
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(LoggerResourceDefinition.LOGGER_PATH),
@@ -161,25 +171,37 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(AsyncHandlerResourceDefinition.ASYNC_HANDLER_PATH),
                                 new RejectExpressionsConfig(AsyncHandlerResourceDefinition.ATTRIBUTES))
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(ConsoleHandlerResourceDefinition.CONSOLE_HANDLER_PATH),
-                                new RejectExpressionsConfig(ConsoleHandlerResourceDefinition.ATTRIBUTES))
+                                FailedOperationTransformationConfig.ChainedConfig.createBuilder(FileHandlerResourceDefinition.ATTRIBUTES)
+                                        .addConfig(new RejectExpressionsConfig(ConsoleHandlerResourceDefinition.ATTRIBUTES))
+                                        .build())
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(FileHandlerResourceDefinition.FILE_HANDLER_PATH),
                                 new RejectExpressionsConfig(FileHandlerResourceDefinition.ATTRIBUTES))
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(FileHandlerResourceDefinition.FILE_HANDLER_PATH),
                                 FailedOperationTransformationConfig.ChainedConfig.createBuilder(FileHandlerResourceDefinition.ATTRIBUTES)
-                                .addConfig(new FailedOperationTransformationConfig.NewAttributesConfig(CommonAttributes.ENABLED))
-                                .addConfig(new RejectExpressionsConfig(FileHandlerResourceDefinition.ATTRIBUTES))
-                                .build())
+                                        .addConfig(new FailedOperationTransformationConfig.NewAttributesConfig(CommonAttributes.ENABLED))
+                                        .addConfig(new RejectExpressionsConfig(Logging.join(FileHandlerResourceDefinition.DEFAULT_ATTRIBUTES, AUTOFLUSH, APPEND, FILE)))
+                                        .addConfig(new FailedOperationTransformationConfig.NewAttributesConfig(AbstractHandlerDefinition.NAMED_FORMATTER))
+                                        .build())
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(PeriodicHandlerResourceDefinition.PERIODIC_HANDLER_PATH),
                                 new RejectExpressionsConfig(PeriodicHandlerResourceDefinition.ATTRIBUTES))
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(SizeRotatingHandlerResourceDefinition.SIZE_ROTATING_HANDLER_PATH),
-                                new RejectExpressionsConfig(SizeRotatingHandlerResourceDefinition.ATTRIBUTES))
+                                FailedOperationTransformationConfig.ChainedConfig.createBuilder(SizeRotatingHandlerResourceDefinition.ATTRIBUTES)
+                                        .addConfig(new NewAttributesConfig(SizeRotatingHandlerResourceDefinition.ROTATE_ON_BOOT))
+                                        .addConfig(new RejectExpressionsConfig(SizeRotatingHandlerResourceDefinition.ATTRIBUTES))
+                                        .build())
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CustomHandlerResourceDefinition.CUSTOM_HANDLE_PATH),
                                 new RejectExpressionsConfig(CustomHandlerResourceDefinition.WRITABLE_ATTRIBUTES))
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(SyslogHandlerResourceDefinition.SYSLOG_HANDLER_PATH),
                                 FailedOperationTransformationConfig.REJECTED_RESOURCE)
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(PatternFormatterResourceDefinition.PATTERN_FORMATTER_PATH),
+                                FailedOperationTransformationConfig.REJECTED_RESOURCE)
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CustomFormatterResourceDefinition.CUSTOM_FORMATTER_PATH),
+                                FailedOperationTransformationConfig.REJECTED_RESOURCE)
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CommonAttributes.LOGGING_PROFILE),
                                 FailedOperationTransformationConfig.REJECTED_RESOURCE)
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CommonAttributes.LOGGING_PROFILE).append(ConsoleHandlerResourceDefinition.CONSOLE_HANDLER_PATH),
+                                FailedOperationTransformationConfig.REJECTED_RESOURCE)
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CommonAttributes.LOGGING_PROFILE).append(FileHandlerResourceDefinition.FILE_HANDLER_PATH),
                                 FailedOperationTransformationConfig.REJECTED_RESOURCE)
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CommonAttributes.LOGGING_PROFILE).append(RootLoggerResourceDefinition.ROOT_LOGGER_PATH),
                                 FailedOperationTransformationConfig.REJECTED_RESOURCE)
@@ -187,7 +209,66 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
                                 FailedOperationTransformationConfig.REJECTED_RESOURCE)
                         .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CommonAttributes.LOGGING_PROFILE).append(SyslogHandlerResourceDefinition.SYSLOG_HANDLER_PATH),
                                 FailedOperationTransformationConfig.REJECTED_RESOURCE)
-        );
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CommonAttributes.LOGGING_PROFILE).append(PatternFormatterResourceDefinition.PATTERN_FORMATTER_PATH),
+                                FailedOperationTransformationConfig.REJECTED_RESOURCE)
+                                                           );
+    }
+
+    private void testTransformer1_2_0(final ModelTestControllerVersion controllerVersion) throws Exception {
+        final String subsystemXml = readResource("/logging_1_2.xml");
+        final ModelVersion modelVersion = ModelVersion.create(1, 2, 0);
+
+        final KernelServicesBuilder builder = createKernelServicesBuilder(LoggingTestEnvironment.getManagementInstance())
+                .setSubsystemXml(subsystemXml);
+
+        // Create the legacy kernel
+        builder.createLegacyKernelServicesBuilder(LoggingTestEnvironment.getManagementInstance(), controllerVersion, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-logging:" + controllerVersion.getMavenGavVersion())
+                .dontPersistXml()
+                .addSingleChildFirstClass(LoggingTestEnvironment.class, LoggingTestEnvironment.LoggingInitializer.class)
+                .configureReverseControllerCheck(LoggingTestEnvironment.getManagementInstance(), null);
+
+        KernelServices mainServices = builder.build();
+        Assert.assertTrue(mainServices.isSuccessfulBoot());
+        KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
+        Assert.assertTrue(legacyServices.isSuccessfulBoot());
+        Assert.assertNotNull(legacyServices);
+        checkSubsystemModelTransformation(mainServices, modelVersion, AsyncModelFixer.INSTANCE);
+    }
+
+    private void testFailedTransformedBootOperations1_2_0(final ModelTestControllerVersion controllerVersion) throws Exception {
+        final ModelVersion modelVersion = ModelVersion.create(1, 2, 0);
+        final KernelServicesBuilder builder = createKernelServicesBuilder(LoggingTestEnvironment.getManagementInstance());
+
+        // Create the legacy kernel
+        builder.createLegacyKernelServicesBuilder(LoggingTestEnvironment.getManagementInstance(), controllerVersion, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-logging:" + controllerVersion.getMavenGavVersion())
+                .addSingleChildFirstClass(LoggingTestEnvironment.class, LoggingTestEnvironment.LoggingInitializer.class);
+
+
+        KernelServices mainServices = builder.build();
+        KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
+
+        Assert.assertNotNull(legacyServices);
+        Assert.assertTrue("main services did not boot", mainServices.isSuccessfulBoot());
+        Assert.assertTrue(legacyServices.isSuccessfulBoot());
+
+        final List<ModelNode> ops = builder.parseXmlResource("/expressions.xml");
+        ModelTestUtils.checkFailedTransformedBootOperations(mainServices, modelVersion, ops,
+                new FailedOperationTransformationConfig()
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS,
+                                new NewAttributesConfig(LoggingRootResource.ATTRIBUTES))
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(FileHandlerResourceDefinition.FILE_HANDLER_PATH),
+                                new NewAttributesConfig(FileHandlerResourceDefinition.NAMED_FORMATTER))
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(SizeRotatingHandlerResourceDefinition.SIZE_ROTATING_HANDLER_PATH),
+                                new NewAttributesConfig(SizeRotatingHandlerResourceDefinition.ROTATE_ON_BOOT))
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(PatternFormatterResourceDefinition.PATTERN_FORMATTER_PATH),
+                                FailedOperationTransformationConfig.REJECTED_RESOURCE)
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CommonAttributes.LOGGING_PROFILE).append(FileHandlerResourceDefinition.FILE_HANDLER_PATH),
+                                new NewAttributesConfig(FileHandlerResourceDefinition.NAMED_FORMATTER))
+                        .addFailedAttribute(SUBSYSTEM_ADDRESS.append(CommonAttributes.LOGGING_PROFILE).append(PatternFormatterResourceDefinition.PATTERN_FORMATTER_PATH),
+                                FailedOperationTransformationConfig.REJECTED_RESOURCE)
+                                                           );
     }
 
     private void testTransformOperations(final KernelServices mainServices, final ModelVersion modelVersion, final ModelNode legacyModel) throws Exception {
@@ -196,17 +277,17 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
         // Get all the console handler
         final ModelNode consoleHandler = legacyModel.get(consoleAddress.getElement(0).getKey(), consoleAddress.getElement(0).getValue(),
                 consoleAddress.getElement(1).getKey(), consoleAddress.getElement(1).getValue());
-        String formatPattern = consoleHandler.get(CommonAttributes.FORMATTER.getName()).asString();
+        String formatPattern = consoleHandler.get(AbstractHandlerDefinition.FORMATTER.getName()).asString();
         Assert.assertFalse("Pattern (" + formatPattern + ") contains a color attribute not supported in legacy models.", COLOR_PATTERN.matcher(formatPattern).find());
 
         // Write a pattern with a %K{level} to ensure it gets removed
-        ModelNode op = SubsystemOperations.createWriteAttributeOperation(consoleAddress.toModelNode(), CommonAttributes.FORMATTER, "%K{level}" + formatPattern);
+        ModelNode op = SubsystemOperations.createWriteAttributeOperation(consoleAddress.toModelNode(), AbstractHandlerDefinition.FORMATTER, "%K{level}" + formatPattern);
         executeTransformOperation(mainServices, modelVersion, op);
         validateLegacyFormatter(mainServices, modelVersion, consoleAddress.toModelNode());
 
         // Test update properties
         op = SubsystemOperations.createOperation(AbstractHandlerDefinition.UPDATE_OPERATION_NAME, consoleAddress.toModelNode());
-        op.get(CommonAttributes.FORMATTER.getName()).set("%K{level}" + formatPattern);
+        op.get(AbstractHandlerDefinition.FORMATTER.getName()).set("%K{level}" + formatPattern);
         executeTransformOperation(mainServices, modelVersion, op);
         validateLegacyFormatter(mainServices, modelVersion, consoleAddress.toModelNode());
 
@@ -341,7 +422,7 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
     }
 
     private static void validateLegacyFormatter(final KernelServices kernelServices, final ModelVersion modelVersion, final ModelNode address) throws OperationFailedException {
-        final ModelNode op = SubsystemOperations.createReadAttributeOperation(address, CommonAttributes.FORMATTER);
+        final ModelNode op = SubsystemOperations.createReadAttributeOperation(address, AbstractHandlerDefinition.FORMATTER);
         final ModelNode result = executeTransformOperation(kernelServices, modelVersion, op);
         Assert.assertTrue(result.asString(), SubsystemOperations.isSuccessfulOutcome(result));
         final String formatPattern = SubsystemOperations.readResultAsString(result);
@@ -357,5 +438,25 @@ public class LoggingSubsystemTestCase extends AbstractLoggingSubsystemTest {
         op = SubsystemOperations.createReadAttributeOperation(address, CommonAttributes.FILTER);
         result = executeTransformOperation(kernelServices, modelVersion, op);
         Assert.assertEquals("Transformed spec does not match filter expression.", Filters.filterToFilterSpec(SubsystemOperations.readResult(result)), filterExpression);
+    }
+
+    private static class AsyncModelFixer implements ModelFixer {
+
+        static final AsyncModelFixer INSTANCE = new AsyncModelFixer();
+
+        @Override
+        public ModelNode fixModel(final ModelNode modelNode) {
+            // Find the async-handler
+            if (modelNode.hasDefined(AsyncHandlerResourceDefinition.ASYNC_HANDLER)) {
+                final ModelNode asyncHandlers = modelNode.get(AsyncHandlerResourceDefinition.ASYNC_HANDLER);
+                for (Property asyncHandler : asyncHandlers.asPropertyList()) {
+                    final ModelNode async = asyncHandler.getValue();
+                    async.remove(CommonAttributes.ENCODING.getName());
+                    async.remove(AbstractHandlerDefinition.FORMATTER.getName());
+                    asyncHandlers.get(asyncHandler.getName()).set(async);
+                }
+            }
+            return modelNode;
+        }
     }
 }

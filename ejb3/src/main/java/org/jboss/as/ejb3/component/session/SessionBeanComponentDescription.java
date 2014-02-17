@@ -46,6 +46,7 @@ import org.jboss.as.ee.component.interceptors.InterceptorOrder;
 import org.jboss.as.ejb3.component.EJBComponentDescription;
 import org.jboss.as.ejb3.component.EJBViewDescription;
 import org.jboss.as.ejb3.component.MethodIntf;
+import org.jboss.as.ejb3.component.concurrent.EJBContextHandleFactory;
 import org.jboss.as.ejb3.component.interceptors.CurrentInvocationContextInterceptor;
 import org.jboss.as.ejb3.concurrency.AccessTimeoutDetails;
 import org.jboss.as.ejb3.deployment.EjbJarDescription;
@@ -109,8 +110,6 @@ public abstract class SessionBeanComponentDescription extends EJBComponentDescri
      */
     private String mappedName;
 
-    private ClusteringInfo clusteringInfo;
-
     public enum SessionBeanType {
         STATELESS,
         STATEFUL,
@@ -160,7 +159,7 @@ public abstract class SessionBeanComponentDescription extends EJBComponentDescri
             public void configure(final DeploymentPhaseContext context, final ComponentConfiguration componentConfiguration, final ViewDescription description, final ViewConfiguration configuration) throws DeploymentUnitProcessingException {
                 for (final Method method : configuration.getProxyFactory().getCachedMethods()) {
                     if (!Modifier.isPublic(method.getModifiers())) {
-                        configuration.addViewInterceptor(method, new ImmediateInterceptorFactory(new NotBusinessMethodInterceptor(method)), InterceptorOrder.View.NOT_BUSINESS_METHOD_EXCEPTION);
+                        configuration.addClientInterceptor(method, new ImmediateInterceptorFactory(new NotBusinessMethodInterceptor(method)), InterceptorOrder.Client.NOT_BUSINESS_METHOD_EXCEPTION);
                     }
                 }
             }
@@ -391,6 +390,7 @@ public abstract class SessionBeanComponentDescription extends EJBComponentDescri
                     configuration.addPrePassivateInterceptor(CurrentInvocationContextInterceptor.FACTORY, InterceptorOrder.ComponentPassivation.EJB_SESSION_CONTEXT_INTERCEPTOR);
                     configuration.addPostActivateInterceptor(CurrentInvocationContextInterceptor.FACTORY, InterceptorOrder.ComponentPassivation.EJB_SESSION_CONTEXT_INTERCEPTOR);
                 }
+                configuration.getConcurrentContext().addFactory(EJBContextHandleFactory.INSTANCE);
             }
         });
     }
@@ -429,13 +429,5 @@ public abstract class SessionBeanComponentDescription extends EJBComponentDescri
     @Override
     public SessionBeanMetaData getDescriptorData() {
         return (SessionBeanMetaData) super.getDescriptorData();
-    }
-
-    public ClusteringInfo getClustering() {
-        return this.clusteringInfo;
-    }
-
-    public void setClustering(ClusteringInfo info) {
-        this.clusteringInfo = info;
     }
 }

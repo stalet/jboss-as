@@ -41,6 +41,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
+
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
@@ -98,7 +99,9 @@ class LegacySupport {
 
 
         public JASPIAuthenticationModulesAttributeDefinition() {
-            super(Constants.AUTH_MODULES, Constants.AUTH_MODULE, true, false, 1, Integer.MAX_VALUE, validator, null, null, null, false, new DeprecationData(ModelVersion.create(1, 2)), AttributeAccess.Flag.RESTART_ALL_SERVICES);
+            super(Constants.AUTH_MODULES, Constants.AUTH_MODULE, true, false, 1, Integer.MAX_VALUE, validator,
+                   null, null, null, false, new DeprecationData(ModelVersion.create(1, 2)), null, (Boolean) null,
+                    AttributeAccess.Flag.RESTART_ALL_SERVICES);
         }
 
         @Override
@@ -183,7 +186,8 @@ class LegacySupport {
 
 
         public LoginModulesAttributeDefinition(String name, String xmlName) {
-            super(name, xmlName, true, false, 1, Integer.MAX_VALUE, validator, null, null, null, false, new DeprecationData(ModelVersion.create(1, 2)), AttributeAccess.Flag.RESTART_ALL_SERVICES);
+            super(name, xmlName, true, false, 1, Integer.MAX_VALUE, validator, null, null, null, false,
+                    new DeprecationData(ModelVersion.create(1, 2)), null, (Boolean) null, AttributeAccess.Flag.RESTART_ALL_SERVICES);
         }
 
         @Override
@@ -263,7 +267,9 @@ class LegacySupport {
 
 
         public MappingModulesAttributeDefinition() {
-            super(Constants.MAPPING_MODULES, Constants.MAPPING_MODULE, true, false, 1, Integer.MAX_VALUE, validator, null, null, null, false, new DeprecationData(ModelVersion.create(1, 2)), AttributeAccess.Flag.RESTART_ALL_SERVICES);
+            super(Constants.MAPPING_MODULES, Constants.MAPPING_MODULE, true, false, 1, Integer.MAX_VALUE, validator,
+                    null, null, null, false, new DeprecationData(ModelVersion.create(1, 2)), null, (Boolean) null,
+                    AttributeAccess.Flag.RESTART_ALL_SERVICES);
         }
 
         @Override
@@ -332,7 +338,8 @@ class LegacySupport {
 
 
         public ProviderModulesAttributeDefinition(String name, String xmlName) {
-            super(name, xmlName, true, false, 1, Integer.MAX_VALUE, validator, null, null, null, false, new DeprecationData(ModelVersion.create(1, 2)), AttributeAccess.Flag.RESTART_ALL_SERVICES);
+            super(name, xmlName, true, false, 1, Integer.MAX_VALUE, validator, null, null, null, false,
+                    new DeprecationData(ModelVersion.create(1, 2)), null, (Boolean) null, AttributeAccess.Flag.RESTART_ALL_SERVICES);
         }
 
         @Override
@@ -416,16 +423,19 @@ class LegacySupport {
         public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
             Resource existing = context.readResource(PathAddress.EMPTY_ADDRESS);
             OperationStepHandler addHandler = context.getResourceRegistration().getSubModel(PathAddress.EMPTY_ADDRESS.append(newKeyName)).getOperationHandler(PathAddress.EMPTY_ADDRESS, "add");
-            List<ModelNode> modules = new ArrayList<ModelNode>(operation.get(VALUE).asList());
-            Collections.reverse(modules); //need to reverse it to make sure they are added in proper order
-            for (ModelNode module : modules) {
-                ModelNode addModuleOp = module.clone();
-                String code = addModuleOp.get(Constants.CODE).asString();
-                PathElement relativePath = PathElement.pathElement(newKeyName, code);
-                PathAddress address = PathAddress.pathAddress(operation.get(OP_ADDR)).append(relativePath);
-                addModuleOp.get(OP_ADDR).set(address.toModelNode());
-                addModuleOp.get(OP).set(ADD);
-                context.addStep(new ModelNode(), addModuleOp, addHandler, OperationContext.Stage.MODEL, true);
+            ModelNode value = operation.get(VALUE);
+            if (value.isDefined()) {
+                List<ModelNode> modules = new ArrayList<ModelNode>(value.asList());
+                Collections.reverse(modules); //need to reverse it to make sure they are added in proper order
+                for (ModelNode module : modules) {
+                    ModelNode addModuleOp = module.clone();
+                    String code = addModuleOp.get(Constants.CODE).asString();
+                    PathElement relativePath = PathElement.pathElement(newKeyName, code);
+                    PathAddress address = PathAddress.pathAddress(operation.get(OP_ADDR)).append(relativePath);
+                    addModuleOp.get(OP_ADDR).set(address.toModelNode());
+                    addModuleOp.get(OP).set(ADD);
+                    context.addStep(new ModelNode(), addModuleOp, addHandler, OperationContext.Stage.MODEL, true);
+                }
             }
             //remove on the end to make sure it is executed first
             for (Resource.ResourceEntry entry : existing.getChildren(newKeyName)) {

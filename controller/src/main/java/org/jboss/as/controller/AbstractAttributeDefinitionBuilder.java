@@ -25,6 +25,7 @@ package org.jboss.as.controller;
 import java.util.Arrays;
 import java.util.Set;
 
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.operations.validation.ParameterValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
@@ -40,7 +41,7 @@ import org.jboss.dmr.ModelType;
 public abstract class AbstractAttributeDefinitionBuilder<BUILDER extends AbstractAttributeDefinitionBuilder, ATTRIBUTE extends AttributeDefinition> {
 
     protected final String name;
-    protected final ModelType type;
+    protected ModelType type;
     protected String xmlName;
     protected boolean allowNull;
     protected boolean allowExpression;
@@ -57,6 +58,8 @@ public abstract class AbstractAttributeDefinitionBuilder<BUILDER extends Abstrac
     protected AttributeMarshaller attributeMarshaller = null;
     protected boolean resourceOnly = false;
     protected DeprecationData deprecated = null;
+    protected AccessConstraintDefinition[] accessConstraints;
+    protected Boolean nullSignficant;
 
     public AbstractAttributeDefinitionBuilder(final String attributeName, final ModelType type) {
         this(attributeName, type, false);
@@ -248,6 +251,26 @@ public abstract class AbstractAttributeDefinitionBuilder<BUILDER extends Abstrac
 
     public BUILDER setDeprecated(ModelVersion since) {
         this.deprecated = new DeprecationData(since);
+        return (BUILDER) this;
+    }
+
+    public BUILDER setAccessConstraints(AccessConstraintDefinition... accessConstraints) {
+        this.accessConstraints = accessConstraints;
+        return (BUILDER) this;
+    }
+
+    public BUILDER addAccessConstraint(final AccessConstraintDefinition accessConstraint) {
+        if (accessConstraints == null) {
+            accessConstraints = new AccessConstraintDefinition[] {accessConstraint};
+        } else {
+            accessConstraints = Arrays.copyOf(accessConstraints, accessConstraints.length + 1);
+            accessConstraints[accessConstraints.length - 1] = accessConstraint;
+        }
+        return (BUILDER) this;
+    }
+
+    public BUILDER setNullSignficant(boolean nullSignficant) {
+        this.nullSignficant = nullSignficant;
         return (BUILDER) this;
     }
 }

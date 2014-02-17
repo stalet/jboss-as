@@ -50,8 +50,10 @@ import org.jboss.as.cli.handlers.WindowsFilenameTabCompleter;
 import org.jboss.as.cli.impl.ArgumentWithValue;
 import org.jboss.as.cli.impl.DefaultCompleter;
 import org.jboss.as.cli.impl.DefaultCompleter.CandidatesProvider;
+import org.jboss.as.cli.impl.FileSystemPathArgument;
 import org.jboss.as.cli.operation.ParsedCommandLine;
 import org.jboss.staxmapper.XMLExtendedStreamWriter;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  *
@@ -96,6 +98,7 @@ public class ASModuleHandler extends CommandHandlerWithHelp {
     private final ArgumentWithValue props;
     private final ArgumentWithValue moduleArg;
     private final ArgumentWithValue slot;
+    private final ArgumentWithValue resourceDelimiter;
 
     private File modulesDir;
 
@@ -151,6 +154,8 @@ public class ASModuleHandler extends CommandHandlerWithHelp {
             }
         };
 
+        resourceDelimiter = new AddModuleArgument("--resource-delimiter");
+
         dependencies = new AddModuleArgument("--dependencies", new CommandLineCompleter(){
             @Override
             public int complete(CommandContext ctx, String buffer, int cursor, List<String> candidates) {
@@ -162,7 +167,13 @@ public class ASModuleHandler extends CommandHandlerWithHelp {
             }});
         props = new AddModuleArgument("--properties");
 
-        moduleArg = new AddModuleArgument("--module-xml", pathCompleter);
+        moduleArg = new FileSystemPathArgument(this, pathCompleter, "--module-xml") {
+            @Override
+            public boolean canAppearNext(CommandContext ctx) throws CommandFormatException {
+                final String actionValue = action.getValue(ctx.getParsedCommandLine());
+                return ACTION_ADD.equals(actionValue) && name.isPresent(ctx.getParsedCommandLine()) && super.canAppearNext(ctx);
+            }
+        };
 
         slot = new ArgumentWithValue(this, new DefaultCompleter(new CandidatesProvider() {
             @Override
@@ -224,10 +235,16 @@ public class ASModuleHandler extends CommandHandlerWithHelp {
         // resources required only if we are generating module.xml
         final String resourcePaths = resources.getValue(parsedCmd, !moduleArg.isPresent(parsedCmd));
 
-        final String[] resourceArr = (resourcePaths == null) ? new String[0] : resourcePaths.split(PATH_SEPARATOR);
+        String pathDelimiter = PATH_SEPARATOR;
+        if (resourceDelimiter.isPresent(parsedCmd)) {
+            pathDelimiter = resourceDelimiter.getValue(parsedCmd);
+        }
+
+        final FilenameTabCompleter pathCompleter = Util.isWindows() ? new WindowsFilenameTabCompleter(ctx) : new DefaultFilenameTabCompleter(ctx);
+        final String[] resourceArr = (resourcePaths == null) ? new String[0] : resourcePaths.split(pathDelimiter);
         File[] resourceFiles = new File[resourceArr.length];
         for(int i = 0; i < resourceArr.length; ++i) {
-            final File f = new File(ctx.getCurrentDir(), resourceArr[i]);
+            final File f = new File(pathCompleter.translatePath(resourceArr[i]));
             if(!f.exists()) {
                 throw new CommandLineException("Failed to locate " + f.getAbsolutePath());
             }
@@ -247,7 +264,7 @@ public class ASModuleHandler extends CommandHandlerWithHelp {
         final String moduleXml = moduleArg.getValue(parsedCmd);
         if(moduleXml != null) {
             config = null;
-            final File source = new File(ctx.getCurrentDir(), moduleXml);
+            final File source = new File(moduleXml);
             if(!source.exists()) {
                 throw new CommandLineException("Failed to locate the file on the filesystem: " + source.getAbsolutePath());
             }
@@ -329,15 +346,10 @@ public class ASModuleHandler extends CommandHandlerWithHelp {
             throw new CommandLineException("Failed to locate module " + moduleName + " at " + modulePath.getAbsolutePath());
         }
 
-        final File[] moduleFiles = modulePath.listFiles();
-        if(moduleFiles != null) {
-            for(File f : moduleFiles) {
-                if(!f.delete()) {
-                    throw new CommandLineException("Failed to delete " + f.getAbsolutePath());
-                }
-            }
-        }
+        // delete the whole slot directory
+        deleteRecursively(modulePath);
 
+        modulePath = modulePath.getParentFile();
         while(!modulesDir.equals(modulePath)) {
             if(modulePath.list().length > 0) {
                 break;
@@ -349,6 +361,20 @@ public class ASModuleHandler extends CommandHandlerWithHelp {
         }
     }
 
+    protected void deleteRecursively(final File file) throws CommandLineException {
+        if (file.isDirectory()) {
+            final File[] files = file.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    deleteRecursively(f);
+                }
+            }
+        }
+        if (!file.delete()) {
+            throw new CommandLineException("Failed to delete " + file.getAbsolutePath());
+        }
+    }
+
     protected File getModulePath(File modulesDir, final String moduleName, String slot) throws CommandLineException {
         return new File(modulesDir, moduleName.replace('.', File.separatorChar) + File.separatorChar + (slot == null ? "main" : slot));
     }
@@ -357,7 +383,7 @@ public class ASModuleHandler extends CommandHandlerWithHelp {
         if(modulesDir != null) {
             return modulesDir;
         }
-        final String modulesDirStr = SecurityActions.getEnvironmentVariable(JBOSS_HOME);
+        final String modulesDirStr = WildFlySecurityManager.getEnvPropertyPrivileged(JBOSS_HOME, null);
         if(modulesDirStr == null) {
             throw new CommandLineException(JBOSS_HOME + " environment variable is not set.");
         }

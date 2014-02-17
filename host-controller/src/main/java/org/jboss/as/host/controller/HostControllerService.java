@@ -22,12 +22,12 @@
 
 package org.jboss.as.host.controller;
 
+import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.server.ServerLogger.AS_ROOT_LOGGER;
 import static org.jboss.as.server.ServerLogger.CONFIG_LOGGER;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
-import java.security.AccessController;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -39,9 +39,13 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.jboss.as.controller.ControlledProcessState;
+import org.jboss.as.remoting.HttpListenerRegistryService;
 import org.jboss.as.remoting.management.ManagementRemotingServices;
 import org.jboss.as.server.BootstrapListener;
 import org.jboss.as.server.FutureServiceContainer;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
+import org.jboss.as.server.Services;
+import org.jboss.as.version.ProductConfig;
 import org.jboss.modules.Module;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceContainer;
@@ -51,6 +55,9 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
+import org.jboss.msc.service.ValueService;
+import org.jboss.msc.value.ImmediateValue;
+import org.jboss.msc.value.Value;
 import org.jboss.threads.AsyncFuture;
 import org.jboss.threads.JBossThreadFactory;
 
@@ -86,7 +93,8 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
 
         processState.setStarting();
 
-        String prettyVersion = environment.getProductConfig().getPrettyVersionString();
+        final ProductConfig config = environment.getProductConfig();
+        final String prettyVersion = config.getPrettyVersionString();
         AS_ROOT_LOGGER.serverStarting(prettyVersion);
         if (CONFIG_LOGGER.isDebugEnabled()) {
             final Properties properties = System.getProperties();
@@ -120,8 +128,7 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
         }
 
         final BootstrapListener bootstrapListener = new BootstrapListener(serviceContainer, startTime, serviceTarget, futureContainer,  prettyVersion + " (Host Controller)");
-        serviceTarget.addListener(bootstrapListener);
-        myController.addListener(bootstrapListener);
+        bootstrapListener.getStabilityMonitor().addController(myController);
 
         // The first default services are registered before the bootstrap operations are executed.
 
@@ -138,6 +145,14 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
         // Install required path services. (Only install those identified as required)
         HostPathManagerService hostPathManagerService = new HostPathManagerService();
         HostPathManagerService.addService(serviceTarget, hostPathManagerService, environment);
+
+        HttpListenerRegistryService.install(serviceTarget);
+
+        // Add product config service
+        final Value<ProductConfig> productConfigValue = new ImmediateValue<ProductConfig>(config);
+        serviceTarget.addService(Services.JBOSS_PRODUCT_CONFIG_SERVICE, new ValueService<ProductConfig>(productConfigValue))
+                .setInitialMode(ServiceController.Mode.ACTIVE)
+                .install();
 
         DomainModelControllerService.addService(serviceTarget, environment, runningModeControl, processState, bootstrapListener, hostPathManagerService);
     }
@@ -169,7 +184,7 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
     }
 
     static final class HostControllerExecutorService implements Service<ExecutorService> {
-        final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("Host Controller Service Threads"), Boolean.FALSE, null, "%G - %t", null, null, AccessController.getContext());
+        final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("Host Controller Service Threads"), Boolean.FALSE, null, "%G - %t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
         private ExecutorService executorService;
 
         @Override
@@ -182,7 +197,6 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
 
         @Override
         public synchronized void stop(final StopContext context) {
-            context.asynchronous();
             Thread executorShutdown = new Thread(new Runnable() {
                 @Override
                 public void run() {
@@ -195,6 +209,7 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
                 }
             }, "HostController ExecutorService Shutdown Thread");
             executorShutdown.start();
+            context.asynchronous();
         }
 
         @Override

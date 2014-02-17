@@ -5,17 +5,17 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-testsuite</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-testsuite</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-ts-integ</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-ts-integ</artifactId>
     <packaging>pom</packaging>
-    <version>8.0.0.Alpha1-SNAPSHOT</version>
+    <version>8.0.1.Final-SNAPSHOT</version>
 
-    <name>JBoss Application Server Test Suite: Integration</name>
+    <name>WildFly Test Suite: Integration</name>
 
     <properties>
         <!-- Current module's directory. Will automatically pick up sub-module's basedir. -->
@@ -35,13 +35,17 @@
         </jvm.args.dirs>
 
         <!-- Used to provide an absolute location for the distribution under test. -->
-        <jboss.dist>${jbossas.project.dir}/build/target/jboss-as-${jboss.as.release.version}</jboss.dist>
+        <jboss.dist>${jbossas.project.dir}/${wildfly.build.output.dir}</jboss.dist>
         <jboss.home>${jboss.dist}</jboss.home>
 
         <!-- Used to provide an absolute location for the XSLT scripts. -->
         <xslt.scripts.dir>${jbossas.ts.integ.dir}/src/test/xslt</xslt.scripts.dir>
 
+        <!-- used to override HA configuration file names to test with alternative configuration files -->
+        <standalone.ha.xml>standalone-ha.xml</standalone.ha.xml>
+
         <ts.skipTests>${skipTests}</ts.skipTests>
+        <enforcer.skip>true</enforcer.skip>
     </properties>
 
     <profiles>
@@ -53,17 +57,19 @@
             <modules>
                 <module>smoke</module>
                 <module>basic</module>
-                <module>osgi</module>
                 <module>iiop</module>
                 <module>xts</module>
+                <module>rts</module>
+                <module>rbac</module>
                 <module>clust</module>
                 <module>multinode</module>
                 <module>manualmode</module>
+                <module>patching</module>
             </modules>
         </profile>
         <!-- Define ts.integration uber-group. -->
         <profile>
-            <id>ts.integ.allGroupsNoOSGi</id>
+            <id>ts.integ.allGroupsIntegration</id>
             <activation><property><name>ts.integration</name></property></activation>
             <modules>
                 <module>smoke</module>
@@ -71,8 +77,11 @@
                 <module>clust</module>
                 <module>iiop</module>
                 <module>xts</module>
+                <module>rts</module>
+                <module>rbac</module>
                 <module>multinode</module>
                 <module>manualmode</module>
+                <module>patching</module>
             </modules>
         </profile>
 
@@ -112,21 +121,21 @@
             </modules>
         </profile>
 
-        <!-- -Dts.osgi -->
-        <profile>
-            <id>ts.integ.group.osgi</id>
-            <activation><property><name>ts.osgi</name></property></activation>
-            <modules>
-                <module>osgi</module>
-            </modules>
-        </profile>
-
         <!-- -Dts.xts -->
         <profile>
             <id>ts.integ.group.xts</id>
             <activation><property><name>ts.xts</name></property></activation>
             <modules>
                 <module>xts</module>
+            </modules>
+        </profile>
+
+        <!-- -Dts.rts -->
+        <profile>
+            <id>ts.integ.group.rts</id>
+            <activation><property><name>ts.rts</name></property></activation>
+            <modules>
+                <module>rts</module>
             </modules>
         </profile>
 
@@ -148,41 +157,29 @@
             </modules>
         </profile>
 
+        <!-- -Dts.rbac -->
+        <profile>
+            <id>ts.integ.group.rbac</id>
+            <activation><property><name>ts.rbac</name></property></activation>
+            <modules>
+                <module>rbac</module>
+            </modules>
+        </profile>
+
+        <!-- -Dts.patching -->
+        <profile>
+            <id>ts.integ.group.patching</id>
+            <activation><property><name>ts.patching</name></property></activation>
+            <modules>
+                <module>patching</module>
+            </modules>
+        </profile>
     </profiles>
 
 
     <build>
         <plugins>
             <!-- General plugin configuration for all integration tests -->
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-help-plugin</artifactId>
-                <inherited>true</inherited>
-                <executions>
-                    <execution><id>help.active-profiles</id>
-                        <phase>initialize</phase>
-                        <goals><goal>active-profiles</goal></goals>
-                        <configuration><output>target/help.active-profiles.txt</output></configuration>
-                    </execution>
-                    <execution><id>help.effective-pom</id>
-                        <phase>initialize</phase>
-                        <goals><goal>effective-pom</goal></goals>
-                        <configuration><output>target/help.effective-pom.txt</output></configuration>
-                    </execution>
-                    <execution><id>help.effective-settings</id>
-                        <phase>initialize</phase>
-                        <goals><goal>effective-settings</goal></goals>
-                        <configuration><output>target/help.effective-settings.txt</output></configuration>
-                    </execution>
-                   <execution><id>help.system</id>
-                        <phase>initialize</phase>
-                        <goals><goal>system</goal></goals>
-                        <configuration><output>target/help.system.txt</output></configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
 
             <!-- Resources plugin. -->
             <plugin>
@@ -206,7 +203,12 @@
                                 <resource>
                                     <!-- Add the XTS config to the standalone/config directory, so it will be processed as well -->
                                     <directory>${basedir}/target/jbossas/docs/examples/configs</directory>
-                                    <includes><include>standalone-xts.xml</include></includes>
+                                    <includes>
+                                         <include>standalone-xts.xml</include>
+                                         <include>standalone-rts.xml</include>
+                                         <include>standalone-ec2-*.xml</include>
+                                         <include>standalone-gossip-*.xml</include>
+                                    </includes>
                                 </resource>
                             </resources>
                         </configuration>
@@ -214,6 +216,11 @@
                 </executions>
             </plugin>
 
+            <!-- Setup standalone server IP and logging configuration -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>xml-maven-plugin</artifactId>
+            </plugin>
 
             <!-- General surefire configuration. Applies to submodules too. -->
             <plugin>
@@ -238,6 +245,9 @@
                         <node1>${node1}</node1>
                         <mcast>${mcast}</mcast>
 
+                        <node2>${node2}</node2>
+                        <node3>${node3}</node3>
+
                         <jbossas.ts.submodule.dir>${basedir}</jbossas.ts.submodule.dir>
                         <jbossas.ts.integ.dir>${jbossas.ts.integ.dir}</jbossas.ts.integ.dir>
                         <jbossas.ts.dir>${jbossas.ts.dir}</jbossas.ts.dir>
@@ -259,24 +269,24 @@
     <dependencies>
         <!-- Dependencies specific to the integration tests. -->
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-webservices-tests-integration</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-webservices-tests-integration</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
-           <groupId>org.jboss.as</groupId>
-           <artifactId>jboss-as-model-test</artifactId>
+           <groupId>org.wildfly</groupId>
+           <artifactId>wildfly-model-test</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-core-model-test-framework</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-core-model-test-framework</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
-						<type>pom</type>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+            <type>pom</type>
             <scope>test</scope>
         </dependency>
     </dependencies>

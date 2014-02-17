@@ -22,15 +22,13 @@
 
 package org.jboss.as.connector.services.resourceadapters.deployment;
 
-import static org.jboss.as.connector.logging.ConnectorLogger.DEPLOYMENT_CONNECTOR_LOGGER;
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
-
 import java.io.File;
 import java.net.URL;
 
 import org.jboss.as.connector.metadata.deployment.ResourceAdapterDeployment;
 import org.jboss.as.connector.metadata.xmldescriptors.ConnectorXmlDescriptor;
 import org.jboss.as.connector.services.resourceadapters.ResourceAdapterService;
+import org.jboss.as.connector.subsystems.resourceadapters.ModifiableResourceAdapter;
 import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.naming.WritableServiceBasedNamingStore;
 import org.jboss.jca.common.api.metadata.ironjacamar.IronJacamar;
@@ -48,6 +46,7 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A ResourceAdapterXmlDeploymentService.
@@ -78,11 +77,7 @@ public final class ResourceAdapterXmlDeploymentService extends AbstractResourceA
         }
         this.module = module;
         this.deployment = deployment;
-        if (raxml != null && raxml.getArchive() != null && raxml.getArchive().indexOf(".rar") != -1) {
-            this.raName = raxml.getArchive().substring(0, raxml.getArchive().indexOf(".rar"));
-        } else {
-            this.raName = deployment;
-        }
+        this.raName = deployment;
         this.deploymentServiceName = deploymentServiceName;
         this.duServiceName = duServiceName;
     }
@@ -99,40 +94,39 @@ public final class ResourceAdapterXmlDeploymentService extends AbstractResourceA
             ResourceAdapter localRaXml = getRaxml();
             cmd = (new Merger()).mergeConnectorWithCommonIronJacamar(localRaXml, cmd);
 
+            String id = ((ModifiableResourceAdapter) raxml).getId();
+            final ServiceName raServiceName;
+            if (id == null || id.trim().isEmpty()) {
+                raServiceName = ConnectorServices.getResourceAdapterServiceName(raName);
+                this.connectorServicesRegistrationName = raName;
+            } else {
+                raServiceName = ConnectorServices.getResourceAdapterServiceName(id);
+                this.connectorServicesRegistrationName = id;
+            }
             final AS7RaXmlDeployer raDeployer = new AS7RaXmlDeployer(context.getChildTarget(), connectorXmlDescriptor.getUrl(),
                 raName, root, module.getClassLoader(), cmd, localRaXml, null, deploymentServiceName);
 
             raDeployer.setConfiguration(config.getValue());
 
+            WritableServiceBasedNamingStore.pushOwner(duServiceName);
+            ClassLoader old = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
             try {
-                WritableServiceBasedNamingStore.pushOwner(duServiceName);
-                ClassLoader old = SecurityActions.getThreadContextClassLoader();
-                try {
-                    SecurityActions.setThreadContextClassLoader(module.getClassLoader());
-                    raxmlDeployment = raDeployer.doDeploy();
-                } finally {
-                    SecurityActions.setThreadContextClassLoader(old);
-                    WritableServiceBasedNamingStore.popOwner();
-                }
-            } catch (Throwable t) {
-                unregisterAll(raName);
-                throw MESSAGES.failedToStartRaDeployment(t, raName);
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(module.getClassLoader());
+                raxmlDeployment = raDeployer.doDeploy();
+            } finally {
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(old);
+                WritableServiceBasedNamingStore.popOwner();
             }
-            ServiceName raServiceName = ConnectorServices.registerResourceAdapter(raName);
-
             value = new ResourceAdapterDeployment(raxmlDeployment, raName, raServiceName);
             managementRepository.getValue().getConnectors().add(value.getDeployment().getConnector());
-
             registry.getValue().registerResourceAdapterDeployment(value);
-
-
             context.getChildTarget()
-                    .addService(raServiceName,
-                            new ResourceAdapterService(raName, raServiceName, value.getDeployment().getResourceAdapter()))
-                    .addDependency(deploymentServiceName)
-                    .setInitialMode(ServiceController.Mode.ACTIVE).install();
-        } catch (Exception e) {
-            throw new StartException(e);
+                .addService(raServiceName,
+                        new ResourceAdapterService(raName, raServiceName, value.getDeployment().getResourceAdapter()))
+                .addDependency(deploymentServiceName)
+                .setInitialMode(ServiceController.Mode.ACTIVE).install();
+        } catch (Throwable t) {
+            cleanupStartAsync(context, raName, deploymentServiceName, t);
         }
     }
 
@@ -141,23 +135,7 @@ public final class ResourceAdapterXmlDeploymentService extends AbstractResourceA
      */
     @Override
     public void stop(StopContext context) {
-        DEPLOYMENT_CONNECTOR_LOGGER.debugf("Stopping service %s",
-                        ConnectorServices.RESOURCE_ADAPTER_SERVICE_PREFIX.append(this.value.getDeployment().getDeploymentName()));
-        unregisterAll(raName);
-    }
-
-    @Override
-    public void unregisterAll(String deploymentName) {
-
-        if (raName != null && deploymentServiceName != null) {
-            ConnectorServices.unregisterDeployment(raName, deploymentServiceName);
-        }
-
-        if (raName != null) {
-            ConnectorServices.unregisterResourceAdapterIdentifier(raName);
-        }
-
-        super.unregisterAll(deploymentName);
+        stopAsync(context, raName, deploymentServiceName);
     }
 
     public CommonDeployment getRaxmlDeployment() {

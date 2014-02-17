@@ -1,6 +1,6 @@
 /*
  * JBoss, Home of Professional Open Source.
- * Copyright 2012, Red Hat, Inc., and individual contributors
+ * Copyright 2013, Red Hat, Inc., and individual contributors
  * as indicated by the @author tags. See the copyright.txt file in the
  * distribution for a full listing of individual contributors.
  *
@@ -25,21 +25,21 @@ package org.jboss.as.process;
 import static org.jboss.as.process.ProcessMessages.MESSAGES;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 public abstract class CommandLineArgumentUsage {
 
     private static String USAGE;
     private static final String NEW_LINE = String.format("%n");
 
-    private static List<List<String>> arguments = new ArrayList<List<String>>();
+    private static final List<List<String>> arguments = new ArrayList<List<String>>();
 
     protected static void addArguments( String... args){
         ArrayList<String> tempArguments = new ArrayList<String>();
-        for( String arg : args ){
-            tempArguments.add(arg);
-        }
+        Collections.addAll(tempArguments, args);
         arguments.add(tempArguments);
     }
 
@@ -95,22 +95,19 @@ public abstract class CommandLineArgumentUsage {
             width = 35;
         }
 
-        if( input.size() == 0 ){
-
-        }else{
+        if( input.size() > 0 ) {
             StringBuilder argumentsString = new StringBuilder();
             for( int i = 0; i < input.size(); ){
                 // Trim in case an argument is too large for the width. Shouldn't happen.
                 if( input.get(0).length() > width ){
                     String tooLong = input.remove(0);
-                    tooLong.substring(0, width-5);
-                    input.add("Command removed. Too long.");
+                    input.add(0, tooLong.substring(0, width-5));
                 }
 
                 if( input.size() == 1 && (argumentsString.toString().length() + input.get(0).length() <= width)){
                     argumentsString.append(input.remove(0));
                 }else if( argumentsString.toString().length() + input.get(0).length() + 2 <= width ){
-                    argumentsString.append(input.remove(0) + ", ");
+                    argumentsString.append(input.remove(0)).append(", ");
                 }else{
                    break;
                 }
@@ -137,7 +134,7 @@ public abstract class CommandLineArgumentUsage {
     }
 
     protected static String usage(String executableBaseName) {
-        boolean isWindows = (SecurityActions.getSystemProperty("os.name")).toLowerCase(Locale.ENGLISH).contains("windows");
+        boolean isWindows = (WildFlySecurityManager.getPropertyPrivileged("os.name", null)).toLowerCase(Locale.ENGLISH).contains("windows");
         String executableName = isWindows ? executableBaseName : executableBaseName + ".sh";
 
         if (USAGE == null) {

@@ -29,10 +29,10 @@ import javax.xml.ws.WebServiceException;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.module.ResourceRoot;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.vfs.VirtualFile;
 import org.jboss.wsf.spi.deployment.DeploymentAspect;
@@ -155,5 +155,19 @@ public interface WSMessages {
 
     @Message(id = 15598, value = "JAX-RPC not supported")
     DeploymentUnitProcessingException jaxRpcNotSupported();
+
+    @Message(id = 15599, value = "%s library (%s) detected in ws endpoint deployment; either provide a proper deployment replacing embedded libraries with container module "
+            + "dependencies or disable the webservices subsystem for the current deployment adding a proper jboss-deployment-structure.xml descriptor to it. "
+            + "The former approach is recommended, as the latter approach causes most of the webservices Java EE and any JBossWS specific functionality to be disabled.")
+    DeploymentUnitProcessingException invalidLibraryInDeployment(String libraryName, String jar);
+
+    @Message(id = 15604, value = "Web service endpoint class %s not found")
+    DeploymentUnitProcessingException endpointClassNotFound(String endpointClassName);
+
+    @Message(id = 15605, value = "The endpointInterface %s declared in the @WebService annotation on web service implementation bean %s was not found.")
+    DeploymentUnitProcessingException declaredEndpointInterfaceClassNotFound(String endpointInterface, Class<?> endpointClass);
+
+    @Message(id = 15606, value = "Class verification of Java Web Service implementation class %s failed.")
+    DeploymentUnitProcessingException jwsWebServiceClassVerificationFailed(Class<?> seiClass);
 
 }

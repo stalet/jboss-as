@@ -44,6 +44,30 @@ import org.junit.Test;
 public class ArgumentValueParsingTestCase {
 
     @Test
+    public void testExpressionOnly() throws Exception {
+        final ModelNode value = parse("${test.expression}");
+        assertNotNull(value);
+        assertEquals(ModelType.STRING, value.getType());
+        assertEquals("${test.expression}", value.asString());
+    }
+
+    @Test
+    public void testExpressionInTheMiddleOnly() throws Exception {
+        final ModelNode value = parse("test ${expression} in the middle");
+        assertNotNull(value);
+        assertEquals(ModelType.STRING, value.getType());
+        assertEquals("test ${expression} in the middle", value.asString());
+    }
+
+    @Test
+    public void testQuotedExpression() throws Exception {
+        final ModelNode value = parse("\"${test.expression}\"");
+        assertNotNull(value);
+        assertEquals(ModelType.STRING, value.getType());
+        assertEquals("${test.expression}", value.asString());
+    }
+
+    @Test
     public void testSimpleString() throws Exception {
         final ModelNode value = parse("text");
         assertNotNull(value);
@@ -315,6 +339,14 @@ public class ArgumentValueParsingTestCase {
         assertNotNull(value);
         assertEquals(ModelType.STRING, value.getType());
         assertEquals(" \"", value.asString());
+    }
+
+    @Test
+    public void testEscapedQuotes() throws Exception {
+        ModelNode value = parse("\"substituteAll(\\\"JBAS\\\",\\\"DUMMY\\\")\"");
+        assertNotNull(value);
+        assertEquals(ModelType.STRING, value.getType());
+        assertEquals("substituteAll(\"JBAS\",\"DUMMY\")", value.asString());
     }
 
     @Test

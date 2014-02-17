@@ -22,10 +22,13 @@
 package org.jboss.as.controller.operations.global;
 
 import static org.jboss.as.controller.ControllerMessages.MESSAGES;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ACCESS_CONTROL;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Locale;
@@ -33,16 +36,14 @@ import java.util.Map;
 import java.util.Set;
 
 import org.jboss.as.controller.ControllerLogger;
+import org.jboss.as.controller.NoSuchResourceException;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProcessType;
-import org.jboss.as.controller.SimpleAttributeDefinition;
-import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.operations.validation.StringLengthValidator;
+import org.jboss.as.controller.UnauthorizedException;
 import org.jboss.as.controller.registry.AliasEntry;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -57,71 +58,52 @@ import org.jboss.dmr.ModelType;
  */
 public class GlobalOperationHandlers {
 
-    /*
-   ************** Shared parameter definitions ***************
-    */
 
-    static final SimpleAttributeDefinition RECURSIVE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.RECURSIVE, ModelType.BOOLEAN)
-            .setAllowNull(true)
-            .setDefaultValue(new ModelNode(false))
-            .build();
+    private static final Set<String> GLOBAL_READ_OPERATION_NAMES;
+    static {
+        Set<String> set = new HashSet<String>();
+        set.add(ReadResourceHandler.DEFINITION.getName());
+        set.add(ReadAttributeHandler.DEFINITION.getName());
+        set.add(ReadResourceDescriptionHandler.DEFINITION.getName());
+        set.add(ReadChildrenNamesHandler.DEFINITION.getName());
+        set.add(ReadChildrenTypesHandler.DEFINITION.getName());
+        set.add(ReadChildrenResourcesHandler.DEFINITION.getName());
+        set.add(ReadOperationNamesHandler.DEFINITION.getName());
+        set.add(ReadOperationDescriptionHandler.DEFINITION.getName());
+        set.add(ReadResourceDescriptionHandler.CheckResourceAccessHandler.DEFINITION.getName());
+        GLOBAL_READ_OPERATION_NAMES = Collections.unmodifiableSet(set);
+    }
 
-    static final SimpleAttributeDefinition RECURSIVE_DEPTH = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.RECURSIVE_DEPTH, ModelType.INT)
-            .setAllowNull(true)
-            .setDefaultValue(new ModelNode(0))
-            .build();
-
-    static final SimpleAttributeDefinition PROXIES = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PROXIES, ModelType.BOOLEAN)
-            .setAllowNull(true)
-            .setDefaultValue(new ModelNode(false))
-            .build();
-
-    static final SimpleAttributeDefinition INCLUDE_RUNTIME = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.INCLUDE_RUNTIME, ModelType.BOOLEAN)
-            .setAllowNull(true)
-            .setDefaultValue(new ModelNode(false))
-            .build();
-
-    static final SimpleAttributeDefinition INCLUDE_DEFAULTS = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.INCLUDE_DEFAULTS, ModelType.BOOLEAN)
-            .setAllowNull(true)
-            .setDefaultValue(new ModelNode(true))
-            .build();
-
-    static final SimpleAttributeDefinition INCLUDE_ALIASES = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.INCLUDE_ALIASES, ModelType.BOOLEAN)
-            .setAllowNull(true)
-            .setDefaultValue(new ModelNode(false))
-            .build();
-
-    static final SimpleAttributeDefinition NAME = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.NAME, ModelType.STRING)
-            .setValidator(new StringLengthValidator(1))
-            .setAllowNull(false)
-            .build();
-
-    static final SimpleAttributeDefinition LOCALE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.LOCALE, ModelType.STRING)
-            .setAllowNull(true)
-            .build();
-
-    static final SimpleAttributeDefinition CHILD_TYPE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.CHILD_TYPE, ModelType.STRING)
-            .setValidator(new StringLengthValidator(1))
-            .setAllowNull(false)
-            .build();
-
-    static final SimpleAttributeDefinition VALUE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.VALUE, ModelType.STRING)
-            .setValidator(new StringLengthValidator(1))
-            .setAllowNull(true)
-            .build();
-
+    public static boolean isGlobalReadOperation(String operationName) {
+        return GLOBAL_READ_OPERATION_NAMES.contains(operationName);
+    }
 
     public static void registerGlobalOperations(ManagementResourceRegistration root, ProcessType processType) {
         root.registerOperationHandler(org.jboss.as.controller.operations.global.ReadResourceHandler.DEFINITION,
-                                      org.jboss.as.controller.operations.global.ReadResourceHandler.INSTANCE, true);
+                org.jboss.as.controller.operations.global.ReadResourceHandler.INSTANCE, true);
         root.registerOperationHandler(org.jboss.as.controller.operations.global.ReadAttributeHandler.DEFINITION,
-                                      org.jboss.as.controller.operations.global.ReadAttributeHandler.INSTANCE, true);
+                org.jboss.as.controller.operations.global.ReadAttributeHandler.INSTANCE, true);
         root.registerOperationHandler(ReadResourceDescriptionHandler.DEFINITION, ReadResourceDescriptionHandler.INSTANCE, true);
         root.registerOperationHandler(ReadChildrenNamesHandler.DEFINITION, ReadChildrenNamesHandler.INSTANCE, true);
         root.registerOperationHandler(ReadChildrenTypesHandler.DEFINITION, ReadChildrenTypesHandler.INSTANCE, true);
         root.registerOperationHandler(ReadChildrenResourcesHandler.DEFINITION, ReadChildrenResourcesHandler.INSTANCE, true);
         root.registerOperationHandler(ReadOperationNamesHandler.DEFINITION, ReadOperationNamesHandler.INSTANCE, true);
         root.registerOperationHandler(ReadOperationDescriptionHandler.DEFINITION, ReadOperationDescriptionHandler.INSTANCE, true);
+        root.registerOperationHandler(ReadResourceDescriptionHandler.CheckResourceAccessHandler.DEFINITION, new OperationStepHandler() {
+            @Override
+            public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                //Just use an empty operation handler here, this is a private operation and people who want to call it need to instantiate the step handler
+                throw new OperationFailedException("This should never be called");
+            }
+        }, true);
+        root.registerOperationHandler(ReadResourceDescriptionHandler.CheckResourceAccessHandler.DEFAULT_DEFINITION, new OperationStepHandler() {
+            @Override
+            public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                //Just use an empty operation handler here, this is a private operation and people who want to call it need to instantiate the step handler
+                throw new OperationFailedException("This should never be called");
+            }
+        }, true);
+
         if (processType != ProcessType.DOMAIN_SERVER) {
             root.registerOperationHandler(org.jboss.as.controller.operations.global.WriteAttributeHandler.DEFINITION,
                                           org.jboss.as.controller.operations.global.WriteAttributeHandler.INSTANCE, true);
@@ -129,6 +111,10 @@ public class GlobalOperationHandlers {
                                           org.jboss.as.controller.operations.global.UndefineAttributeHandler.INSTANCE, true);
         }
     }
+
+    public static final String CHECK_DEFAULT_RESOURCE_ACCESS = "check-default-resource-access";
+
+    public static final String CHECK_RESOURCE_ACCESS = "check-resource-access";
 
     private GlobalOperationHandlers() {
         //
@@ -146,47 +132,79 @@ public class GlobalOperationHandlers {
             FAKE_OPERATION = resolve;
         }
 
+        private final FilteredData filteredData;
+
+        protected AbstractMultiTargetHandler() {
+            this(null);
+        }
+
+        protected AbstractMultiTargetHandler(FilteredData filteredData) {
+            this.filteredData = filteredData;
+        }
+
+        protected FilteredData getFilteredData() {
+            return filteredData;
+        }
+
+
         @Override
         public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
             final PathAddress address = PathAddress.pathAddress(operation.require(OP_ADDR));
+
             // In case if it's a multiTarget operation, resolve the address first
             // This only works for model resources, which can be resolved into a concrete addresses
             if (address.isMultiTarget()) {
+                final FilteredData localFilteredData = filteredData == null ? new FilteredData(PathAddress.EMPTY_ADDRESS) : filteredData;
                 // The final result should be a list of executed operations
                 final ModelNode result = context.getResult().setEmptyList();
                 // Trick the context to give us the model-root
-                context.addStep(new ModelNode(), FAKE_OPERATION.clone(), new ModelAddressResolver(operation, result, new OperationStepHandler() {
+                context.addStep(new ModelNode(), FAKE_OPERATION.clone(), new ModelAddressResolver(operation, result, localFilteredData,
+                        new OperationStepHandler() {
                     @Override
                     public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
-                        doExecute(context, operation);
+                        doExecute(context, operation, localFilteredData);
                     }
                 }), OperationContext.Stage.MODEL, true);
-                context.stepCompleted();
+                context.completeStep(new OperationContext.ResultHandler() {
+                    @Override
+                    public void handleResult(OperationContext.ResultAction resultAction, OperationContext context, ModelNode operation) {
+                        if (resultAction == OperationContext.ResultAction.KEEP && localFilteredData.hasFilteredData()) {
+                            // Report on filtering
+                            context.getResponseHeaders().get(ACCESS_CONTROL).set(localFilteredData.toModelNode());
+                        }
+                    }
+                });
             } else {
-                doExecute(context, operation);
+                doExecute(context, operation, filteredData);
             }
         }
 
         /**
          * Execute the actual operation if it is not addressed to multiple targets.
          *
-         * @param context   the operation context
-         * @param operation the original operation
+         *
+         * @param context      the operation context
+         * @param operation    the original operation
+         * @param filteredData tracking object for filtered data
          * @throws OperationFailedException
          */
-        abstract void doExecute(OperationContext context, ModelNode operation) throws OperationFailedException;
+        abstract void doExecute(OperationContext context, ModelNode operation, FilteredData filteredData) throws OperationFailedException;
     }
 
     public static final class ModelAddressResolver implements OperationStepHandler {
 
         private final ModelNode operation;
         private final ModelNode result;
+        private final FilteredData filteredData;
         private final OperationStepHandler handler; // handler bypassing further wildcard resolution
 
-        public ModelAddressResolver(final ModelNode operation, final ModelNode result, final OperationStepHandler delegate) {
+        public ModelAddressResolver(final ModelNode operation, final ModelNode result,
+                                    final FilteredData filteredData,
+                                    final OperationStepHandler delegate) {
             this.operation = operation;
             this.result = result;
             this.handler = delegate;
+            this.filteredData = filteredData;
         }
 
         /**
@@ -196,10 +214,42 @@ public class GlobalOperationHandlers {
         public void execute(final OperationContext context, final ModelNode ignored) throws OperationFailedException {
             final PathAddress address = PathAddress.pathAddress(operation.require(OP_ADDR));
             execute(address, PathAddress.EMPTY_ADDRESS, context);
-            context.stepCompleted();
+            context.completeStep(new OperationContext.ResultHandler() {
+                @Override
+                public void handleResult(OperationContext.ResultAction resultAction, OperationContext context, ModelNode operation) {
+
+                    if (result.getType() == ModelType.LIST) {
+                        boolean replace = false;
+                        ModelNode replacement = new ModelNode().setEmptyList();
+                        for (ModelNode item : result.asList()) {
+                            if (item.isDefined() && item.hasDefined(OP_ADDR)) {
+                                replacement.add(item);
+                            } else {
+                                replace = true;
+                            }
+                        }
+                        if (replace) {
+                            result.set(replacement);
+                        }
+                    }
+                }
+            });
         }
 
-        void execute(final PathAddress address, final PathAddress base, final OperationContext context) {
+        private void safeExecute(final PathAddress address, final PathAddress base, final OperationContext context) {
+            try {
+                execute(address, base, context);
+            } catch (UnauthorizedException e) {
+                // equivalent to the resource not existing
+                // Just report the failure to the filter and complete normally
+                filteredData.addReadRestrictedResource(base);
+            } catch (NoSuchResourceException e) {
+                // Just report the failure to the filter and complete normally
+                filteredData.addAccessRestrictedResource(base);
+            }
+        }
+
+        private void execute(final PathAddress address, final PathAddress base, final OperationContext context) {
             final Resource resource = context.readResource(base, false);
             final PathAddress current = address.subAddress(base.size());
             final Iterator<PathElement> iterator = current.iterator();
@@ -223,7 +273,7 @@ public class GlobalOperationHandlers {
                             for (final String child : children) {
                                 // Double check if the child actually exists
                                 if (resource.hasChild(PathElement.pathElement(key, child))) {
-                                    execute(address, base.append(PathElement.pathElement(key, child)), context);
+                                    safeExecute(address, base.append(PathElement.pathElement(key, child)), context);
                                 }
                             }
                         } else {
@@ -231,7 +281,7 @@ public class GlobalOperationHandlers {
                                 if (children.contains(segment)) {
                                     // Double check if the child actually exists
                                     if (resource.hasChild(PathElement.pathElement(key, segment))) {
-                                        execute(address, base.append(PathElement.pathElement(key, segment)), context);
+                                        safeExecute(address, base.append(PathElement.pathElement(key, segment)), context);
                                     }
                                 }
                             }
@@ -240,7 +290,7 @@ public class GlobalOperationHandlers {
                 } else {
                     // Double check if the child actually exists
                     if (resource.hasChild(element)) {
-                        execute(address, base.append(element), context);
+                        safeExecute(address, base.append(element), context);
                     }
                 }
             } else {
@@ -248,9 +298,22 @@ public class GlobalOperationHandlers {
                 final ModelNode newOp = operation.clone();
                 newOp.get(OP_ADDR).set(base.toModelNode());
 
-                final ModelNode result = this.result.add();
-                result.get(OP_ADDR).set(base.toModelNode());
-                context.addStep(result, newOp, handler, OperationContext.Stage.MODEL, true);
+                final ModelNode resultItem = this.result.add();
+                final ModelNode resultAddress = resultItem.get(OP_ADDR);
+
+                final OperationStepHandler wrapper = new OperationStepHandler() {
+                    @Override
+                    public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                        try {
+                            handler.execute(context, operation);
+                            resultAddress.set(base.toModelNode());
+                        } catch (NoSuchResourceException e) {
+                            // just discard the result to avoid leaking the inaccessible address
+                            context.stepCompleted();
+                        }
+                    }
+                };
+                context.addStep(resultItem, newOp, wrapper, OperationContext.Stage.MODEL, true);
             }
         }
 
@@ -336,7 +399,7 @@ public class GlobalOperationHandlers {
             }
 
             if (aliasEntry == null) {
-                if (resource.hasChildren(childType)) {
+                if (resource != null && resource.hasChildren(childType)) {
                     set.addAll(resource.getChildrenNames(childType));
                 }
             } else {
@@ -344,7 +407,7 @@ public class GlobalOperationHandlers {
                 PathAddress target = aliasEntry.convertToTargetAddress(addr.append(element));
                 PathAddress targetParent = target.subAddress(0, target.size() - 1);
                 Resource parentResource = context.readResourceFromRoot(targetParent);
-                if (parentResource.hasChildren(target.getLastElement().getKey())) {
+                if (parentResource != null && parentResource.hasChildren(target.getLastElement().getKey())) {
                     set.add(element.getValue());
                 }
             }
@@ -360,10 +423,10 @@ public class GlobalOperationHandlers {
     }
 
     static Locale getLocale(OperationContext context, final ModelNode operation) throws OperationFailedException {
-        if (!operation.hasDefined(LOCALE.getName())) {
+        if (!operation.hasDefined(GlobalOperationAttributes.LOCALE.getName())) {
             return null;
         }
-        String unparsed = normalizeLocale(operation.get(LOCALE.getName()).asString());
+        String unparsed = normalizeLocale(operation.get(GlobalOperationAttributes.LOCALE.getName()).asString());
         int len = unparsed.length();
         if (len != 2 && len != 5 && len < 7) {
             reportInvalidLocaleFormat(context, unparsed);

@@ -21,36 +21,44 @@
  */
 package org.jboss.as.weld.services.bootstrap;
 
+import static org.jboss.as.weld.util.ResourceInjectionUtilities.getResourceAnnotated;
+
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Set;
 
 import javax.ejb.EJB;
+import javax.enterprise.inject.Produces;
 import javax.enterprise.inject.spi.InjectionPoint;
+import javax.naming.InitialContext;
+import javax.naming.NamingException;
 
 import org.jboss.as.ee.component.ComponentView;
 import org.jboss.as.ee.component.EEApplicationDescription;
 import org.jboss.as.ee.component.EEModuleDescription;
 import org.jboss.as.ee.component.ViewDescription;
-import org.jboss.as.naming.ManagedReferenceFactory;
+import org.jboss.as.naming.ManagedReference;
 import org.jboss.as.naming.deployment.ContextNames;
+import org.jboss.as.naming.deployment.ContextNames.BindInfo;
 import org.jboss.as.weld.WeldMessages;
+import org.jboss.as.weld.util.ResourceInjectionUtilities;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.vfs.VirtualFile;
 import org.jboss.weld.injection.spi.EjbInjectionServices;
+import org.jboss.weld.injection.spi.ResourceReference;
+import org.jboss.weld.injection.spi.ResourceReferenceFactory;
+import org.jboss.weld.injection.spi.helpers.SimpleResourceReference;
+import org.jboss.weld.logging.BeanLogger;
+import org.jboss.weld.util.reflection.Reflections;
 
 /**
  * Implementation of EjbInjectionServices.
  *
  * @author Stuart Douglas
  */
-public class WeldEjbInjectionServices implements EjbInjectionServices {
-
-    private final ServiceRegistry serviceRegistry;
-
-    private final EEModuleDescription moduleDescription;
+public class WeldEjbInjectionServices extends AbstractResourceInjectionServices implements EjbInjectionServices {
 
     private final EEApplicationDescription applicationDescription;
 
@@ -58,6 +66,7 @@ public class WeldEjbInjectionServices implements EjbInjectionServices {
 
 
     public WeldEjbInjectionServices(ServiceRegistry serviceRegistry, EEModuleDescription moduleDescription, final EEApplicationDescription applicationDescription, final VirtualFile deploymentRoot) {
+        super(serviceRegistry, moduleDescription);
         if (serviceRegistry == null) {
             throw WeldMessages.MESSAGES.parameterCannotBeNull("serviceRegistry");
         }
@@ -71,16 +80,18 @@ public class WeldEjbInjectionServices implements EjbInjectionServices {
             throw WeldMessages.MESSAGES.parameterCannotBeNull("deploymentRoot");
         }
 
-        this.serviceRegistry = serviceRegistry;
-        this.moduleDescription = moduleDescription;
         this.applicationDescription = applicationDescription;
         this.deploymentRoot = deploymentRoot;
     }
 
     @Override
     public Object resolveEjb(InjectionPoint injectionPoint) {
-        //TODO: some of this stuff should be cached
-        EJB ejb = injectionPoint.getAnnotated().getAnnotation(EJB.class);
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public ResourceReferenceFactory<Object> registerEjbInjectionPoint(final InjectionPoint injectionPoint) {
+        EJB ejb = getResourceAnnotated(injectionPoint).getAnnotation(EJB.class);
         if (ejb == null) {
             throw WeldMessages.MESSAGES.annotationNotFound(EJB.class, injectionPoint.getMember());
         }
@@ -88,39 +99,91 @@ public class WeldEjbInjectionServices implements EjbInjectionServices {
             throw WeldMessages.MESSAGES.injectionPointNotAJavabean((Method) injectionPoint.getMember());
         }
         if (!ejb.lookup().equals("")) {
-            final ContextNames.BindInfo ejbBindInfo = ContextNames.bindInfoFor(moduleDescription.getApplicationName(), moduleDescription.getModuleName(), moduleDescription.getModuleName(), ejb.lookup());
-            ServiceController<?> controller = serviceRegistry.getRequiredService(ejbBindInfo.getBinderServiceName());
-            ManagedReferenceFactory factory = (ManagedReferenceFactory) controller.getValue();
-            return factory.getReference().getInstance();
+            return handleServiceLookup(ejb.lookup(), injectionPoint);
         } else {
-            final Set<ViewDescription> viewService;
-            if (ejb.beanName().isEmpty()) {
-                if (ejb.beanInterface() != Object.class) {
-                    viewService = applicationDescription.getComponentsForViewName(ejb.beanInterface().getName(), deploymentRoot);
-                } else {
-                    viewService = applicationDescription.getComponentsForViewName(getType(injectionPoint.getType()).getName(), deploymentRoot);
-                }
+            final ViewDescription viewDescription = getViewDescription(ejb, injectionPoint);
+            if(viewDescription != null) {
+                return handleServiceLookup(viewDescription, injectionPoint);
             } else {
-                if (ejb.beanInterface() != Object.class) {
-                    viewService = applicationDescription.getComponents(ejb.beanName(), ejb.beanInterface().getName(), deploymentRoot);
-                } else {
-                    viewService = applicationDescription.getComponents(ejb.beanName(), getType(injectionPoint.getType()).getName(), deploymentRoot);
-                }
+
+                final String proposedName = ResourceInjectionUtilities.getEjbBindLocation(injectionPoint);
+                return new ResourceReferenceFactory<Object>() {
+                    @Override
+                    public ResourceReference<Object> createResource() {
+                        return new SimpleResourceReference<Object>(doLookup(proposedName, null));
+                    }
+                };
             }
+        }
+    }
+
+    private ResourceReferenceFactory<Object> handleServiceLookup(ViewDescription viewDescription, InjectionPoint injectionPoint) {
+        /*
+         * Try to obtain ComponentView eagerly and validate the resource type
+         */
+        final ComponentView view = getComponentView(viewDescription);
+        if (view != null && injectionPoint.getAnnotated().isAnnotationPresent(Produces.class)) {
+            Class<?> clazz = view.getViewClass();
+
+            Class<?> injectionPointRawType = Reflections.getRawType(injectionPoint.getType());
+            //we just compare names, as for remote views the actual classes may be loaded from different class loaders
+            Class<?> c = clazz;
+            boolean found = false;
+            while (c != null && c != Object.class) {
+                if (injectionPointRawType.getName().equals(c.getName())) {
+                    found = true;
+                    break;
+                }
+                c = c.getSuperclass();
+            }
+            if(!found) {
+                throw BeanLogger.LOG.invalidResourceProducerType(injectionPoint.getAnnotated(), clazz.getName());
+            }
+            return new ComponentViewToResourceReferenceFactoryAdapter<Object>(view);
+        } else {
+            return createLazyResourceReferenceFactory(viewDescription);
+        }
+    }
+
+    private ComponentView getComponentView(ViewDescription viewDescription) {
+        final ServiceController<?> controller = serviceRegistry.getRequiredService(viewDescription.getServiceName());
+        return (ComponentView) controller.getValue();
+    }
+
+    private ViewDescription getViewDescription(EJB ejb, InjectionPoint injectionPoint) {
+        final Set<ViewDescription> viewService;
+        if (ejb.beanName().isEmpty()) {
+            if (ejb.beanInterface() != Object.class) {
+                viewService = applicationDescription.getComponentsForViewName(ejb.beanInterface().getName(), deploymentRoot);
+            } else {
+                viewService = applicationDescription.getComponentsForViewName(getType(injectionPoint.getType()).getName(), deploymentRoot);
+            }
+        } else {
+            if (ejb.beanInterface() != Object.class) {
+                viewService = applicationDescription.getComponents(ejb.beanName(), ejb.beanInterface().getName(), deploymentRoot);
+            } else {
+                viewService = applicationDescription.getComponents(ejb.beanName(), getType(injectionPoint.getType()).getName(), deploymentRoot);
+            }
+        }
+        if(injectionPoint.getAnnotated().isAnnotationPresent(Produces.class)) {
             if (viewService.isEmpty()) {
                 throw WeldMessages.MESSAGES.ejbNotResolved(ejb, injectionPoint.getMember());
             } else if (viewService.size() > 1) {
                 throw WeldMessages.MESSAGES.moreThanOneEjbResolved(ejb, injectionPoint.getMember(), viewService);
             }
-            final ViewDescription viewDescription = viewService.iterator().next();
-            final ServiceController<?> controller = serviceRegistry.getRequiredService(viewDescription.getServiceName());
-            final ComponentView view = (ComponentView) controller.getValue();
-            try {
-                return view.createInstance().getInstance();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
+        } else {
+            if (viewService.isEmpty()) {
+                return null;
+            } else if (viewService.size() > 1) {
+                return null;
             }
         }
+        return viewService.iterator().next();
+    }
+
+    @Override
+    protected BindInfo getBindInfo(String result) {
+        return ContextNames.bindInfoFor(moduleDescription.getApplicationName(), moduleDescription.getModuleName(), moduleDescription.getModuleName(), result);
     }
 
     @Override
@@ -135,6 +198,43 @@ public class WeldEjbInjectionServices implements EjbInjectionServices {
             return getType(((ParameterizedType) type).getRawType());
         } else {
             throw WeldMessages.MESSAGES.couldNotDetermineUnderlyingType(type);
+        }
+    }
+
+    protected ResourceReferenceFactory<Object> createLazyResourceReferenceFactory(final ViewDescription viewDescription) {
+        return new ResourceReferenceFactory<Object>() {
+            @Override
+            public ResourceReference<Object> createResource() {
+                final ManagedReference instance;
+                try {
+                    final ServiceController<?> controller = serviceRegistry.getRequiredService(viewDescription.getServiceName());
+                    final ComponentView view = (ComponentView) controller.getValue();
+                    instance = view.createInstance();
+                    return new ResourceReference<Object>() {
+                        @Override
+                        public Object getInstance() {
+                            return instance.getInstance();
+                        }
+
+                        @Override
+                        public void release() {
+                            instance.release();
+                        }
+                    };
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+    }
+
+
+    public Object doLookup(String jndiName, String mappedName) {
+        String name = ResourceInjectionUtilities.getResourceName(jndiName, mappedName);
+        try {
+            return new InitialContext().lookup(name);
+        } catch (NamingException e) {
+            throw WeldMessages.MESSAGES.coundNotFindResource(name, e);
         }
     }
 }

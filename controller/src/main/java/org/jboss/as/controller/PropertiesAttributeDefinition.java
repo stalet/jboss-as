@@ -22,21 +22,28 @@
 
 package org.jboss.as.controller;
 
+import static org.jboss.as.controller.parsing.ParseUtils.requireAttributes;
+
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.ResourceBundle;
+
+import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.operations.validation.ModelTypeValidator;
 import org.jboss.as.controller.operations.validation.ParameterValidator;
+import org.jboss.as.controller.parsing.ParseUtils;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 import org.jboss.dmr.Property;
+import org.jboss.staxmapper.XMLExtendedStreamReader;
 
 /**
  * Represents simple key=value map equivalent of java.util.Map<String,String>()
@@ -49,8 +56,11 @@ public final class PropertiesAttributeDefinition extends MapAttributeDefinition 
 
     private PropertiesAttributeDefinition(final String name, final String xmlName, final boolean allowNull, boolean allowExpression,
                                           final int minSize, final int maxSize, final ParameterCorrector corrector, final ParameterValidator elementValidator,
-                                          final String[] alternatives, final String[] requires, final AttributeMarshaller attributeMarshaller, final boolean resourceOnly, final DeprecationData deprecated, final AttributeAccess.Flag... flags) {
-        super(name, xmlName, allowNull, allowExpression, minSize, maxSize, corrector, elementValidator, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+                                          final String[] alternatives, final String[] requires, final AttributeMarshaller attributeMarshaller, final boolean resourceOnly,
+                                          final DeprecationData deprecated, final AccessConstraintDefinition[] accessConstraints,
+                                          final Boolean nullSignificant, final AttributeAccess.Flag... flags) {
+        super(name, xmlName, allowNull, allowExpression, minSize, maxSize, corrector, elementValidator, alternatives, requires, attributeMarshaller,
+                resourceOnly, deprecated, accessConstraints, nullSignificant, flags);
     }
 
     @Override
@@ -87,6 +97,18 @@ public final class PropertiesAttributeDefinition extends MapAttributeDefinition 
         return props;
     }
 
+    public void parse(final XMLExtendedStreamReader reader,final ModelNode operation) throws XMLStreamException {
+        while (reader.hasNext() && reader.nextTag() != XMLStreamConstants.END_ELEMENT) {
+            if (reader.getLocalName().equals(getXmlName())) {
+                final String[] array = requireAttributes(reader, org.jboss.as.controller.parsing.Attribute.NAME.getLocalName(), org.jboss.as.controller.parsing.Attribute.VALUE.getLocalName());
+                parseAndAddParameterElement(array[0], array[1], operation, reader);
+                ParseUtils.requireNoContent(reader);
+            } else {
+                throw ParseUtils.unexpectedElement(reader);
+            }
+        }
+    }
+
     private static class PropertiesAttributeMarshaller extends AttributeMarshaller {
         private final boolean wrapElement;
         private final String wrapperElement;
@@ -115,6 +137,16 @@ public final class PropertiesAttributeDefinition extends MapAttributeDefinition 
             if (wrapElement) {
                 writer.writeEndElement();
             }
+        }
+
+        @Override
+        public void marshallAsAttribute(AttributeDefinition attribute, ModelNode resourceModel, boolean marshallDefault, XMLStreamWriter writer) throws XMLStreamException {
+            marshallAsElement(attribute, resourceModel, marshallDefault, writer);
+        }
+
+        @Override
+        public boolean isMarshallableAsElement() {
+            return true;
         }
     }
 
@@ -152,7 +184,8 @@ public final class PropertiesAttributeDefinition extends MapAttributeDefinition 
             if (attributeMarshaller == null) {
                 attributeMarshaller = new PropertiesAttributeMarshaller(wrapXmlElement, wrapperElement);
             }
-            return new PropertiesAttributeDefinition(name, xmlName, allowNull, allowExpression, minSize, maxSize, corrector, validator, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+            return new PropertiesAttributeDefinition(name, xmlName, allowNull, allowExpression, minSize, maxSize, corrector, validator, alternatives,
+                    requires, attributeMarshaller, resourceOnly, deprecated, accessConstraints, nullSignficant, flags);
         }
     }
 }

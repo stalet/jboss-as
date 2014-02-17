@@ -1,6 +1,6 @@
 /*
  * JBoss, Home of Professional Open Source.
- * Copyright 2012, Red Hat, Inc., and individual contributors
+ * Copyright 2013, Red Hat, Inc., and individual contributors
  * as indicated by the @author tags. See the copyright.txt file in the
  * distribution for a full listing of individual contributors.
  *
@@ -36,16 +36,16 @@ public final class NodeUtil {
     private static final Logger log = Logger.getLogger(NodeUtil.class);
 
     public static void deploy(Deployer deployer, String... deployments) {
-        for (int i = 0; i < deployments.length; i++) {
-            log.info("Deploying deployment=" + deployments[i]);
-            deployer.deploy(deployments[i]);
+        for (String deployment : deployments) {
+            log.info("Deploying deployment=" + deployment);
+            deployer.deploy(deployment);
         }
     }
 
     public static void undeploy(Deployer deployer, String... deployments) {
-        for (int i = 0; i < deployments.length; i++) {
-            log.info("Undeploying deployment=" + deployments[i]);
-            deployer.undeploy(deployments[i]);
+        for (String deployment : deployments) {
+            log.info("Undeploying deployment=" + deployment);
+            deployer.undeploy(deployment);
         }
     }
 
@@ -56,39 +56,30 @@ public final class NodeUtil {
             deployer.deploy(deployment);
             log.info("Started deployment=" + deployment + ", container=" + container);
         } catch (Throwable e) {
-            log.error(e);
+            log.error("Failed to start container(s)", e);
         }
     }
 
-    public static void start(ContainerController controller, String[] containers) {
+    public static void start(ContainerController controller, String... containers) {
         // TODO do this in parallel.
-        for (int i = 0; i < containers.length; i++) {
+        for (String container : containers) {
             try {
-                log.info("Starting deployment=NONE, container=" + containers[i]);
-                controller.start(containers[i]);
+                log.info("Starting deployment=NONE, container=" + container);
+                controller.start(container);
             } catch (Throwable e) {
-                log.error(e);
+                log.error("Failed to start containers", e);
             }
         }
     }
 
-    public static void start(ContainerController controller, String container) {
-        try {
-            log.info("Starting deployment=NONE, container=" + container);
-            controller.start(container);
-        } catch (Throwable e) {
-            log.error(e);
-        }
-    }
-
-    public static void stop(ContainerController controller, String[] containers) {
-        for (int i = 0; i < containers.length; i++) {
+    public static void stop(ContainerController controller, String... containers) {
+        for (String container : containers) {
             try {
-                log.info("Stopping container=" + containers[i]);
-                controller.stop(containers[i]);
-                log.info("Stopped container=" + containers[i]);
+                log.info("Stopping container=" + container);
+                controller.stop(container);
+                log.info("Stopped container=" + container);
             } catch (Throwable e) {
-                log.error(e);
+                log.error("Failed to stop containers", e);
             }
         }
     }
@@ -100,16 +91,7 @@ public final class NodeUtil {
             controller.stop(container);
             log.info("Stopped deployment=" + deployment + ", container=" + container);
         } catch (Throwable e) {
-            log.error(e);
-        }
-    }
-
-    public static void stop(ContainerController controller, String container) {
-        try {
-            controller.stop(container);
-            log.info("Stopped deployment=NONE, container=" + container);
-        } catch (Throwable e) {
-            log.error(e);
+            log.error("Failed to stop containers", e);
         }
     }
 

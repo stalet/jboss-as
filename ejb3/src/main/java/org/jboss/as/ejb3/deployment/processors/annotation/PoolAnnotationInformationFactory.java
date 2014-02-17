@@ -23,9 +23,13 @@
 package org.jboss.as.ejb3.deployment.processors.annotation;
 
 
+import static org.jboss.as.ee.EeMessages.MESSAGES;
+
 import org.jboss.as.ee.metadata.ClassAnnotationInformationFactory;
+import org.jboss.as.ejb3.util.PropertiesValueResolver;
 import org.jboss.ejb3.annotation.Pool;
 import org.jboss.jandex.AnnotationInstance;
+import org.jboss.jandex.AnnotationValue;
 
 /**
  * Processes {@link Pool} annotation on EJB classes
@@ -39,7 +43,14 @@ public class PoolAnnotationInformationFactory extends ClassAnnotationInformation
     }
 
     @Override
-    protected String fromAnnotation(final AnnotationInstance annotationInstance) {
-        return annotationInstance.value().asString();
+    protected String fromAnnotation(final AnnotationInstance annotationInstance, final boolean replacement) {
+        AnnotationValue value = annotationInstance.value();
+        if (value == null || value.asString().isEmpty()) {
+            throw MESSAGES.annotationAttributeMissing("@Pool", "value");
+        }
+        if (replacement)
+            return PropertiesValueResolver.replaceProperties(value.asString());
+        else
+            return value.asString();
     }
 }

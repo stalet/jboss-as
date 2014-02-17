@@ -33,7 +33,7 @@ import java.util.Set;
 
 import javax.security.jacc.PolicyContext;
 
-import org.jboss.as.controller.security.ServerSecurityManager;
+import org.jboss.as.core.security.ServerSecurityManager;
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentView;
 import org.jboss.as.ejb3.component.EJBComponent;
@@ -44,6 +44,7 @@ import org.jboss.metadata.ejb.spec.MethodInterfaceType;
 import org.jboss.security.AnybodyPrincipal;
 import org.jboss.security.NobodyPrincipal;
 import org.jboss.security.SimplePrincipal;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * EJB authorization interceptor responsible for handling invocation on EJB methods and doing the necessary authorization
@@ -183,7 +184,7 @@ public class AuthorizationInterceptor implements Interceptor {
      * @return the previous contextID as retrieved from the {@code PolicyContext}.
      */
     protected String setContextID(final String contextID) {
-        if(System.getSecurityManager() == null) {
+        if (! WildFlySecurityManager.isChecking()) {
             final String previousID = PolicyContext.getContextID();
             PolicyContext.setContextID(contextID);
             return previousID;

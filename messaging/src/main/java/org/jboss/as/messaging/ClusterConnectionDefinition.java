@@ -21,9 +21,9 @@
  */
 
 package org.jboss.as.messaging;
+
 import static org.jboss.as.controller.SimpleAttributeDefinitionBuilder.create;
 import static org.jboss.as.controller.client.helpers.MeasurementUnit.MILLISECONDS;
-import static org.jboss.as.messaging.CommonAttributes.CALL_FAILOVER_TIMEOUT;
 import static org.jboss.as.messaging.CommonAttributes.CONNECTOR_REF_STRING;
 import static org.jboss.as.messaging.CommonAttributes.STATIC_CONNECTORS;
 import static org.jboss.dmr.ModelType.BIG_DECIMAL;
@@ -127,6 +127,13 @@ public class ClusterConnectionDefinition extends SimpleResourceDefinition {
             .setRestartAllServices()
             .build();
 
+    public static final SimpleAttributeDefinition INITIAL_CONNECT_ATTEMPTS = create("initial-connect-attempts", INT)
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterInitialConnectAttempts()))
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setRestartAllServices()
+            .build();
+
     public static final SimpleAttributeDefinition MAX_HOPS = create("max-hops", INT)
             .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterMaxHops()))
             .setAllowNull(true)
@@ -195,6 +202,7 @@ public class ClusterConnectionDefinition extends SimpleResourceDefinition {
             CommonAttributes.CALL_TIMEOUT,
             CommonAttributes.CALL_FAILOVER_TIMEOUT,
             RETRY_INTERVAL, RETRY_INTERVAL_MULTIPLIER, MAX_RETRY_INTERVAL,
+            INITIAL_CONNECT_ATTEMPTS,
             RECONNECT_ATTEMPTS, USE_DUPLICATE_DETECTION,
             FORWARD_WHEN_NO_CONSUMERS, MAX_HOPS,
             CommonAttributes.BRIDGE_CONFIRMATION_WINDOW_SIZE,
@@ -203,12 +211,6 @@ public class ClusterConnectionDefinition extends SimpleResourceDefinition {
             CONNECTOR_REFS,
             ALLOW_DIRECT_CONNECTIONS_ONLY,
             DISCOVERY_GROUP_NAME,
-    };
-
-    public static final AttributeDefinition[] ATTRIBUTES_ADDED_IN_1_2_0 = {
-            CALL_FAILOVER_TIMEOUT,
-            NOTIFICATION_ATTEMPTS,
-            NOTIFICATION_INTERVAL
     };
 
     public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = {

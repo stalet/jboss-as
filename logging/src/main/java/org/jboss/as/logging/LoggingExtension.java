@@ -24,16 +24,20 @@ package org.jboss.as.logging;
 
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.ResourceBundle;
 
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
-import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.SubsystemRegistration;
+import org.jboss.as.controller.access.constraint.ApplicationTypeConfig;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.ApplicationTypeAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
 import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
@@ -44,10 +48,9 @@ import org.jboss.as.controller.services.path.ResolvePathHandler;
 import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.as.controller.transform.description.TransformationDescription;
 import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
+import org.jboss.as.logging.logmanager.WildFlyLogContextSelector;
 import org.jboss.as.logging.stdio.LogContextStdioContextSelector;
-import org.jboss.logmanager.ClassLoaderLogContextSelector;
 import org.jboss.logmanager.LogContext;
-import org.jboss.logmanager.ThreadLocalLogContextSelector;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoader;
@@ -65,17 +68,15 @@ public class LoggingExtension implements Extension {
 
     static final PathElement LOGGING_PROFILE_PATH = PathElement.pathElement(CommonAttributes.LOGGING_PROFILE);
 
-    static final ClassLoaderLogContextSelector CONTEXT_SELECTOR = new ClassLoaderLogContextSelector();
-
-    static final ThreadLocalLogContextSelector THREAD_LOCAL_CONTEXT_SELECTOR = new ThreadLocalLogContextSelector(CONTEXT_SELECTOR);
+    static final WildFlyLogContextSelector CONTEXT_SELECTOR = WildFlyLogContextSelector.Factory.create();
 
     static final GenericSubsystemDescribeHandler DESCRIBE_HANDLER = GenericSubsystemDescribeHandler.create(LoggingChildResourceComparator.INSTANCE);
 
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
-    private static ModuleIdentifier[] LOGGING_API_MODULES = new ModuleIdentifier[] {
+    private static final ModuleIdentifier[] LOGGING_API_MODULES = new ModuleIdentifier[] {
             ModuleIdentifier.create("org.apache.commons.logging"),
             ModuleIdentifier.create("org.apache.log4j"),
             ModuleIdentifier.create("org.jboss.logging"),
@@ -101,7 +102,7 @@ public class LoggingExtension implements Extension {
         if (!java.util.logging.LogManager.getLogManager().getClass().getName().equals(org.jboss.logmanager.LogManager.class.getName())) {
             throw LoggingMessages.MESSAGES.extensionNotInitialized();
         }
-        LogContext.setLogContextSelector(THREAD_LOCAL_CONTEXT_SELECTOR);
+        LogContext.setLogContextSelector(CONTEXT_SELECTOR);
         // Install STDIO context selector
         StdioContext.setStdioContextSelector(new LogContextStdioContextSelector(StdioContext.getStdioContext()));
 
@@ -119,57 +120,42 @@ public class LoggingExtension implements Extension {
             // ignore
         }
 
-
         final SubsystemRegistration subsystem = context.registerSubsystem(SUBSYSTEM_NAME, MANAGEMENT_API_MAJOR_VERSION,
                 MANAGEMENT_API_MINOR_VERSION, MANAGEMENT_API_MICRO_VERSION);
-        final ManagementResourceRegistration registration = subsystem.registerSubsystemModel(LoggingRootResource.INSTANCE);
-        registration.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, DESCRIBE_HANDLER);
 
+        final LoggingRootResource rootResource;
         final ResolvePathHandler resolvePathHandler;
+        // Register for servers only even if in ADMIN_ONLY mode
         if (context.getProcessType().isServer()) {
+            rootResource = new LoggingRootResource(context.getPathManager());
             resolvePathHandler = ResolvePathHandler.Builder.of(context.getPathManager())
                     .setParentAttribute(CommonAttributes.FILE)
                     .build();
         } else {
+            rootResource = new LoggingRootResource(null);
             resolvePathHandler = null;
         }
+        final ManagementResourceRegistration registration = subsystem.registerSubsystemModel(rootResource);
+        registration.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, DESCRIBE_HANDLER);
         // Register root sub-models
-        registerSubModels(registration, resolvePathHandler, true);
+        registerSubModels(registration, resolvePathHandler, true, subsystem, rootResource, context.isRegisterTransformers());
         // Register logging profile sub-models
-        registerSubModels(registration.registerSubModel(new SimpleResourceDefinition(LOGGING_PROFILE_PATH,
+        ApplicationTypeConfig atc = new ApplicationTypeConfig(SUBSYSTEM_NAME, CommonAttributes.LOGGING_PROFILE);
+        final List<AccessConstraintDefinition> accessConstraints = new ApplicationTypeAccessConstraintDefinition(atc).wrapAsList();
+        ResourceDefinition profile = new SimpleResourceDefinition(LOGGING_PROFILE_PATH,
                 getResourceDescriptionResolver(),
                 LoggingProfileOperations.ADD_PROFILE,
-                LoggingProfileOperations.REMOVE_PROFILE)), resolvePathHandler, false);
+                LoggingProfileOperations.REMOVE_PROFILE) {
 
-        if (context.isRegisterTransformers()) {
-            registerTransformers(subsystem);
-        }
+            @Override
+            public List<AccessConstraintDefinition> getAccessConstraints() {
+                return accessConstraints;
+            }
+        };
 
-        subsystem.registerXMLElementWriter(LoggingSubsystemParser.INSTANCE);
-    }
+        registerLoggingProfileSubModels(registration.registerSubModel(profile), resolvePathHandler);
 
-    private void registerTransformers(SubsystemRegistration subsystem) {
-
-        // Create the transformer builder
-        final ResourceTransformationDescriptionBuilder subsystemBuilder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
-        // Add reject before add the logging-profile child resource builder
-        subsystemBuilder.rejectChildResource(LOGGING_PROFILE_PATH);
-        // FIXME this loggingProfileBuilder is never wired into anything that gets registered, so it isn't doing anything
-        ResourceTransformationDescriptionBuilder loggingProfileBuilder = TransformationDescriptionBuilder.Factory.createInstance(LOGGING_PROFILE_PATH);
-
-        // Add resource transformers to the subsystem
-        RootLoggerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-        LoggerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-        AsyncHandlerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-        ConsoleHandlerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-        FileHandlerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-        PeriodicHandlerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-        SizeRotatingHandlerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-        CustomHandlerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-        SyslogHandlerResourceDefinition.addTransformers(subsystemBuilder, loggingProfileBuilder);
-
-        // Register the transformers
-        TransformationDescription.Tools.register(subsystemBuilder.build(), subsystem, ModelVersion.create(1, 1, 0));
+        subsystem.registerXMLElementWriter(LoggingSubsystemWriter.INSTANCE);
     }
 
 
@@ -180,16 +166,73 @@ public class LoggingExtension implements Extension {
         }
     }
 
-    private void registerSubModels(final ManagementResourceRegistration registration, final ResolvePathHandler resolvePathHandler, final boolean includeLegacyAttributes) {
-        registration.registerSubModel(new RootLoggerResourceDefinition(includeLegacyAttributes));
-        registration.registerSubModel(new LoggerResourceDefinition(includeLegacyAttributes));
-        registration.registerSubModel(new AsyncHandlerResourceDefinition(includeLegacyAttributes));
-        registration.registerSubModel(new ConsoleHandlerResourceDefinition(includeLegacyAttributes));
-        registration.registerSubModel(new FileHandlerResourceDefinition(resolvePathHandler, includeLegacyAttributes));
-        registration.registerSubModel(new PeriodicHandlerResourceDefinition(resolvePathHandler, includeLegacyAttributes));
-        registration.registerSubModel(new SizeRotatingHandlerResourceDefinition(resolvePathHandler, includeLegacyAttributes));
-        registration.registerSubModel(new CustomHandlerResourceDefinition(includeLegacyAttributes));
+    private void registerLoggingProfileSubModels(final ManagementResourceRegistration registration, final ResolvePathHandler resolvePathHandler) {
+        registerSubModels(registration, resolvePathHandler, false, null, null, false);
+    }
+
+    private void registerSubModels(final ManagementResourceRegistration registration, final ResolvePathHandler resolvePathHandler,
+                                   final boolean includeLegacyAttributes, final SubsystemRegistration subsystem,
+                                   final LoggingRootResource subsystemResourceDefinition, final boolean registerTransformers) {
+        final RootLoggerResourceDefinition rootLoggerResourceDefinition = new RootLoggerResourceDefinition(includeLegacyAttributes);
+        registration.registerSubModel(rootLoggerResourceDefinition);
+
+        final LoggerResourceDefinition loggerResourceDefinition = new LoggerResourceDefinition(includeLegacyAttributes);
+        registration.registerSubModel(loggerResourceDefinition);
+
+        final AsyncHandlerResourceDefinition asyncHandlerResourceDefinition = new AsyncHandlerResourceDefinition(includeLegacyAttributes);
+        registration.registerSubModel(asyncHandlerResourceDefinition);
+
+        final ConsoleHandlerResourceDefinition consoleHandlerResourceDefinition = new ConsoleHandlerResourceDefinition(includeLegacyAttributes);
+        registration.registerSubModel(consoleHandlerResourceDefinition);
+
+        final FileHandlerResourceDefinition fileHandlerResourceDefinition = new FileHandlerResourceDefinition(resolvePathHandler, includeLegacyAttributes);
+        registration.registerSubModel(fileHandlerResourceDefinition);
+
+        final PeriodicHandlerResourceDefinition periodicHandlerResourceDefinition = new PeriodicHandlerResourceDefinition(resolvePathHandler, includeLegacyAttributes);
+        registration.registerSubModel(periodicHandlerResourceDefinition);
+
+        final SizeRotatingHandlerResourceDefinition sizeRotatingHandlerResourceDefinition = new SizeRotatingHandlerResourceDefinition(resolvePathHandler, includeLegacyAttributes);
+        registration.registerSubModel(sizeRotatingHandlerResourceDefinition);
+
+        final CustomHandlerResourceDefinition customHandlerResourceDefinition = new CustomHandlerResourceDefinition(includeLegacyAttributes);
+        registration.registerSubModel(customHandlerResourceDefinition);
+
         registration.registerSubModel(SyslogHandlerResourceDefinition.INSTANCE);
+        registration.registerSubModel(PatternFormatterResourceDefinition.INSTANCE);
+        registration.registerSubModel(CustomFormatterResourceDefinition.INSTANCE);
+
+        if (registerTransformers) {
+            for (KnownModelVersion modelVersion : KnownModelVersion.values()) {
+                if (modelVersion.hasTransformers()) {
+                    final ResourceTransformationDescriptionBuilder subsystemBuilder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+                    final ResourceTransformationDescriptionBuilder loggingProfileBuilder;
+                    if (modelVersion == KnownModelVersion.VERSION_1_1_0) {
+                        // Reject the profile
+                        subsystemBuilder.rejectChildResource(LOGGING_PROFILE_PATH);
+                        loggingProfileBuilder = null;
+                    } else {
+                        loggingProfileBuilder = subsystemBuilder.addChildResource(LOGGING_PROFILE_PATH);
+                    }
+
+                    // Register the transformers
+                    subsystemResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    rootLoggerResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    loggerResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    asyncHandlerResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    consoleHandlerResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    fileHandlerResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    periodicHandlerResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    sizeRotatingHandlerResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    customHandlerResourceDefinition.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    SyslogHandlerResourceDefinition.INSTANCE.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    PatternFormatterResourceDefinition.INSTANCE.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+                    CustomFormatterResourceDefinition.INSTANCE.registerTransformers(modelVersion, subsystemBuilder, loggingProfileBuilder);
+
+                    // Register the transformer description
+                    TransformationDescription.Tools.register(subsystemBuilder.build(), subsystem, modelVersion.getModelVersion());
+                }
+            }
+        }
     }
 
     private static class LoggingResourceDescriptionResolver extends StandardResourceDescriptionResolver {
@@ -199,24 +242,26 @@ public class LoggingExtension implements Extension {
         static {
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.APPEND.getName(), "logging.common");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.AUTOFLUSH.getName(), "logging.common");
-            COMMON_ATTRIBUTE_NAMES.put(CustomHandlerResourceDefinition.CLASS.getName(), "logging.custom-handler");
+            COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.CLASS.getName(), "logging.custom-handler");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.ENABLED.getName(), "logging.common");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.ENCODING.getName(), "logging.common");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.FILE.getName(), "logging.handler");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.FILTER.getName(), "logging.common");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.FILTER_SPEC.getName(), "logging.common");
-            COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.FORMATTER.getName(), "logging.common");
+            COMMON_ATTRIBUTE_NAMES.put(AbstractHandlerDefinition.FORMATTER.getName(), "logging.common");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.HANDLERS.getName(), "logging.common");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.LEVEL.getName(), "logging.common");
             COMMON_ATTRIBUTE_NAMES.put(SizeRotatingHandlerResourceDefinition.MAX_BACKUP_INDEX.getName(), "logging.size-rotating-file-handler");
-            COMMON_ATTRIBUTE_NAMES.put(CustomHandlerResourceDefinition.MODULE.getName(), "logging.custom-handler");
+            COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.MODULE.getName(), "logging.custom-handler");
             COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.NAME.getName(), "logging.handler");
+            COMMON_ATTRIBUTE_NAMES.put(AbstractHandlerDefinition.NAMED_FORMATTER.getName(), "logging.common");
             COMMON_ATTRIBUTE_NAMES.put(AsyncHandlerResourceDefinition.OVERFLOW_ACTION.getName(), "logging.async-handler");
             COMMON_ATTRIBUTE_NAMES.put(PathResourceDefinition.PATH.getName(), null);
-            COMMON_ATTRIBUTE_NAMES.put(CustomHandlerResourceDefinition.PROPERTIES.getName(), "logging.custom-handler");
+            COMMON_ATTRIBUTE_NAMES.put(CommonAttributes.PROPERTIES.getName(), "logging.custom-handler");
             COMMON_ATTRIBUTE_NAMES.put(AsyncHandlerResourceDefinition.QUEUE_LENGTH.getName(), "logging.async-handler");
             COMMON_ATTRIBUTE_NAMES.put(PathResourceDefinition.RELATIVE_TO.getName(), null);
             COMMON_ATTRIBUTE_NAMES.put(SizeRotatingHandlerResourceDefinition.ROTATE_SIZE.getName(), "logging.size-rotating-file-handler");
+            COMMON_ATTRIBUTE_NAMES.put(SizeRotatingHandlerResourceDefinition.ROTATE_ON_BOOT.getName(), "logging.size-rotating-file-handler");
             COMMON_ATTRIBUTE_NAMES.put(AsyncHandlerResourceDefinition.SUBHANDLERS.getName(), "logging.async-handler");
             COMMON_ATTRIBUTE_NAMES.put(PeriodicHandlerResourceDefinition.SUFFIX.getName(), "logging.periodic-rotating-file-handler");
             COMMON_ATTRIBUTE_NAMES.put(ConsoleHandlerResourceDefinition.TARGET.getName(), "logging.console-handler");
@@ -321,6 +366,14 @@ public class LoggingExtension implements Extension {
                 } else if (CommonAttributes.LOGGING_PROFILE.equals(key1)) {
                     result = LESS;
                 } else if (CommonAttributes.LOGGING_PROFILE.equals(key2)) {
+                    result = GREATER;
+                } else if (PatternFormatterResourceDefinition.PATTERN_FORMATTER.getName().equals(key1)) {
+                    result = LESS;
+                } else if (PatternFormatterResourceDefinition.PATTERN_FORMATTER.getName().equals(key2)) {
+                    result = GREATER;
+                } else if (CustomFormatterResourceDefinition.CUSTOM_FORMATTER.getName().equals(key1)) {
+                    result = LESS;
+                } else if (CustomFormatterResourceDefinition.CUSTOM_FORMATTER.getName().equals(key2)) {
                     result = GREATER;
                 } else if (RootLoggerResourceDefinition.ROOT_LOGGER_PATH_NAME.equals(key1)) {
                     result = GREATER;

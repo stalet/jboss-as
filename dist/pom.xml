@@ -28,80 +28,30 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-dist</artifactId>
-    <version>8.0.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-dist-parent</artifactId>
+    <version>8.0.1.Final-SNAPSHOT</version>
 
-    <name>JBoss Application Server: Distribution</name>
+    <name>WildFly: Distribution</name>
     <packaging>pom</packaging>
+    <modules>
+        <module>core</module>
+        <module>full</module>
+    </modules>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-build</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-build</artifactId>
             <type>pom</type>
             <scope>provided</scope>
         </dependency>
     </dependencies>
 
-    <profiles>
-        <profile>
-            <id>release</id>
-            <activation>
-                <property>
-                    <name>release</name>
-                    <value>true</value>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-assembly-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>assemble</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>single</goal>
-                                </goals>
-                                <configuration>
-                                    <descriptors>
-                                        <descriptor>assembly.xml</descriptor>
-                                    </descriptors>
-                                    <finalName>jboss-as-${project.version}</finalName>
-                                    <appendAssemblyId>false</appendAssemblyId>
-                                    <outputDirectory>target/</outputDirectory>
-                                    <workDirectory>target/assembly/work</workDirectory>
-                                    <tarLongFileMode>gnu</tarLongFileMode>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>assemble-src</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>single</goal>
-                                </goals>
-                                <configuration>
-                                    <descriptors>
-                                        <descriptor>assembly-src.xml</descriptor>
-                                    </descriptors>
-                                    <finalName>jboss-as-${project.version}</finalName>
-                                    <appendAssemblyId>true</appendAssemblyId>
-                                    <outputDirectory>target/</outputDirectory>
-                                    <workDirectory>target/assembly-src/work</workDirectory>
-                                    <tarLongFileMode>gnu</tarLongFileMode>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
+
 </project>

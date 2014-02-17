@@ -21,39 +21,44 @@
  */
 package org.jboss.as.weld.deployment.processors;
 
-import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 
-import org.jboss.as.ee.structure.SpecDescriptorPropertyReplacement;
+import org.jboss.as.ee.component.ComponentDescription;
+import org.jboss.as.ee.component.EEModuleDescription;
+import org.jboss.as.ee.weld.WeldDeploymentMarker;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
-import org.jboss.as.server.deployment.module.ResourceRoot;
-import org.jboss.as.server.deployment.reflect.DeploymentReflectionIndex;
-import org.jboss.as.weld.WeldDeploymentMarker;
 import org.jboss.as.weld.WeldLogger;
-import org.jboss.as.weld.deployment.BeanArchiveMetadata;
 import org.jboss.as.weld.deployment.BeanDeploymentArchiveImpl;
-import org.jboss.as.weld.deployment.BeanDeploymentModule;
-import org.jboss.as.weld.deployment.BeansXmlParser;
+import org.jboss.as.weld.deployment.BeanDeploymentArchiveImpl.BeanArchiveType;
+import org.jboss.as.weld.deployment.ExplicitBeanArchiveMetadata;
+import org.jboss.as.weld.deployment.ExplicitBeanArchiveMetadataContainer;
+import org.jboss.as.weld.deployment.PropertyReplacingBeansXmlParser;
 import org.jboss.as.weld.deployment.UrlScanner;
 import org.jboss.as.weld.deployment.WeldAttachments;
-import org.jboss.as.weld.deployment.WeldDeploymentMetadata;
+import org.jboss.as.weld.services.bootstrap.WeldJaxwsInjectionServices;
 import org.jboss.as.weld.services.bootstrap.WeldJpaInjectionServices;
+import org.jboss.modules.DependencySpec;
 import org.jboss.modules.Module;
-import org.jboss.vfs.VirtualFile;
+import org.jboss.modules.ModuleDependencySpec;
+import org.jboss.modules.ModuleLoadException;
+import org.jboss.modules.ModuleLoader;
+import org.jboss.modules.Resource;
 import org.jboss.weld.bootstrap.spi.BeansXml;
+import org.jboss.weld.injection.spi.JaxwsInjectionServices;
 import org.jboss.weld.injection.spi.JpaInjectionServices;
+import org.jboss.weld.xml.BeansXmlParser;
 
 /**
  * Deployment processor that builds bean archives from external deployments.
@@ -64,6 +69,7 @@ import org.jboss.weld.injection.spi.JpaInjectionServices;
  * <p/>
  *
  * @author Stuart Douglas
+ * @author Jozef Hartinger
  */
 public class ExternalBeanArchiveProcessor implements DeploymentUnitProcessor {
 
@@ -72,9 +78,6 @@ public class ExternalBeanArchiveProcessor implements DeploymentUnitProcessor {
     @Override
     public void deploy(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
-        final WeldDeploymentMetadata cdiDeploymentMetadata = deploymentUnit
-                .getAttachment(WeldDeploymentMetadata.ATTACHMENT_KEY);
-        final DeploymentReflectionIndex reflectionIndex = deploymentUnit.getAttachment(Attachments.REFLECTION_INDEX);
 
         if (!WeldDeploymentMarker.isPartOfWeldDeployment(deploymentUnit)) {
             return;
@@ -84,48 +87,38 @@ public class ExternalBeanArchiveProcessor implements DeploymentUnitProcessor {
             return;
         }
 
+        final Set<String> componentClassNames = new HashSet<>();
+
         final String beanArchiveIdPrefix = deploymentUnit.getName() + ".external.";
 
         final List<DeploymentUnit> deploymentUnits = new ArrayList<DeploymentUnit>();
         deploymentUnits.add(deploymentUnit);
         deploymentUnits.addAll(deploymentUnit.getAttachmentList(Attachments.SUB_DEPLOYMENTS));
 
-        BeansXmlParser parser = new BeansXmlParser();
-
-        final Map<URL, List<DeploymentUnit>> deploymentUnitMap = new HashMap<URL, List<DeploymentUnit>>();
+        PropertyReplacingBeansXmlParser parser = new PropertyReplacingBeansXmlParser(deploymentUnit);
 
         final HashSet<URL> existing = new HashSet<URL>();
 
         for (DeploymentUnit deployment : deploymentUnits) {
             try {
-                final WeldDeploymentMetadata weldDeploymentMetadata = deployment.getAttachment(WeldDeploymentMetadata.ATTACHMENT_KEY);
+                final ExplicitBeanArchiveMetadataContainer weldDeploymentMetadata = deployment.getAttachment(ExplicitBeanArchiveMetadataContainer.ATTACHMENT_KEY);
                 if (weldDeploymentMetadata != null) {
-                    for (BeanArchiveMetadata md : weldDeploymentMetadata.getBeanArchiveMetadata()) {
-                        URL file = md.getBeansXmlFile().toURL();
-                        existing.add(file);
-                    }
-                    if(deployment.getName().endsWith(".war")) {
-                        //war's can also have a META-INF/beans.xml and META-INF/classes/beans.xml that does not show up as an
-                        //existing beans.xml, as they already have a WEB-INF/beans.xml
-                        ResourceRoot deploymentRoot = deployment.getAttachment(Attachments.DEPLOYMENT_ROOT);
-                        VirtualFile beans = deploymentRoot.getRoot().getChild(META_INF_BEANS_XML);
-                        if(beans.exists()) {
-                            existing.add(beans.toURL());
-                        }
-                        for(ResourceRoot root : deploymentUnit.getAttachmentList(Attachments.RESOURCE_ROOTS)) {
-                            if (root.getRootName().equals("classes")) {
-                                VirtualFile classesBeans = root.getRoot().getChild(META_INF_BEANS_XML);
-                                if (classesBeans.exists()) {
-                                    existing.add(classesBeans.toURL());
-                                }
-                                break;
-                            }
+                    for (ExplicitBeanArchiveMetadata md : weldDeploymentMetadata.getBeanArchiveMetadata().values()) {
+                        existing.add(md.getBeansXmlFile().toURL());
+                        if (md.getAdditionalBeansXmlFile() != null) {
+                            existing.add(md.getAdditionalBeansXmlFile().toURL());
                         }
                     }
-
                 }
             } catch (MalformedURLException e) {
                 throw new DeploymentUnitProcessingException(e);
+            }
+
+            EEModuleDescription moduleDesc = deployment.getAttachment(org.jboss.as.ee.component.Attachments.EE_MODULE_DESCRIPTION);
+            if(moduleDesc != null) {
+                for(ComponentDescription component : moduleDesc.getComponentDescriptions()) {
+                    componentClassNames.add(component.getComponentClassName());
+                }
             }
         }
 
@@ -134,47 +127,82 @@ public class ExternalBeanArchiveProcessor implements DeploymentUnitProcessor {
             if (module == null) {
                 return;
             }
-            try {
-                Enumeration<URL> resources = module.getClassLoader().getResources(META_INF_BEANS_XML);
-                while (resources.hasMoreElements()) {
-                    final URL beansXml = resources.nextElement();
-                    if (existing.contains(beansXml)) {
+            for (DependencySpec dep : module.getDependencies()) {
+                final Module dependency = loadModuleDependency(dep);
+                if (dependency == null) {
+                    continue;
+                }
+                URL url = findExportedLocalBeansXml(dependency);
+                if (url != null && !existing.contains(url)) {
+                    /*
+                     * Workaround for http://java.net/jira/browse/JAVASERVERFACES-2837
+                     */
+                    if (url.toString().contains("jsf-impl-2.2")) {
                         continue;
                     }
-                    WeldLogger.DEPLOYMENT_LOGGER.debugf("Found external beans.xml: %s", beansXml.toString());
-                    List<DeploymentUnit> dus = deploymentUnitMap.get(beansXml);
-                    if (dus == null) {
-                        deploymentUnitMap.put(beansXml, dus = new ArrayList<DeploymentUnit>());
+                    /*
+                     * Workaround for resteasy-cdi bundling beans.xml
+                     */
+                    if (url.toString().contains("resteasy-cdi")) {
+                        continue;
                     }
-                    dus.add(deployment);
+
+                    WeldLogger.DEPLOYMENT_LOGGER.debugf("Found external beans.xml: %s", url.toString());
+                    final BeansXml beansXml = parseBeansXml(url, parser, deploymentUnit);
+
+                    final UrlScanner urlScanner = new UrlScanner();
+
+                    final List<String> discoveredClasses = new ArrayList<String>();
+                    if(!urlScanner.handleBeansXml(url, discoveredClasses)) {
+                        continue;
+                    }
+                    discoveredClasses.removeAll(componentClassNames);
+
+                    final BeanDeploymentArchiveImpl bda = new BeanDeploymentArchiveImpl(new HashSet<String>(discoveredClasses), beansXml, dependency, beanArchiveIdPrefix + url.toExternalForm(), BeanArchiveType.EXTERNAL);
+                    WeldLogger.DEPLOYMENT_LOGGER.beanArchiveDiscovered(bda);
+
+                    final JpaInjectionServices jpaInjectionServices = new WeldJpaInjectionServices(deploymentUnit);
+                    final JaxwsInjectionServices jaxwsInjectionServices = new WeldJaxwsInjectionServices(deploymentUnit);
+                    bda.getServices().add(JpaInjectionServices.class, jpaInjectionServices);
+                    bda.getServices().add(JaxwsInjectionServices.class, jaxwsInjectionServices);
+                    deploymentUnit.addToAttachmentList(WeldAttachments.ADDITIONAL_BEAN_DEPLOYMENT_MODULES, bda);
+
+                    // make sure that if this beans.xml is seen by some other module, it is not processed twice
+                    existing.add(url);
                 }
-            } catch (IOException e) {
-                throw new DeploymentUnitProcessingException(e);
             }
         }
+    }
 
-        for (final Map.Entry<URL, List<DeploymentUnit>> entry : deploymentUnitMap.entrySet()) {
-            //we just take the first module, it should not make any difference. The idea that
-            //the same beans.xml is accessible via two different CL's is not something we can deal with
-            final Module module = entry.getValue().get(0).getAttachment(Attachments.MODULE);
-            final BeansXml beansXml = parseBeansXml(entry.getKey(), parser, deploymentUnit);
+    private URL findExportedLocalBeansXml(Module dependencyModule) {
+        Enumeration<URL> exported = dependencyModule.getExportedResources(META_INF_BEANS_XML);
+        if (exported.hasMoreElements()) {
+            Set<URL> exportedSet = new HashSet<>(Collections.list(exported));
 
-            final UrlScanner urlScanner = new UrlScanner();
-            final List<String> discoveredClasses = new ArrayList<String>();
-            if(!urlScanner.handleBeansXml(entry.getKey(), discoveredClasses)) {
-                continue;
-            }
-
-            final BeanDeploymentArchiveImpl bda = new BeanDeploymentArchiveImpl(new HashSet<String>(discoveredClasses), beansXml, module, beanArchiveIdPrefix + entry.getKey().toExternalForm());
-
-            final BeanDeploymentModule bdm = new BeanDeploymentModule(Collections.singleton(bda));
-            final JpaInjectionServices jpaInjectionServices = new WeldJpaInjectionServices(deploymentUnit, deploymentUnit.getServiceRegistry());
-            bdm.addService(JpaInjectionServices.class, jpaInjectionServices);
-            deploymentUnit.addToAttachmentList(WeldAttachments.ADDITIONAL_BEAN_DEPLOYMENT_MODULES, bdm);
-            for (DeploymentUnit du : entry.getValue()) {
-                du.addToAttachmentList(WeldAttachments.VISIBLE_ADDITIONAL_BEAN_DEPLOYMENT_MODULE, bdm);
+            Collection<Resource> locals = dependencyModule.getClassLoader().loadResourceLocal(META_INF_BEANS_XML);
+            if (!locals.isEmpty()) {
+                URL local = locals.iterator().next().getURL();
+                if (exportedSet.contains(local)) {
+                    return local;
+                }
             }
         }
+        return null;
+    }
+
+    private Module loadModuleDependency(DependencySpec dep) {
+        if (dep instanceof ModuleDependencySpec) {
+            ModuleDependencySpec dependency = (ModuleDependencySpec) dep;
+            final ModuleLoader loader = dependency.getModuleLoader();
+            if (loader != null) {
+                try {
+                    return dependency.getModuleLoader().loadModule(dependency.getIdentifier());
+                } catch (ModuleLoadException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     @Override
@@ -183,6 +211,6 @@ public class ExternalBeanArchiveProcessor implements DeploymentUnitProcessor {
     }
 
     private BeansXml parseBeansXml(URL beansXmlFile, BeansXmlParser parser, final DeploymentUnit deploymentUnit) throws DeploymentUnitProcessingException {
-        return parser.parse(beansXmlFile, SpecDescriptorPropertyReplacement.propertyReplacer(deploymentUnit));
+        return parser.parse(beansXmlFile);
     }
 }

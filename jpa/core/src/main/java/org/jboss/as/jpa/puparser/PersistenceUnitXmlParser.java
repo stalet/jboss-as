@@ -32,13 +32,14 @@ import javax.persistence.spi.PersistenceUnitTransactionType;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+import org.jboss.as.jpa.config.Configuration;
 import org.jboss.as.jpa.config.PersistenceUnitMetadataHolder;
 import org.jboss.as.jpa.config.PersistenceUnitMetadataImpl;
-import org.jboss.as.jpa.spi.PersistenceUnitMetadata;
 import org.jboss.metadata.parser.util.MetaDataElementParser;
 import org.jboss.metadata.property.PropertyReplacer;
+import org.jipijapa.plugin.spi.PersistenceUnitMetadata;
 
-import static org.jboss.as.jpa.JpaLogger.JPA_LOGGER;
+import static org.jboss.as.jpa.messages.JpaLogger.JPA_LOGGER;
 
 /**
  * Parse a persistence.xml into a list of persistence unit definitions.
@@ -87,10 +88,12 @@ public class PersistenceUnitXmlParser extends MetaDataElementParser {
                 version = Version.JPA_1_0;
             } else if ("2.0".equals(versionString)) {
                 version = Version.JPA_2_0;
+            } else if ("2.1".equals(versionString)) {
+                version = Version.JPA_2_1;
             } else if ("2".equals(versionString)) {
                 version = Version.JPA_2_0;
             } else {
-                version = Version.JPA_2_0;
+                version = Version.JPA_2_1;
             }
         }
 
@@ -153,11 +156,13 @@ public class PersistenceUnitXmlParser extends MetaDataElementParser {
         pu.setTransactionType(PersistenceUnitTransactionType.JTA);
         pu.setValidationMode(ValidationMode.AUTO);
         pu.setSharedCacheMode(SharedCacheMode.UNSPECIFIED);
-        pu.setPersistenceProviderClassName("org.hibernate.ejb.HibernatePersistence");  // TODO: move to domain.xml?
+        pu.setPersistenceProviderClassName(Configuration.PROVIDER_CLASS_DEFAULT);
         if (version.equals(Version.JPA_1_0)) {
             pu.setPersistenceXMLSchemaVersion("1.0");
-        } else {
+        } else if (version.equals(Version.JPA_2_0)) {
             pu.setPersistenceXMLSchemaVersion("2.0");
+        } else {
+            pu.setPersistenceXMLSchemaVersion("2.1");
         }
 
         final int count = reader.getAttributeCount();

@@ -22,22 +22,17 @@
 
 package org.jboss.as.test.clustering.extended.ejb2.stateful.remote.failover.dd;
 
-import static org.jboss.as.test.clustering.ClusteringTestConstants.*;
-
-import org.jboss.arquillian.container.test.api.ContainerController;
-import org.jboss.arquillian.container.test.api.Deployer;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.container.test.api.TargetsContainer;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.junit.InSequence;
-import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.test.clustering.NodeNameGetter;
 import org.jboss.as.test.clustering.extended.ejb2.stateful.remote.failover.CounterBaseBean;
 import org.jboss.as.test.clustering.extended.ejb2.stateful.remote.failover.CounterRemote;
 import org.jboss.as.test.clustering.extended.ejb2.stateful.remote.failover.CounterRemoteHome;
 import org.jboss.as.test.clustering.extended.ejb2.stateful.remote.failover.CounterResult;
-import org.jboss.as.test.clustering.extended.ejb2.stateful.remote.failover.RemoteEJBClientStatefulFaliloverTestBase;
+import org.jboss.as.test.clustering.extended.ejb2.stateful.remote.failover.RemoteEJBClientStatefulFailoverTestBase;
 import org.jboss.logging.Logger;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
@@ -52,21 +47,16 @@ import org.junit.runner.RunWith;
  */
 @RunWith(Arquillian.class)
 @RunAsClient
-public class RemoteEJB2ClientStatefulBeanFailoverDDTestCase extends RemoteEJBClientStatefulFaliloverTestBase {
+public class RemoteEJB2ClientStatefulBeanFailoverDDTestCase extends RemoteEJBClientStatefulFailoverTestBase {
     private static final Logger log = Logger.getLogger(RemoteEJB2ClientStatefulBeanFailoverDDTestCase.class);
 
-    @ArquillianResource
-    private ContainerController container;
-    @ArquillianResource
-    private Deployer deployer;
-
-    @Deployment(name = DEPLOYMENT_1_SINGLE, managed = false, testable = false)
+    @Deployment(name = DEPLOYMENT_HELPER_1, managed = false, testable = false)
     @TargetsContainer(CONTAINER_1)
     public static Archive<?> createDeploymentForContainer1Singleton() {
         return createDeploymentSingleton();
     }
 
-    @Deployment(name = DEPLOYMENT_2_SINGLE, managed = false, testable = false)
+    @Deployment(name = DEPLOYMENT_HELPER_2, managed = false, testable = false)
     @TargetsContainer(CONTAINER_2)
     public static Archive<?> createDeploymentForContainer2Singleton() {
         return createDeploymentSingleton();
@@ -100,7 +90,7 @@ public class RemoteEJB2ClientStatefulBeanFailoverDDTestCase extends RemoteEJBCli
     @InSequence(1)
     @Test
     public void testFailoverFromRemoteClientWhenOneNodeGoesDown() throws Exception {
-        failoverFromRemoteClient(container, deployer, false);
+        failoverFromRemoteClient(false);
     }
 
     @Ignore("JBPAPP-8726")
@@ -108,6 +98,6 @@ public class RemoteEJB2ClientStatefulBeanFailoverDDTestCase extends RemoteEJBCli
     @InSequence(2)
     @Test
     public void testFailoverFromRemoteClientWhenOneNodeUndeploys() throws Exception {
-        failoverFromRemoteClient(container, deployer, true);
+        failoverFromRemoteClient(true);
     }
 }

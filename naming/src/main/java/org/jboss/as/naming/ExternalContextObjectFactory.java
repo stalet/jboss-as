@@ -19,6 +19,7 @@ import org.jboss.invocation.proxy.ProxyFactory;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * An ObjectFactory that binds an arbitrary InitialContext into JNDI.
@@ -62,7 +63,7 @@ public class ExternalContextObjectFactory implements ObjectFactory {
 
 
         ClassLoader loader;
-        if(System.getSecurityManager() == null) {
+        if (! WildFlySecurityManager.isChecking()) {
             loader = getClass().getClassLoader();
         } else {
             loader = AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
@@ -81,9 +82,15 @@ public class ExternalContextObjectFactory implements ObjectFactory {
         } else {
             Module module = Module.getBootModuleLoader().loadModule(ModuleIdentifier.fromString(initialContextModule));
             loader = module.getClassLoader();
-            initialContextClass = Class.forName(initialContextClassName, true, module.getClassLoader());
-            Constructor ctor = initialContextClass.getConstructor(Hashtable.class);
-            context = (Context) ctor.newInstance(newEnvironment);
+            final ClassLoader currentClassLoader = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+            try {
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(loader);
+                initialContextClass = Class.forName(initialContextClassName, true, loader);
+                Constructor ctor = initialContextClass.getConstructor(Hashtable.class);
+                context = (Context) ctor.newInstance(newEnvironment);
+            } finally {
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(currentClassLoader);
+            }
         }
 
         if (!useProxy) {

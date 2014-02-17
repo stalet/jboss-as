@@ -23,7 +23,9 @@
 package org.jboss.as.connector.subsystems.datasources;
 
 import static org.jboss.as.connector.subsystems.datasources.Constants.DATASOURCE_DRIVER;
+import static org.jboss.as.connector.subsystems.datasources.Constants.ENABLED;
 import static org.jboss.as.connector.subsystems.datasources.Constants.JNDI_NAME;
+import static org.jboss.as.connector.subsystems.datasources.Constants.JTA;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
 import java.sql.Driver;
@@ -44,6 +46,7 @@ import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.naming.service.NamingService;
 import org.jboss.as.security.service.SubjectFactoryService;
+import org.jboss.as.server.Services;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
 import org.jboss.jca.core.api.connectionmanager.ccm.CachedConnectionManager;
@@ -74,6 +77,7 @@ public abstract class AbstractDataSourceAdd extends AbstractAddStepHandler {
         final Resource resource = createResource(context);
         populateModel(context, operation, resource);
         final ModelNode model = resource.getModel();
+        boolean enabled = ! operation.hasDefined(ENABLED.getName()) || operation.get(ENABLED.getName()).asBoolean();
 
         if (requiresRuntime(context)) {
             context.addStep(new OperationStepHandler() {
@@ -95,6 +99,9 @@ public abstract class AbstractDataSourceAdd extends AbstractAddStepHandler {
                 }
             }, OperationContext.Stage.RUNTIME);
         }
+        if (enabled) {
+            context.addStep(new DataSourceEnable(this instanceof XaDataSourceAdd), OperationContext.Stage.MODEL);
+        }
         context.stepCompleted();
     }
 
@@ -114,11 +121,10 @@ public abstract class AbstractDataSourceAdd extends AbstractAddStepHandler {
         final ModelNode address = operation.require(OP_ADDR);
         final String dsName = PathAddress.pathAddress(address).getLastElement().getValue();
         final String jndiName = model.get(JNDI_NAME.getName()).asString();
+        boolean jta = JTA.resolveModelAttribute(context, operation).asBoolean();
 
         final ServiceTarget serviceTarget = context.getServiceTarget();
 
-        boolean enabled = false;
-                //!operation.hasDefined(ENABLED.getName()) || operation.get(ENABLED.getName()).asBoolean();
 
         ModelNode node = DATASOURCE_DRIVER.resolveModelAttribute(context, model);
 
@@ -141,23 +147,27 @@ public abstract class AbstractDataSourceAdd extends AbstractAddStepHandler {
         final ManagementResourceRegistration registration = context.getResourceRegistrationForUpdate();
 
         final ServiceName dataSourceServiceName = AbstractDataSourceService.SERVICE_NAME_BASE.append(jndiName);
-        final ServiceBuilder<?> dataSourceServiceBuilder = serviceTarget
-                .addService(dataSourceServiceName, dataSourceService)
-                .addDependency(ConnectorServices.TRANSACTION_INTEGRATION_SERVICE, TransactionIntegration.class,
-                        dataSourceService.getTransactionIntegrationInjector())
+        final ServiceBuilder<?> dataSourceServiceBuilder =
+                Services.addServerExecutorDependency(
+                        serviceTarget.addService(dataSourceServiceName, dataSourceService),
+                        dataSourceService.getExecutorServiceInjector(), false)
                 .addDependency(ConnectorServices.MANAGEMENT_REPOSITORY_SERVICE, ManagementRepository.class,
                         dataSourceService.getManagementRepositoryInjector())
                 .addDependency(SubjectFactoryService.SERVICE_NAME, SubjectFactory.class,
                         dataSourceService.getSubjectFactoryInjector())
                 .addDependency(ConnectorServices.JDBC_DRIVER_REGISTRY_SERVICE, DriverRegistry.class,
                         dataSourceService.getDriverRegistryInjector())
-                .addDependency(ConnectorServices.CCM_SERVICE, CachedConnectionManager.class,
-                        dataSourceService.getCcmInjector())
                 .addDependency(ConnectorServices.IDLE_REMOVER_SERVICE)
                 .addDependency(ConnectorServices.CONNECTION_VALIDATOR_SERVICE)
                 .addDependency(NamingService.SERVICE_NAME);
+        if (jta) {
+            dataSourceServiceBuilder.addDependency(ConnectorServices.TRANSACTION_INTEGRATION_SERVICE, TransactionIntegration.class, dataSourceService.getTransactionIntegrationInjector())
+                    .addDependency(ConnectorServices.CCM_SERVICE, CachedConnectionManager.class, dataSourceService.getCcmInjector());
 
-        dataSourceServiceBuilder.addListener(new DataSourceStatisticsListener(registration, resource, dsName));
+        }
+        //Register an empty override model regardless of we're enabled or not - the statistics listener will add the relevant childresources
+        ManagementResourceRegistration overrideRegistration = registration.isAllowsOverride() ? registration.registerOverrideModel(dsName, DataSourcesSubsystemProviders.OVERRIDE_DS_DESC) : registration;
+        dataSourceServiceBuilder.addListener(new DataSourceStatisticsListener(overrideRegistration, resource, dsName));
         dataSourceServiceBuilder.addListener(verificationHandler);
         startConfigAndAddDependency(dataSourceServiceBuilder, dataSourceService, dsName, serviceTarget, operation, verificationHandler);
 
@@ -168,7 +178,6 @@ public abstract class AbstractDataSourceAdd extends AbstractAddStepHandler {
 
         controllers.add(dataSourceServiceBuilder.install());
         controllers.add(driverDemanderBuilder.install());
-
 
     }
 

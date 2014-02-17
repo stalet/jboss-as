@@ -54,7 +54,6 @@ import org.jboss.as.controller.client.helpers.domain.DomainClient;
 import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.test.integration.domain.management.util.DomainLifecycleUtil;
 import org.jboss.as.test.integration.domain.management.util.DomainTestSupport;
-import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfigurationParameters;
 import org.jboss.as.test.shared.TimeoutUtil;
 import org.jboss.dmr.ModelNode;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
@@ -93,6 +92,7 @@ public class AutoIgnoredResourcesDomainTestCase {
     private static final String EXTENSION_JMX = "org.jboss.as.jmx";
     private static final String EXTENSION_LOGGING = "org.jboss.as.logging";
     private static final String EXTENSION_MAIL = "org.jboss.as.mail";
+    private static final String EXTENSION_NAMING = "org.jboss.as.naming";
     private static final String EXTENSION_POJO = "org.jboss.as.pojo";
     private static final String EXTENSION_SAR = "org.jboss.as.sar";
 
@@ -113,8 +113,10 @@ public class AutoIgnoredResourcesDomainTestCase {
     @BeforeClass
     public static void setupDomain() throws Exception {
         //Make all the configs read-only so we can stop and start when we like to reset
-        DomainTestSupport.Configuration config = DomainTestSupport.Configuration.create("domain-configs/domain-auto-ignore.xml", "host-configs/host-auto-ignore-master.xml", "host-configs/host-auto-ignore-slave.xml", JBossAsManagedConfigurationParameters.STANDARD, JBossAsManagedConfigurationParameters.STANDARD, true, true, true);
-        testSupport = DomainTestSupport.create(AutoIgnoredResourcesDomainTestCase.class.getSimpleName(), config);
+        DomainTestSupport.Configuration config = DomainTestSupport.Configuration.create(AutoIgnoredResourcesDomainTestCase.class.getSimpleName(),
+                "domain-configs/domain-auto-ignore.xml", "host-configs/host-auto-ignore-master.xml", "host-configs/host-auto-ignore-slave.xml",
+                true, true, true);
+        testSupport = DomainTestSupport.create(config);
         // Start!
         testSupport.start();
         domainMasterLifecycleUtil = testSupport.getDomainMasterLifecycleUtil();
@@ -172,7 +174,7 @@ public class AutoIgnoredResourcesDomainTestCase {
         validateResponse(slaveClient.execute(Util.getWriteAttributeOperation(getSlaveServerConfigAddress(SERVER1), GROUP, GROUP2)), false);
 
         checkSlaveProfiles(PROFILE1, PROFILE2);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO);
         checkSlaveServerGroups(GROUP1, GROUP2);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2);
         checkSystemProperties(0);
@@ -191,7 +193,7 @@ public class AutoIgnoredResourcesDomainTestCase {
 
         //New data should not be pushed yet since nothing on the slave uses it
         checkSlaveProfiles(PROFILE1, PROFILE2);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO);
         checkSlaveServerGroups(GROUP1, GROUP2);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2);
         checkSystemProperties(0);
@@ -203,7 +205,7 @@ public class AutoIgnoredResourcesDomainTestCase {
 
         //Now that we have a group using the new data it should be pulled down
         checkSlaveProfiles(PROFILE1, PROFILE2, PROFILE3);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO, EXTENSION_JMX, EXTENSION_SAR);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO, EXTENSION_JMX, EXTENSION_SAR);
         checkSlaveServerGroups(GROUP1, GROUP2, "testgroup");
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2, SOCKETS3);
         checkSystemProperties(0);
@@ -241,7 +243,7 @@ public class AutoIgnoredResourcesDomainTestCase {
         validateResponse(slaveClient.execute(createDcLockTakenComposite(Util.getWriteAttributeOperation(getSlaveServerConfigAddress(SERVER1), GROUP, GROUP2))), false);
 
         checkSlaveProfiles(PROFILE1, PROFILE2);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO);
         checkSlaveServerGroups(GROUP1, GROUP2);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2);
         checkSystemProperties(2); //Composite added a property
@@ -260,7 +262,7 @@ public class AutoIgnoredResourcesDomainTestCase {
 
         //New data should not be pushed yet since nothing on the slave uses it
         checkSlaveProfiles(PROFILE1, PROFILE2);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO);
         checkSlaveServerGroups(GROUP1, GROUP2);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2);
         checkSystemProperties(3); //Composite added a property
@@ -272,7 +274,7 @@ public class AutoIgnoredResourcesDomainTestCase {
 
         //Now that we have a group using the new data it should be pulled down
         checkSlaveProfiles(PROFILE1, PROFILE2, PROFILE3);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO, EXTENSION_JMX, EXTENSION_SAR);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO, EXTENSION_JMX, EXTENSION_SAR);
         checkSlaveServerGroups(GROUP1, GROUP2, "testgroup");
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2, SOCKETS3);
         checkSystemProperties(4); //Composite added a property
@@ -333,7 +335,7 @@ public class AutoIgnoredResourcesDomainTestCase {
         validateResponse(slaveClient.execute(createDcLockTakenComposite(Util.getWriteAttributeOperation(getSlaveServerConfigAddress(SERVER1), GROUP, GROUP2))), false);
 
         checkSlaveProfiles(PROFILE1, PROFILE2);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO);
         checkSlaveServerGroups(GROUP1, GROUP2);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2);
         checkSystemProperties(2); //Composite added a property
@@ -352,7 +354,7 @@ public class AutoIgnoredResourcesDomainTestCase {
 
         //New data should not be pushed yet since nothing on the slave uses it
         checkSlaveProfiles(PROFILE1, PROFILE2);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO);
         checkSlaveServerGroups(GROUP1, GROUP2);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2);
         checkSystemProperties(3); //Composite added a property
@@ -362,7 +364,7 @@ public class AutoIgnoredResourcesDomainTestCase {
         addConfigOp.get(GROUP).set("testgroup");
         validateFailedResponse(slaveClient.execute(createDcLockTakenCompositeWithRollback(addConfigOp)));
         checkSlaveProfiles(PROFILE1, PROFILE2);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO);
         checkSlaveServerGroups(GROUP1, GROUP2);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2);
         checkSystemProperties(3);
@@ -371,7 +373,7 @@ public class AutoIgnoredResourcesDomainTestCase {
         //Now that we have a group using the new data it should be pulled down
         validateResponse(slaveClient.execute(createDcLockTakenComposite(addConfigOp)), false);
         checkSlaveProfiles(PROFILE1, PROFILE2, PROFILE3);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO, EXTENSION_JMX, EXTENSION_SAR);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO, EXTENSION_JMX, EXTENSION_SAR);
         checkSlaveServerGroups(GROUP1, GROUP2, "testgroup");
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETSA, SOCKETS2, SOCKETS3);
         checkSystemProperties(4); //Composite added a property
@@ -410,7 +412,7 @@ public class AutoIgnoredResourcesDomainTestCase {
         validateResponse(masterClient.execute(op));
 
         checkSlaveProfiles(PROFILE1, PROFILE2);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO);
         checkSlaveServerGroups(GROUP1);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETS2);
         Assert.assertEquals("restart-required", getSlaveServerStatus(SERVER1));
@@ -451,7 +453,7 @@ public class AutoIgnoredResourcesDomainTestCase {
         validateResponse(slaveClient.execute(op));
 
         checkSlaveProfiles(PROFILE1, PROFILE2, PROFILE3);
-        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_POJO, EXTENSION_JMX, EXTENSION_SAR);
+        checkSlaveExtensions(EXTENSION_LOGGING, EXTENSION_MAIL, EXTENSION_NAMING, EXTENSION_POJO, EXTENSION_JMX, EXTENSION_SAR);
         checkSlaveServerGroups(GROUP1, GROUP2);
         checkSlaveSocketBindingGroups(SOCKETS1, SOCKETS2);
         Assert.assertEquals("restart-required", getSlaveServerStatus(SERVER1));
@@ -537,7 +539,7 @@ public class AutoIgnoredResourcesDomainTestCase {
             actualSet.add(value.asString());
         }
         HashSet<String> expectedSet = new HashSet<String>(Arrays.asList(expected));
-        Assert.assertEquals("Expected " + expected + "; was " + actualSet, expectedSet, actualSet);
+        Assert.assertEquals("Expected " + expectedSet + "; was " + actualSet, expectedSet, actualSet);
     }
 
     private void restartSlaveServer(String serverName) throws Exception {
@@ -547,7 +549,7 @@ public class AutoIgnoredResourcesDomainTestCase {
     }
 
     private void restartDomainAndReloadReadOnlyConfig() throws Exception {
-        DomainTestSupport.stopHosts(TimeoutUtil.adjust(5000), domainSlaveLifecycleUtil, domainMasterLifecycleUtil);
+        DomainTestSupport.stopHosts(TimeoutUtil.adjust(30000), domainSlaveLifecycleUtil, domainMasterLifecycleUtil);
         testSupport.stop();
 
         //Totally reinitialize the domain client

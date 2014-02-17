@@ -26,11 +26,12 @@ import java.util.List;
 import org.jboss.as.controller.AbstractBoottimeAddStepHandler;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.operations.validation.ParametersValidator;
 import org.jboss.as.jpa.config.ExtendedPersistenceInheritance;
-import org.jboss.as.jpa.config.JPADeploymentSettings;
 import org.jboss.as.jpa.persistenceprovider.PersistenceProviderResolverImpl;
+import org.jboss.as.jpa.platform.PlatformImpl;
 import org.jboss.as.jpa.processor.JPAAnnotationProcessor;
 import org.jboss.as.jpa.processor.JPAClassFileTransformerProcessor;
 import org.jboss.as.jpa.processor.JPADependencyProcessor;
@@ -50,6 +51,7 @@ import org.jboss.as.server.deployment.jbossallxml.JBossAllXmlParserRegisteringPr
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceTarget;
+import org.jipijapa.cache.spi.Classification;
 
 
 /**
@@ -73,7 +75,7 @@ class JPASubSystemAdd extends AbstractBoottimeAddStepHandler {
         JPADefinition.DEFAULT_EXTENDEDPERSISTENCE_INHERITANCE.validateAndSet(operation, model);
     }
 
-    protected void performBoottime(OperationContext context, ModelNode operation, ModelNode model, ServiceVerificationHandler verificationHandler, List<ServiceController<?>> newControllers) throws
+    protected void performBoottime(final OperationContext context, final ModelNode operation, final ModelNode model, final ServiceVerificationHandler verificationHandler, final List<ServiceController<?>> newControllers) throws
         OperationFailedException {
 
         runtimeValidator.validate(operation.resolve());
@@ -83,12 +85,21 @@ class JPASubSystemAdd extends AbstractBoottimeAddStepHandler {
                 // set Hibernate persistence provider as the default provider
                 javax.persistence.spi.PersistenceProviderResolverHolder.setPersistenceProviderResolver(
                     PersistenceProviderResolverImpl.getInstance());
+                final boolean appclient = context.getProcessType() == ProcessType.APPLICATION_CLIENT;
+                PlatformImpl platform;
+                if (appclient) {
+                    // we do not yet support a second level cache in the client container
+                    platform = new PlatformImpl(Classification.NONE);
+                } else {
+                    // Infinispan can be used in server container
+                    platform = new PlatformImpl(Classification.INFINISPAN, Classification.INFINISPAN);
+                }
 
-                processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_REGISTER_JBOSS_ALL_XML_PARSER,
-                        new JBossAllXmlParserRegisteringProcessor<JPADeploymentSettings>(JPAJarJBossAllParser.ROOT_ELEMENT, JpaAttachments.DEPLOYMENT_SETTINGS_KEY, new JPAJarJBossAllParser()));
+                processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_REGISTER_JBOSS_ALL_JPA,
+                        new JBossAllXmlParserRegisteringProcessor(JPAJarJBossAllParser.ROOT_ELEMENT, JpaAttachments.DEPLOYMENT_SETTINGS_KEY, new JPAJarJBossAllParser()));
 
                 // handles parsing of persistence.xml
-                processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_PERSISTENCE_UNIT, new PersistenceUnitParseProcessor());
+                processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_PERSISTENCE_UNIT, new PersistenceUnitParseProcessor(appclient));
 
                 // handles persistence unit / context annotations in components
                 processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_PERSISTENCE_ANNOTATION, new JPAAnnotationProcessor());
@@ -100,13 +111,13 @@ class JPASubSystemAdd extends AbstractBoottimeAddStepHandler {
                 // registers listeners/interceptors on session beans
                 processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.FIRST_MODULE_USE, Phase.FIRST_MODULE_USE_INTERCEPTORS, new JPAInterceptorProcessor());
                 // begin pu service install and deploying a persistence provider
-                processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.FIRST_MODULE_USE, Phase.FIRST_MODULE_USE_PERSISTENCE_PREPARE, new PersistenceBeginInstallProcessor());
+                processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.FIRST_MODULE_USE, Phase.FIRST_MODULE_USE_PERSISTENCE_PREPARE, new PersistenceBeginInstallProcessor(platform));
 
                 // handles persistence unit / context references from deployment descriptors
                 processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_PERSISTENCE_REF, new PersistenceRefProcessor());
 
                 // handles pu deployment (completes pu service installation)
-                processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_PERSISTENTUNIT, new PersistenceCompleteInstallProcessor());
+                processorTarget.addDeploymentProcessor(JPAExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_PERSISTENTUNIT, new PersistenceCompleteInstallProcessor(platform));
 
             }
         }, OperationContext.Stage.RUNTIME);

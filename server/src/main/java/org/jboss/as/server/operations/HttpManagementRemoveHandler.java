@@ -25,7 +25,11 @@ package org.jboss.as.server.operations;
 import org.jboss.as.controller.AbstractRemoveStepHandler;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.server.mgmt._UndertowHttpManagementService;
+import org.jboss.as.domain.management.access.RbacSanityCheckOperation;
+import org.jboss.as.remoting.RemotingHttpUpgradeService;
+import org.jboss.as.remoting.RemotingServices;
+import org.jboss.as.remoting.management.ManagementRemotingServices;
+import org.jboss.as.server.mgmt.UndertowHttpManagementService;
 import org.jboss.dmr.ModelNode;
 
 /**
@@ -41,6 +45,13 @@ public class HttpManagementRemoveHandler extends AbstractRemoveStepHandler {
     }
 
     @Override
+    protected void performRemove(OperationContext context, ModelNode operation, ModelNode model)
+            throws OperationFailedException {
+        RbacSanityCheckOperation.addOperation(context);
+        super.performRemove(context, operation, model);
+    }
+
+    @Override
     protected boolean requiresRuntime(OperationContext context) {
         return true;
     }
@@ -50,6 +61,8 @@ public class HttpManagementRemoveHandler extends AbstractRemoveStepHandler {
 
         removeHttpManagementService(context);
 
+        RemotingServices.removeConnectorServices(context, ManagementRemotingServices.HTTP_CONNECTOR);
+        context.removeService(RemotingHttpUpgradeService.UPGRADE_SERVICE_NAME.append("management"));
     }
 
     @Override
@@ -58,6 +71,6 @@ public class HttpManagementRemoveHandler extends AbstractRemoveStepHandler {
     }
 
     static void removeHttpManagementService(final OperationContext context) {
-        context.removeService(_UndertowHttpManagementService.SERVICE_NAME);
+        context.removeService(UndertowHttpManagementService.SERVICE_NAME);
     }
 }

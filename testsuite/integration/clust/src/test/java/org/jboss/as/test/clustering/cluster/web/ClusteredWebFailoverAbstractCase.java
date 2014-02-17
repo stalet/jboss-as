@@ -22,22 +22,21 @@
 package org.jboss.as.test.clustering.cluster.web;
 
 import java.io.IOException;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.util.concurrent.ExecutionException;
+import java.util.Map;
+
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.jboss.arquillian.container.test.api.OperateOnDeployment;
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.arquillian.junit.InSequence;
 import org.jboss.arquillian.test.api.ArquillianResource;
-import org.jboss.as.test.clustering.ClusterHttpClientUtil;
 import org.jboss.as.test.clustering.cluster.ClusterAbstractTestCase;
 import org.jboss.as.test.clustering.single.web.SimpleServlet;
 import org.junit.Assert;
@@ -54,12 +53,6 @@ import org.junit.runner.RunWith;
 @RunAsClient
 public abstract class ClusteredWebFailoverAbstractCase extends ClusterAbstractTestCase {
 
-    @Override
-    protected void setUp() {
-        super.setUp();
-        deploy(DEPLOYMENTS);
-    }
-
     /**
      * Test simple graceful shutdown failover:
      * <p/>
@@ -75,97 +68,11 @@ public abstract class ClusteredWebFailoverAbstractCase extends ClusterAbstractTe
      * @throws URISyntaxException
      */
     @Test
-    @InSequence(1)
     public void testGracefulSimpleFailover(
             @ArquillianResource(SimpleServlet.class) @OperateOnDeployment(DEPLOYMENT_1) URL baseURL1,
             @ArquillianResource(SimpleServlet.class) @OperateOnDeployment(DEPLOYMENT_2) URL baseURL2)
-            throws IOException, InterruptedException, ExecutionException, URISyntaxException {
-
-        DefaultHttpClient client = org.jboss.as.test.http.util.HttpClientUtils.relaxedCookieHttpClient();
-
-        String url1 = baseURL1.toString() + "simple";
-        String url2 = baseURL2.toString() + "simple";
-
-        try {
-            this.establishView(client, baseURL1, NODE_1, NODE_2);
-
-            HttpResponse response = client.execute(new HttpGet(url1));
-            try {
-                log.info("Requested " + url1 + ", got " + response.getFirstHeader("value").getValue() + ".");
-                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals(1, Integer.parseInt(response.getFirstHeader("value").getValue()));
-            } finally {
-                HttpClientUtils.closeQuietly(response);
-            }
-
-            // Let's do this twice to have more debug info if failover is slow.
-            response = client.execute(new HttpGet(url1));
-            try {
-                log.info("Requested " + url1 + ", got " + response.getFirstHeader("value").getValue() + ".");
-                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals(2, Integer.parseInt(response.getFirstHeader("value").getValue()));
-            } finally {
-                HttpClientUtils.closeQuietly(response);
-            }
-
-            // Gracefully shutdown the 1st container.
-            stop(CONTAINER_1);
-
-            this.establishView(client, baseURL2, NODE_2);
-
-            // Now check on the 2nd server
-
-            // Note that this DOES rely on the fact that both servers are running on the "same" domain,
-            // which is '127.0.0.0'. Otherwise you will have to spoof cookies. @Rado
-
-            response = client.execute(new HttpGet(url2));
-            try {
-                log.info("Requested " + url2 + ", got " + response.getFirstHeader("value").getValue() + ".");
-                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals("Session failed to replicate after container 1 was shutdown.", 3, Integer.parseInt(response.getFirstHeader("value").getValue()));
-            } finally {
-                HttpClientUtils.closeQuietly(response);
-            }
-
-            // Let's do one more check.
-            response = client.execute(new HttpGet(url2));
-            try {
-                log.info("Requested " + url2 + ", got " + response.getFirstHeader("value").getValue() + ".");
-                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals(4, Integer.parseInt(response.getFirstHeader("value").getValue()));
-            } finally {
-                HttpClientUtils.closeQuietly(response);
-            }
-
-            start(CONTAINER_1);
-
-            this.establishView(client, baseURL2, NODE_1, NODE_2);
-
-            // Lets wait for the cluster to update membership and tranfer state.
-
-            response = client.execute(new HttpGet(url1));
-            try {
-                log.info("Requested " + url1 + ", got " + response.getFirstHeader("value").getValue() + ".");
-                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals("Session failed to replicate after container 1 was brough up.", 5, Integer.parseInt(response.getFirstHeader("value").getValue()));
-            } finally {
-                HttpClientUtils.closeQuietly(response);
-            }
-
-            // Let's do this twice to have more debug info if failover is slow.
-            response = client.execute(new HttpGet(url1));
-            try {
-                log.info("Requested " + url1 + ", got " + response.getFirstHeader("value").getValue() + ".");
-                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals(6, Integer.parseInt(response.getFirstHeader("value").getValue()));
-            } finally {
-                HttpClientUtils.closeQuietly(response);
-            }
-        } finally {
-            HttpClientUtils.closeQuietly(client);
-        }
-
-        // Assert.fail("Show me the logs please!");
+            throws IOException, InterruptedException, URISyntaxException {
+        testFailover(new RestartLifecycle(), baseURL1, baseURL2);
     }
 
     /**
@@ -183,105 +90,149 @@ public abstract class ClusteredWebFailoverAbstractCase extends ClusterAbstractTe
      * @throws URISyntaxException
      */
     @Test
-    @InSequence(2)
     public void testGracefulUndeployFailover(
             @ArquillianResource(SimpleServlet.class) @OperateOnDeployment(DEPLOYMENT_1) URL baseURL1,
             @ArquillianResource(SimpleServlet.class) @OperateOnDeployment(DEPLOYMENT_2) URL baseURL2)
-            throws IOException, InterruptedException, URISyntaxException {
+            throws IOException, URISyntaxException {
+        testFailover(new RedeployLifecycle(), baseURL1, baseURL2);
+    }
 
+    private static void testFailover(Lifecycle lifecycle, URL baseURL1, URL baseURL2) throws IOException, URISyntaxException {
         DefaultHttpClient client = org.jboss.as.test.http.util.HttpClientUtils.relaxedCookieHttpClient();
 
-        String url1 = baseURL1.toString() + "simple";
-        String url2 = baseURL2.toString() + "simple";
+        URI uri1 = SimpleServlet.createURI(baseURL1);
+        URI uri2 = SimpleServlet.createURI(baseURL2);
 
         try {
-            this.establishView(client, baseURL1, NODE_1, NODE_2);
-
-            HttpResponse response = client.execute(new HttpGet(url1));
+            HttpResponse response = client.execute(new HttpGet(uri1));
             try {
-                log.info("Requested " + url1 + ", got " + response.getFirstHeader("value").getValue() + ".");
                 Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals(1, Integer.parseInt(response.getFirstHeader("value").getValue()));
+                Assert.assertEquals(1, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertEquals(NODE_1, entry.getValue());
+                Assert.assertEquals(entry.getKey(), response.getFirstHeader(SimpleServlet.SESSION_ID_HEADER).getValue());
             } finally {
                 HttpClientUtils.closeQuietly(response);
             }
 
-            // Lets do this twice to have more debug info if failover is slow.
-            response = client.execute(new HttpGet(url1));
+            // Let's do this twice to have more debug info if failover is slow.
+            response = client.execute(new HttpGet(uri1));
             try {
-                log.info("Requested " + url1 + ", got " + response.getFirstHeader("value").getValue() + ".");
                 Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals(2, Integer.parseInt(response.getFirstHeader("value").getValue()));
+                Assert.assertEquals(2, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertNull(entry);
             } finally {
                 HttpClientUtils.closeQuietly(response);
             }
 
-            // Gracefully undeploy from the 1st container.
-            undeploy(DEPLOYMENT_1);
-
-            this.establishView(client, baseURL2, NODE_2);
+            // Gracefully shutdown the 1st container.
+            lifecycle.stop(NODE_1);
 
             // Now check on the 2nd server
 
             // Note that this DOES rely on the fact that both servers are running on the "same" domain,
-            // which is '127.0.0.1'. Otherwise you will have to spoof cookies. @Rado
-            response = client.execute(new HttpGet(url2));
+            // which is '127.0.0.0'. Otherwise you will have to spoof cookies. @Rado
+
+            response = client.execute(new HttpGet(uri2));
             try {
-                log.info("Requested " + url2 + ", got " + response.getFirstHeader("value").getValue() + ".");
                 Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals("Session failed to replicate after container 1 was shutdown.", 3, Integer.parseInt(response.getFirstHeader("value").getValue()));
+                Assert.assertEquals("Session failed to replicate after container 1 was shutdown.", 3, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertEquals(NODE_2, entry.getValue());
+                Assert.assertEquals(entry.getKey(), response.getFirstHeader(SimpleServlet.SESSION_ID_HEADER).getValue());
             } finally {
                 HttpClientUtils.closeQuietly(response);
             }
 
-            // Lets do one more check.
-            response = client.execute(new HttpGet(url2));
+            // Let's do one more check.
+            response = client.execute(new HttpGet(uri2));
             try {
-                log.info("Requested " + url2 + ", got " + response.getFirstHeader("value").getValue() + ".");
                 Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals(4, Integer.parseInt(response.getFirstHeader("value").getValue()));
+                Assert.assertEquals(4, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertNull(entry);
             } finally {
                 HttpClientUtils.closeQuietly(response);
             }
 
-            // Redeploy
-            deploy(DEPLOYMENT_1);
+            lifecycle.start(NODE_1);
 
-            this.establishView(client, baseURL2, NODE_1, NODE_2);
-
-            response = client.execute(new HttpGet(url1));
+            response = client.execute(new HttpGet(uri2));
             try {
-                log.info("Requested " + url1 + ", got " + response.getFirstHeader("value").getValue() + ".");
                 Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals("Session failed to replicate after container 1 was brough up.", 5, Integer.parseInt(response.getFirstHeader("value").getValue()));
+                Assert.assertEquals("Session failed to replicate after container 1 was brough up.", 5, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertNull(entry);
             } finally {
                 HttpClientUtils.closeQuietly(response);
             }
 
-            // Lets do this twice to have more debug info if failover is slow.
-            response = client.execute(new HttpGet(url1));
+            // Let's do this twice to have more debug info if failover is slow.
+            response = client.execute(new HttpGet(uri2));
             try {
-                log.info("Requested " + url1 + ", got " + response.getFirstHeader("value").getValue() + ".");
                 Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-                Assert.assertEquals(6, Integer.parseInt(response.getFirstHeader("value").getValue()));
+                Assert.assertEquals(6, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertNull(entry);
+            } finally {
+                HttpClientUtils.closeQuietly(response);
+            }
+
+            // Gracefully shutdown the 1st container.
+            lifecycle.stop(NODE_2);
+
+            // Now check on the 2nd server
+
+            // Note that this DOES rely on the fact that both servers are running on the "same" domain,
+            // which is '127.0.0.0'. Otherwise you will have to spoof cookies. @Rado
+
+            response = client.execute(new HttpGet(uri1));
+            try {
+                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
+                Assert.assertEquals("Session failed to replicate after container 1 was shutdown.", 7, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertEquals(NODE_1, entry.getValue());
+                Assert.assertEquals(entry.getKey(), response.getFirstHeader(SimpleServlet.SESSION_ID_HEADER).getValue());
+            } finally {
+                HttpClientUtils.closeQuietly(response);
+            }
+
+            // Let's do one more check.
+            response = client.execute(new HttpGet(uri1));
+            try {
+                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
+                Assert.assertEquals(8, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertNull(entry);
+            } finally {
+                HttpClientUtils.closeQuietly(response);
+            }
+
+            lifecycle.start(NODE_2);
+
+            response = client.execute(new HttpGet(uri1));
+            try {
+                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
+                Assert.assertEquals("Session failed to replicate after container 1 was brough up.", 9, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertNull(entry);
+            } finally {
+                HttpClientUtils.closeQuietly(response);
+            }
+
+            // Let's do this twice to have more debug info if failover is slow.
+            response = client.execute(new HttpGet(uri1));
+            try {
+                Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
+                Assert.assertEquals(10, Integer.parseInt(response.getFirstHeader(SimpleServlet.VALUE_HEADER).getValue()));
+                Map.Entry<String, String> entry = parseSessionRoute(response);
+                Assert.assertNull(entry);
             } finally {
                 HttpClientUtils.closeQuietly(response);
             }
         } finally {
             HttpClientUtils.closeQuietly(client);
         }
-
-        // Assert.fail("Show me the logs please!");
     }
-
-    @Test
-    @InSequence(3)
-    public void testCleanup() {
-        undeploy(DEPLOYMENTS);
-    }
-
-    private void establishView(HttpClient client, URL baseURL, String... members) throws URISyntaxException, IOException {
-        ClusterHttpClientUtil.establishView(client, baseURL, "web", members);
-    }
-
 }

@@ -42,32 +42,22 @@ class FileHandlerResourceDefinition extends AbstractFileHandlerDefinition {
     public static final String FILE_HANDLER = "file-handler";
     static final PathElement FILE_HANDLER_PATH = PathElement.pathElement(FILE_HANDLER);
 
-    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, APPEND, FILE);
+    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, APPEND, FILE, NAMED_FORMATTER);
 
     public FileHandlerResourceDefinition(final ResolvePathHandler resolvePathHandler, final boolean includeLegacyAttributes) {
         super(FILE_HANDLER_PATH, FileHandler.class, resolvePathHandler, (
                 includeLegacyAttributes ? Logging.join(ATTRIBUTES, LEGACY_ATTRIBUTES) : ATTRIBUTES));
     }
 
-    /**
-     * Add the transformers for the file handler.
-     *
-     * @param subsystemBuilder      the default subsystem builder
-     * @param loggingProfileBuilder the logging profile builder
-     *
-     * @return the builder created for the resource
-     */
-    static ResourceTransformationDescriptionBuilder addTransformers(final ResourceTransformationDescriptionBuilder subsystemBuilder,
-                                                                    final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
-        // Register the logger resource
-        final ResourceTransformationDescriptionBuilder child = subsystemBuilder.addChildResource(FILE_HANDLER_PATH)
-                .getAttributeBuilder()
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, APPEND, FILE)
-                .end();
-
-        // Reject logging profile resources
-        loggingProfileBuilder.rejectChildResource(FILE_HANDLER_PATH);
-
-        return registerTransformers(child);
+    @Override
+    protected void registerResourceTransformers(final KnownModelVersion modelVersion, final ResourceTransformationDescriptionBuilder resourceBuilder, final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
+        switch (modelVersion) {
+            case VERSION_1_1_0: {
+                resourceBuilder
+                        .getAttributeBuilder()
+                        .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, APPEND, FILE)
+                        .end();
+            }
+        }
     }
 }

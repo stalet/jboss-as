@@ -27,6 +27,9 @@ import static org.jboss.as.messaging.CommonAttributes.QUEUE;
 import static org.jboss.as.messaging.CommonAttributes.RUNTIME_QUEUE;
 import static org.jboss.dmr.ModelType.LONG;
 
+import java.util.Collections;
+import java.util.List;
+
 import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
@@ -35,6 +38,9 @@ import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.constraint.ApplicationTypeConfig;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.ApplicationTypeAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -77,7 +83,6 @@ public class QueueDefinition extends SimpleResourceDefinition {
     static final AttributeDefinition[] METRICS = { CommonAttributes.MESSAGE_COUNT, CommonAttributes.DELIVERING_COUNT, CommonAttributes.MESSAGES_ADDED,
             CommonAttributes.SCHEDULED_COUNT, CommonAttributes.CONSUMER_COUNT
             };
-    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { ADDRESS, CommonAttributes.FILTER, CommonAttributes.DURABLE };
 
     public static QueueDefinition newRuntimeQueueDefinition(final boolean registerRuntimeOnly) {
         return new QueueDefinition(registerRuntimeOnly, true, RUNTIME_QUEUE, null, null);
@@ -90,6 +95,8 @@ public class QueueDefinition extends SimpleResourceDefinition {
     private final boolean registerRuntimeOnly;
     private final boolean runtimeOnly;
 
+    private final List<AccessConstraintDefinition> accessConstraints;
+
     private QueueDefinition(final boolean registerRuntimeOnly, final boolean runtimeOnly,
             final String path,
             final AbstractAddStepHandler addHandler,
@@ -100,6 +107,12 @@ public class QueueDefinition extends SimpleResourceDefinition {
                 removeHandler);
         this.registerRuntimeOnly = registerRuntimeOnly;
         this.runtimeOnly = runtimeOnly;
+        if (!runtimeOnly) {
+            ApplicationTypeConfig atc = new ApplicationTypeConfig(MessagingExtension.SUBSYSTEM_NAME, path);
+            accessConstraints = new ApplicationTypeAccessConstraintDefinition(atc).wrapAsList();
+        } else {
+            accessConstraints = Collections.emptyList();
+        }
     }
 
     @Override
@@ -114,7 +127,7 @@ public class QueueDefinition extends SimpleResourceDefinition {
                             .build();
                     registry.registerReadOnlyAttribute(readOnlyRuntimeAttr, QueueReadAttributeHandler.RUNTIME_INSTANCE);
                 } else {
-                    registry.registerReadWriteAttribute(attr, null, QueueConfigurationWriteHandler.INSTANCE);
+                    registry.registerReadOnlyAttribute(attr, null);
                 }
             }
         }
@@ -139,6 +152,11 @@ public class QueueDefinition extends SimpleResourceDefinition {
         }
     }
 
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return accessConstraints;
+    }
+
     /**
      * [AS7-5850] Core queues created with HornetQ API does not create AS7 resources
      *
@@ -149,6 +167,12 @@ public class QueueDefinition extends SimpleResourceDefinition {
      */
     static boolean forwardToRuntimeQueue(OperationContext context, ModelNode operation, OperationStepHandler handler) {
         PathAddress address = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
+
+        // do not forward if the current operation is for a runtime-queue already:
+        if (RUNTIME_QUEUE.equals(address.getLastElement().getKey())) {
+            return false;
+        }
+
         String queueName = address.getLastElement().getValue();
 
         PathAddress hornetQPathAddress = MessagingServices.getHornetQServerPathAddress(address);

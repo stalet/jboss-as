@@ -22,34 +22,46 @@
 
 package org.jboss.as.messaging.jms;
 
+import static org.jboss.as.messaging.MessagingLogger.MESSAGING_LOGGER;
+import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
+import static org.jboss.as.server.Services.addServerExecutorDependency;
+
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+
+import javax.jms.Queue;
+
+import org.hornetq.jms.client.HornetQQueue;
 import org.hornetq.jms.server.JMSServerManager;
-import org.jboss.msc.inject.Injector;
+import org.jboss.as.controller.ServiceVerificationHandler;
+import org.jboss.as.messaging.HornetQActivationService;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceBuilder;
+import org.jboss.msc.service.ServiceController;
+import org.jboss.msc.service.ServiceName;
+import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
-
-import static org.jboss.as.messaging.MessagingLogger.MESSAGING_LOGGER;
-import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
-
-import java.util.concurrent.ExecutorService;
 
 /**
  * Service responsible for creating and destroying a {@code javax.jms.Queue}.
  *
  * @author Emanuel Muckenhuber
  */
-public class JMSQueueService implements Service<Void> {
+public class JMSQueueService implements Service<Queue> {
 
     private final InjectedValue<JMSServerManager> jmsServer = new InjectedValue<JMSServerManager>();
     private final InjectedValue<ExecutorService> executorInjector = new InjectedValue<ExecutorService>();
-
 
     private final String queueName;
     private final String selectorString;
     private final boolean durable;
     private final String[] jndi;
+
+    private Queue queue;
 
     public JMSQueueService(final String queueName, String selectorString, boolean durable, String[] jndi) {
         this.queueName = queueName;
@@ -58,55 +70,78 @@ public class JMSQueueService implements Service<Void> {
         this.jndi = jndi;
     }
 
-    /** {@inheritDoc} */
+    @Override
     public synchronized void start(final StartContext context) throws StartException {
-        context.asynchronous();
-
         final JMSServerManager jmsManager = jmsServer.getValue();
-        executorInjector.getValue().execute(new Runnable() {
+        final Runnable task = new Runnable() {
             @Override
             public void run() {
                 try {
                     jmsManager.createQueue(false, queueName, selectorString, durable, jndi);
+                    queue = new HornetQQueue(queueName);
                     context.complete();
                 } catch (Throwable e) {
                     context.failed(MESSAGES.failedToCreate(e, "queue"));
                 }
             }
-        });
+        };
+        try {
+            executorInjector.getValue().execute(task);
+        } catch (RejectedExecutionException e) {
+            task.run();
+        } finally {
+            context.asynchronous();
+        }
     }
 
-    /** {@inheritDoc} */
+    @Override
     public synchronized void stop(final StopContext context) {
-        // JMS Server Manager uses locking which waits on service completion, use async to prevent starvation
-        context.asynchronous();
-
         final JMSServerManager jmsManager = jmsServer.getValue();
-        executorInjector.getValue().execute(new Runnable() {
+        final Runnable task = new Runnable() {
             @Override
             public void run() {
                 try {
                     jmsManager.removeQueueFromJNDI(queueName);
+                    queue = null;
                 } catch (Throwable e) {
                     MESSAGING_LOGGER.failedToDestroy(e, "queue", queueName);
                 }
                 context.complete();
             }
-        });
-
+        };
+        // JMS Server Manager uses locking which waits on service completion, use async to prevent starvation
+        try {
+            executorInjector.getValue().execute(task);
+        } catch (RejectedExecutionException e) {
+            task.run();
+        } finally {
+            context.asynchronous();
+        }
     }
 
-    /** {@inheritDoc} */
-    public Void getValue() throws IllegalStateException {
-        return null;
+    @Override
+    public Queue getValue() throws IllegalStateException, IllegalArgumentException {
+        return queue;
     }
 
-    public InjectedValue<JMSServerManager> getJmsServer() {
-        return jmsServer;
-    }
+    public static Service<Queue> installService(final ServiceVerificationHandler verificationHandler, final List<ServiceController<?>> newControllers, final String name, final ServiceTarget serviceTarget, final ServiceName hqServiceName, final String selector, final boolean durable, final String[] jndiBindings) {
+        final JMSQueueService service = new JMSQueueService(name, selector, durable, jndiBindings);
 
-    public Injector<ExecutorService> getExecutorInjector() {
-        return executorInjector;
-    }
+        final ServiceName serviceName = JMSServices.getJmsQueueBaseServiceName(hqServiceName).append(name);
+        final ServiceBuilder<Queue> serviceBuilder = serviceTarget.addService(serviceName, service)
+                .addDependency(HornetQActivationService.getHornetQActivationServiceName(hqServiceName))
+                .addDependency(JMSServices.getJmsManagerBaseServiceName(hqServiceName), JMSServerManager.class, service.jmsServer)
+                .setInitialMode(ServiceController.Mode.PASSIVE);
+        addServerExecutorDependency(serviceBuilder, service.executorInjector, false);
+        if (verificationHandler != null) {
+            serviceBuilder.addListener(verificationHandler);
+        }
 
+        final ServiceController<Queue> controller = serviceBuilder.install();
+        if (newControllers != null) {
+            newControllers.add(controller);
+        }
+
+        return service;
+    }
 }

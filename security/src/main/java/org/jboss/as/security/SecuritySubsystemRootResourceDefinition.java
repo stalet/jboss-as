@@ -36,6 +36,8 @@ import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.constraint.SensitivityClassification;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.naming.ServiceBasedNamingStore;
 import org.jboss.as.naming.deployment.ContextNames;
@@ -67,14 +69,19 @@ import org.jboss.security.plugins.JBossSecuritySubjectFactory;
 import org.jboss.security.plugins.audit.JBossAuditManager;
 import org.jboss.security.plugins.identitytrust.JBossIdentityTrustManager;
 import org.jboss.security.plugins.mapping.JBossMappingManager;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * @author Jason T. Greene
  */
 public class SecuritySubsystemRootResourceDefinition extends SimpleResourceDefinition {
 
+    static final SensitiveTargetAccessConstraintDefinition MISC_SECURITY_SENSITIVITY = new SensitiveTargetAccessConstraintDefinition(
+            new SensitivityClassification(SecurityExtension.SUBSYSTEM_NAME, "misc-security", false, true, true));
+
     static final SecuritySubsystemRootResourceDefinition INSTANCE = new SecuritySubsystemRootResourceDefinition();
     static final SimpleAttributeDefinition DEEP_COPY_SUBJECT_MODE = new SimpleAttributeDefinitionBuilder(Constants.DEEP_COPY_SUBJECT_MODE, ModelType.BOOLEAN, true)
+                    .setAccessConstraints(MISC_SECURITY_SENSITIVITY)
                     .setDefaultValue(new ModelNode(false))
                     .setAllowExpression(true)
                     .build();
@@ -124,7 +131,7 @@ public class SecuritySubsystemRootResourceDefinition extends SimpleResourceDefin
 
             if(context.getProcessType() != ProcessType.APPLICATION_CLIENT) {
                 //remove once AS7-4687 is resolved
-                SecurityActions.setSystemProperty(SecurityContextAssociation.SECURITYCONTEXT_THREADLOCAL, "true");
+                WildFlySecurityManager.setPropertyPrivileged(SecurityContextAssociation.SECURITYCONTEXT_THREADLOCAL, "true");
             }
             final ServiceTarget target = context.getServiceTarget();
 

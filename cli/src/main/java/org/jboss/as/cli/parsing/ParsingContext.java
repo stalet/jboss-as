@@ -131,4 +131,18 @@ public interface ParsingContext {
      * @param e  the error
      */
     void setError(CommandFormatException e);
+
+    /**
+     * Replaces system property specified with ${xxx} fomrat or a local variable
+     * whose name is prefixed with '$'.
+     * After the property or the variable has been replaced with its actual value,
+     * the parsing continues from the same location but with the value resolved.
+     *
+     * @param exceptionIfNotResolved  whether an exception should be thrown
+     *                                in case the property or the variable couldn't
+     *                                be resolved or should it continue unnoticed
+     *
+     * @throws CommandFormatException
+     */
+    void resolveExpression(boolean systemProperty, boolean exceptionIfNotResolved) throws UnresolvedExpressionException;
 }

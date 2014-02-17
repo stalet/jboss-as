@@ -55,6 +55,7 @@ import org.jboss.as.controller.CompositeOperationHandler;
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationDefinition;
+import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
@@ -63,11 +64,13 @@ import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.RunningModeControl;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.OverrideDescriptionProvider;
 import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.extension.SubsystemInformation;
+import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.persistence.ConfigurationPersister;
 import org.jboss.as.controller.registry.AliasEntry;
@@ -82,6 +85,7 @@ import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.transform.OperationTransformer.TransformedOperation;
 import org.jboss.as.controller.transform.TransformerRegistry;
 import org.jboss.as.model.test.ChildFirstClassLoaderBuilder;
+import org.jboss.as.model.test.EAPRepositoryReachableUtil;
 import org.jboss.as.model.test.ModelFixer;
 import org.jboss.as.model.test.ModelTestBootOperationsBuilder;
 import org.jboss.as.model.test.ModelTestControllerVersion;
@@ -96,8 +100,10 @@ import org.jboss.as.subsystem.bridge.impl.LegacyControllerKernelServicesProxy;
 import org.jboss.as.subsystem.bridge.local.ScopedKernelServicesBootstrap;
 import org.jboss.as.subsystem.test.ModelDescriptionValidator.ValidationConfiguration;
 import org.jboss.dmr.ModelNode;
+import org.jboss.modules.filter.ClassFilter;
 import org.jboss.staxmapper.XMLMapper;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.xnio.IoUtils;
 
 /**
@@ -157,7 +163,7 @@ final class SubsystemTestDelegate {
     void initializeParser() throws Exception {
         //Initialize the parser
         xmlMapper = XMLMapper.Factory.create();
-        extensionParsingRegistry = new ExtensionRegistry(getProcessType(), new RunningModeControl(RunningMode.NORMAL));
+        extensionParsingRegistry = new ExtensionRegistry(getProcessType(), new RunningModeControl(RunningMode.NORMAL), null, null);
         testParser = new TestParser(mainSubsystemName, extensionParsingRegistry);
         xmlMapper.registerRootElement(new QName(TEST_NAMESPACE, "test"), testParser);
         mainExtension.initializeParsers(extensionParsingRegistry.getExtensionParsingContext("Test", xmlMapper));
@@ -225,7 +231,7 @@ final class SubsystemTestDelegate {
 
         // Use ProcessType.HOST_CONTROLLER for this ExtensionRegistry so we don't need to provide
         // a PathManager via the ExtensionContext. All we need the Extension to do here is register the xml writers
-        ExtensionRegistry outputExtensionRegistry = new ExtensionRegistry(ProcessType.HOST_CONTROLLER, new RunningModeControl(RunningMode.NORMAL));
+        ExtensionRegistry outputExtensionRegistry = new ExtensionRegistry(ProcessType.HOST_CONTROLLER, new RunningModeControl(RunningMode.NORMAL), null, null);
         outputExtensionRegistry.setSubsystemParentResourceRegistrations(MOCK_RESOURCE_REG, MOCK_RESOURCE_REG);
         outputExtensionRegistry.setWriterRegistry(persister);
 
@@ -413,9 +419,12 @@ final class SubsystemTestDelegate {
                 file.mkdir();
             }
         }
-        PrintWriter pw = new PrintWriter(new File(file, mainSubsystemName + "-" + modelVersion.getMajor() + "." + modelVersion.getMinor() +"."+modelVersion.getMicro()+ ".dmr"));
+        File dmrFile = new File(file, mainSubsystemName + "-" + modelVersion.getMajor() + "." + modelVersion.getMinor() +"."+modelVersion.getMicro()+ ".dmr");
+        PrintWriter pw = new PrintWriter(dmrFile);
         try {
             desc.writeString(pw, false);
+            //Leave this println - it only gets executed when people generate the legacy dmr files, and is useful to know where it has been written.
+            System.out.println("Legacy resource definition dmr written to: " + dmrFile.getAbsolutePath());
         } finally {
             IoUtils.safeClose(pw);
         }
@@ -425,14 +434,22 @@ final class SubsystemTestDelegate {
      * Checks that the transformed model is the same as the model built up in the legacy subsystem controller via the transformed operations,
      * and that the transformed model is valid according to the resource definition in the legacy subsystem controller.
      *
+     *
+     *
      * @param kernelServices the main kernel services
      * @param modelVersion   the model version of the targetted legacy subsystem
      * @param legacyModelFixer use to touch up the model read from the legacy controller, use sparingly when the legacy model is just wrong. May be {@code null}
+     * @param includeDefaults  whether the legacy controller model and the transformed model should include default values for undefined attributes
      * @return the whole model of the legacy controller
      */
-    ModelNode checkSubsystemModelTransformation(KernelServices kernelServices, ModelVersion modelVersion, ModelFixer legacyModelFixer) throws IOException {
-        KernelServices legacy = kernelServices.getLegacyServices(modelVersion);
-        ModelNode legacyModel = legacy.readWholeModel();
+    ModelNode checkSubsystemModelTransformation(KernelServices kernelServices, ModelVersion modelVersion, ModelFixer legacyModelFixer, boolean includeDefaults) throws IOException, OperationFailedException {
+
+        ModelNode legacyReadResource = Util.createOperation(ModelDescriptionConstants.READ_RESOURCE_OPERATION, PathAddress.EMPTY_ADDRESS);
+        legacyReadResource.get(ModelDescriptionConstants.RECURSIVE).set(true);
+        legacyReadResource.get(ModelDescriptionConstants.INCLUDE_ALIASES).set(false);
+        legacyReadResource.get(ModelDescriptionConstants.INCLUDE_RUNTIME).set(false);
+        legacyReadResource.get(ModelDescriptionConstants.INCLUDE_DEFAULTS).set(includeDefaults);
+        ModelNode legacyModel = ModelTestUtils.checkResultAndGetContents(kernelServices.executeOperation(modelVersion, kernelServices.transformOperation(modelVersion, legacyReadResource)));
         ModelNode legacySubsystem = legacyModel.require(SUBSYSTEM);
         legacySubsystem = legacySubsystem.require(mainSubsystemName);
 
@@ -443,7 +460,8 @@ final class SubsystemTestDelegate {
         //1) Check that the transformed model is the same as the whole model read from the legacy controller.
         //The transformed model is done via the resource transformers
         //The model in the legacy controller is built up via transformed operations
-        ModelNode transformed = kernelServices.readTransformedModel(modelVersion).get(SUBSYSTEM, mainSubsystemName);
+        ModelNode transformed = kernelServices.readTransformedModel(modelVersion, includeDefaults).get(SUBSYSTEM, mainSubsystemName);
+
         ModelTestUtils.compare(legacySubsystem, transformed, true);
 
         //2) Check that the transformed model is valid according to the resource definition in the legacy subsystem controller
@@ -462,7 +480,7 @@ final class SubsystemTestDelegate {
     }
 
     private ExtensionRegistry cloneExtensionRegistry(AdditionalInitialization additionalInit) {
-        final ExtensionRegistry clone = new ExtensionRegistry(additionalInit.getProcessType(), new RunningModeControl(additionalInit.getExtensionRegistryRunningMode()));
+        final ExtensionRegistry clone = new ExtensionRegistry(additionalInit.getProcessType(), new RunningModeControl(additionalInit.getExtensionRegistryRunningMode()), null, null);
         for (String extension : extensionParsingRegistry.getExtensionModuleNames()) {
             ExtensionParsingContext epc = clone.getExtensionParsingContext(extension, null);
             for (Map.Entry<String, SubsystemInformation> entry : extensionParsingRegistry.getAvailableSubsystems(extension).entrySet()) {
@@ -546,6 +564,11 @@ final class SubsystemTestDelegate {
         }
 
         public LegacyKernelServicesInitializer createLegacyKernelServicesBuilder(AdditionalInitialization additionalInit, ModelTestControllerVersion version, ModelVersion modelVersion) {
+            //Ignore this test if it is eap
+            if (version.isEap()) {
+                Assume.assumeTrue(EAPRepositoryReachableUtil.isReachable());
+            }
+
             bootOperationBuilder.validateNotAlreadyBuilt();
             if (legacyControllerInitializers.containsKey(modelVersion)) {
                 throw new IllegalArgumentException("There is already a legacy controller for " + modelVersion);
@@ -624,7 +647,7 @@ final class SubsystemTestDelegate {
         private final ModelTestControllerVersion testControllerVersion;
         private String extensionClassName;
         private ModelVersion modelVersion;
-        private ChildFirstClassLoaderBuilder classLoaderBuilder = new ChildFirstClassLoaderBuilder();
+        private ChildFirstClassLoaderBuilder classLoaderBuilder;
         private ModelTestOperationValidatorFilter.Builder operationValidationExcludeBuilder;
         private boolean persistXml = true;
         private boolean skipReverseCheck;
@@ -638,6 +661,7 @@ final class SubsystemTestDelegate {
         };
 
         public LegacyKernelServiceInitializerImpl(AdditionalInitialization additionalInit, ModelTestControllerVersion version, ModelVersion modelVersion) {
+            this.classLoaderBuilder = new ChildFirstClassLoaderBuilder(version.isEap());
             this.additionalInit = additionalInit == null ? AdditionalInitialization.MANAGEMENT : additionalInit;
             this.testControllerVersion = version;
             this.modelVersion = modelVersion;
@@ -687,8 +711,10 @@ final class SubsystemTestDelegate {
         }
 
         @Override
-        public LegacyKernelServicesInitializer addMavenResourceURL(String artifactGav) throws IOException, ClassNotFoundException {
-            classLoaderBuilder.addMavenResourceURL(artifactGav);
+        public LegacyKernelServicesInitializer addMavenResourceURL(String...artifactGavs) throws IOException, ClassNotFoundException {
+            for (String artifactGav : artifactGavs) {
+                classLoaderBuilder.addMavenResourceURL(artifactGav);
+            }
             return this;
         }
 
@@ -704,6 +730,18 @@ final class SubsystemTestDelegate {
             return this;
         }
 
+        @Override
+        public LegacyKernelServicesInitializer excludeFromParent(ClassFilter exclusionFilter) {
+            classLoaderBuilder.excludeFromParent(exclusionFilter);
+            return this;
+        }
+
+        @Override
+        public LegacyKernelServicesInitializer addSingleChildFirstClass(Class<?>...classes) {
+            classLoaderBuilder.addSingleChildFirstClass(classes);
+            return this;
+        }
+
         private LegacyControllerKernelServicesProxy install(KernelServices mainServices, List<ModelNode> bootOperations) throws Exception {
             if (!skipReverseCheck) {
                 bootCurrentVersionWithLegacyBootOperations(bootOperations, mainServices);
@@ -711,11 +749,13 @@ final class SubsystemTestDelegate {
 
             classLoaderBuilder.addParentFirstClassPattern("org.jboss.as.subsystem.bridge.shared.*");
 
-            classLoaderBuilder.addMavenResourceURL("org.jboss.as:jboss-as-subsystem-test-framework:" + ModelTestControllerVersion.CurrentVersion.VERSION);
-            classLoaderBuilder.addMavenResourceURL("org.jboss.as:jboss-as-model-test:" + ModelTestControllerVersion.CurrentVersion.VERSION);
+            classLoaderBuilder.addMavenResourceURL("org.wildfly:wildfly-subsystem-test-framework:" + ModelTestControllerVersion.CurrentVersion.VERSION);
+            classLoaderBuilder.addMavenResourceURL("org.wildfly:wildfly-model-test:" + ModelTestControllerVersion.CurrentVersion.VERSION);
 
             if (testControllerVersion != ModelTestControllerVersion.MASTER) {
-                classLoaderBuilder.addRecursiveMavenResourceURL("org.jboss.as:jboss-as-server:" + testControllerVersion.getMavenGavVersion());
+                String groupId = testControllerVersion.getMavenGavVersion().startsWith("7.") ? "org.jboss.as" : "org.wildfly";
+                String serverArtifactId = testControllerVersion.getMavenGavVersion().startsWith("7.") ? "jboss-as-server" : "wildfly-server";
+                classLoaderBuilder.addRecursiveMavenResourceURL(groupId + ":" + serverArtifactId + ":" + testControllerVersion.getMavenGavVersion());
 
                 //TODO Even with this there are some workarounds needed in JGroupsSubsystemTransformerTestCase, InfinispanSubsystemTransformersTestCase and LoggingSubsystemTestCase
                 //Don't load modules from the scoped classloader to avoid some funky stuff going on when initializing the JAXP redirect
@@ -723,7 +763,7 @@ final class SubsystemTestDelegate {
                 classLoaderBuilder.addParentFirstClassPattern("__redirected.*");
                 classLoaderBuilder.addParentFirstClassPattern("org.jboss.modules.*");
 
-                classLoaderBuilder.addMavenResourceURL("org.jboss.as:jboss-as-subsystem-test-controller-" + testControllerVersion.getTestControllerVersion() + ":" + ModelTestControllerVersion.CurrentVersion.VERSION);
+                classLoaderBuilder.addMavenResourceURL("org.wildfly:wildfly-subsystem-test-controller-" + testControllerVersion.getTestControllerVersion() + ":" + ModelTestControllerVersion.CurrentVersion.VERSION);
             }
             ClassLoader legacyCl = classLoaderBuilder.build();
 
@@ -785,7 +825,7 @@ final class SubsystemTestDelegate {
 
             ModelNode reverseSubsystem = reverseServices.readWholeModel().get(SUBSYSTEM, getMainSubsystemName());
             if (reverseCheckModelFixer != null) {
-                reverseCheckModelFixer.fixModel(reverseSubsystem);
+                reverseSubsystem = reverseCheckModelFixer.fixModel(reverseSubsystem);
             }
             ModelTestUtils.compare(mainServices.readWholeModel().get(SUBSYSTEM, getMainSubsystemName()), reverseSubsystem);
             return reverseServices;
@@ -884,6 +924,11 @@ final class SubsystemTestDelegate {
         @Override
         public ManagementResourceRegistration getSubModel(PathAddress address) {
             return null;
+        }
+
+        @Override
+        public List<AccessConstraintDefinition> getAccessConstraints() {
+            return Collections.emptyList();
         }
 
         @Override

@@ -27,32 +27,16 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-messaging</artifactId>
-    <version>8.0.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-messaging</artifactId>
+    <version>8.0.1.Final-SNAPSHOT</version>
 
-    <name>JBoss Application Server: Messaging Subsystem</name>
-
-    <build>
-      <plugins>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-surefire-plugin</artifactId>
-          <configuration>
-            <redirectTestOutputToFile>true</redirectTestOutputToFile>
-            <systemPropertyVariables>
-                <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
-	              <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
-		        </systemPropertyVariables>
-          </configuration>
-        </plugin>
-      </plugins>
-    </build>
+    <name>WildFly: Messaging Subsystem</name>
 
     <dependencies>
         <dependency>
@@ -61,13 +45,13 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-security-util</artifactId>
+            <groupId>org.wildfly.security</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
         </dependency>
 
         <dependency>
@@ -83,6 +67,11 @@
         <dependency>
             <groupId>org.hornetq</groupId>
             <artifactId>hornetq-commons</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.hornetq</groupId>
+            <artifactId>hornetq-tools</artifactId>
         </dependency>
 
         <dependency>
@@ -106,28 +95,43 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-connector</artifactId>
+            <groupId>org.jboss.spec.javax.jms</groupId>
+            <artifactId>jboss-jms-api_2.0_spec</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-naming</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-connector</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-naming</artifactId>
         </dependency>
 
 	    <dependency>
-	        <groupId>org.jboss.as</groupId>
-	        <artifactId>jboss-as-network</artifactId>
+	        <groupId>org.wildfly</groupId>
+	        <artifactId>wildfly-network</artifactId>
 	    </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-transactions</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-transactions</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-jgroups</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-jgroups</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-web-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-weld</artifactId>
         </dependency>
 
         <dependency>
@@ -142,18 +146,32 @@
 
         <dependency>
             <groupId>org.jboss.logging</groupId>
+            <artifactId>jboss-logging-annotations</artifactId>
+            <!-- This is a compile-time dependency of this project, but is not needed at compile or runtime by other
+                  projects that depend on this project.-->
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.logging</groupId>
             <artifactId>jboss-logging-processor</artifactId>
             <!-- This is a compile-time dependency of this project, but is not needed at compile or runtime by other
                   projects that depend on this project.-->
             <scope>provided</scope>
             <optional>true</optional>
         </dependency>
-        
+
         <dependency>
             <groupId>org.jboss.common</groupId>
             <artifactId>jboss-common-beans</artifactId>
         </dependency>
-        
+
+        <dependency>
+            <groupId>org.jboss.xnio.netty</groupId>
+            <artifactId>netty-xnio-transport</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
@@ -161,8 +179,8 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
 						<type>pom</type>
             <scope>test</scope>
         </dependency>

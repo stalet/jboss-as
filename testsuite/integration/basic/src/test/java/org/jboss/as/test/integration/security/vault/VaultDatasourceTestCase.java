@@ -25,21 +25,16 @@ package org.jboss.as.test.integration.security.vault;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ALLOW_RESOURCE_SERVICE_RESTART;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CORE_SERVICE;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ENABLE;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.READ_ATTRIBUTE_OPERATION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REMOVE;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RESULT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VAULT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VAULT_OPTIONS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
-import java.io.File;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -50,7 +45,6 @@ import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.sql.DataSource;
 
-import org.apache.commons.io.FileUtils;
 import org.h2.tools.Server;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
@@ -58,33 +52,37 @@ import org.jboss.as.arquillian.api.ServerSetup;
 import org.jboss.as.arquillian.api.ServerSetupTask;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.controller.client.OperationBuilder;
-import org.jboss.as.security.vault.VaultSession;
 import org.jboss.as.test.integration.security.common.Utils;
+import org.jboss.as.test.integration.security.common.VaultHandler;
 import org.jboss.dmr.ModelNode;
+import org.jboss.logging.Logger;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+
 /**
  * A VaultDatasourceTestCase for testing access to database through vault security
- * 
+ *
  * @author Ondrej Lukas
  */
 @RunWith(Arquillian.class)
 @ServerSetup(VaultDatasourceTestCase.VaultDatasourceTestCaseSetup.class)
 public class VaultDatasourceTestCase {
 
+    private static Logger LOGGER = Logger.getLogger(VaultDatasourceTestCase.class);
+
     static class VaultDatasourceTestCaseSetup implements ServerSetupTask {
 
-        private ModelNode originalVault;
         private Connection connection;
         private Server server;
-        private VaultSession nonInteractiveSession;
+        private VaultHandler vaultHandler;
 
         @Override
         public void setup(ManagementClient managementClient, String containerId) throws Exception {
+            LOGGER.info("RESOURCE_LOCATION=" + RESOURCE_LOCATION);
 
             ModelNode op;
 
@@ -95,60 +93,32 @@ public class VaultDatasourceTestCase {
             executeUpdate(connection, "CREATE TABLE TestPeople(Name Varchar(50), Surname Varchar(50))");
             executeUpdate(connection, "INSERT INTO TestPeople VALUES ('John','Smith')");
 
-            // copy keystore to temporary file
-            FileUtils.copyURLToFile(VaultDatasourceTestCase.class.getResource(KEYSTORE_FILENAME), keyStoreFile);
-
-            // clean temporary directory
-            File datFile1 = new File(System.getProperty("java.io.tmpdir"), ENC_DAT_FILE);
-            if (datFile1.exists())
-                datFile1.delete();
-            File datFile2 = new File(System.getProperty("java.io.tmpdir"), SHARED_DAT_FILE);
-            if (datFile2.exists())
-                datFile2.delete();
-
-            // save original vault setting
-            op = new ModelNode();
-            op.get(OP).set(READ_ATTRIBUTE_OPERATION);
-            op.get(OP_ADDR).add(CORE_SERVICE, VAULT);
-            op.get(NAME).set(VAULT_OPTIONS);
-            originalVault = (managementClient.getControllerClient().execute(new OperationBuilder(op).build())).get(RESULT);
-
-            // remove original vault
-            op = new ModelNode();
-            op.get(OP).set(REMOVE);
-            op.get(OP_ADDR).add(CORE_SERVICE, VAULT);
-            managementClient.getControllerClient().execute(new OperationBuilder(op).build());
-
             // create new vault
-            String keystoreURL = keyStoreFile.getAbsolutePath();
-            String keystorePassword = "password";
-            String encryptionDirectory = System.getProperty("java.io.tmpdir") + File.separator;
-            String salt = "87654321";
-            int iterationCount = 20;
-
-            nonInteractiveSession = new VaultSession(keystoreURL, keystorePassword, encryptionDirectory, salt, iterationCount);
-            String vaultAlias = "vault";
-            nonInteractiveSession.startVaultSession(vaultAlias);
+            vaultHandler = new VaultHandler(RESOURCE_LOCATION);
 
             // create security attributes
             String attributeName = "password";
-            String vaultPasswordString = nonInteractiveSession.addSecuredAttribute(VAULT_BLOCK, attributeName,
+            String vaultPasswordString = vaultHandler.addSecuredAttribute(VAULT_BLOCK, attributeName,
                     RIGHT_PASSWORD.toCharArray());
-            String wrongVaultPasswordString = nonInteractiveSession.addSecuredAttribute(VAULT_BLOCK_WRONG, attributeName,
+            String wrongVaultPasswordString = vaultHandler.addSecuredAttribute(VAULT_BLOCK_WRONG, attributeName,
                     WRONG_PASSWORD.toCharArray());
+
+            LOGGER.debug("vaultPasswordString=" + vaultPasswordString);
 
             // create new vault setting in standalone
             op = new ModelNode();
             op.get(OP).set(ADD);
             op.get(OP_ADDR).add(CORE_SERVICE, VAULT);
             ModelNode vaultOption = op.get(VAULT_OPTIONS);
-            vaultOption.get("KEYSTORE_URL").set(keystoreURL);
-            vaultOption.get("KEYSTORE_PASSWORD").set(nonInteractiveSession.getKeystoreMaskedPassword());
-            vaultOption.get("KEYSTORE_ALIAS").set(vaultAlias);
-            vaultOption.get("SALT").set(salt);
-            vaultOption.get("ITERATION_COUNT").set(Integer.toString(iterationCount));
-            vaultOption.get("ENC_FILE_DIR").set(encryptionDirectory);
+            vaultOption.get("KEYSTORE_URL").set(vaultHandler.getKeyStore());
+            vaultOption.get("KEYSTORE_PASSWORD").set(vaultHandler.getMaskedKeyStorePassword());
+            vaultOption.get("KEYSTORE_ALIAS").set(vaultHandler.getAlias());
+            vaultOption.get("SALT").set(vaultHandler.getSalt());
+            vaultOption.get("ITERATION_COUNT").set(vaultHandler.getIterationCountAsString());
+            vaultOption.get("ENC_FILE_DIR").set(vaultHandler.getEncodedVaultFileDirectory());
             managementClient.getControllerClient().execute(new OperationBuilder(op).build());
+
+            LOGGER.debug("Vault created in sever configuration");
 
             // create new datasource with right password
             ModelNode address = new ModelNode();
@@ -166,11 +136,7 @@ public class VaultDatasourceTestCase {
             op.get(OPERATION_HEADERS).get(ALLOW_RESOURCE_SERVICE_RESTART).set(true);
             managementClient.getControllerClient().execute(new OperationBuilder(op).build());
 
-            final ModelNode enableNode = new ModelNode();
-            enableNode.get(OP).set(ENABLE);
-            enableNode.get(OP_ADDR).add(SUBSYSTEM, "datasources");
-            enableNode.get(OP_ADDR).add("data-source", VAULT_BLOCK);
-            managementClient.getControllerClient().execute(new OperationBuilder(enableNode).build());
+            LOGGER.debug(VAULT_BLOCK + " datasource created");
 
             // create new datasource with wrong password
             address = new ModelNode();
@@ -188,11 +154,7 @@ public class VaultDatasourceTestCase {
             op.get(OPERATION_HEADERS).get(ALLOW_RESOURCE_SERVICE_RESTART).set(true);
             managementClient.getControllerClient().execute(new OperationBuilder(op).build());
 
-            final ModelNode enableNodeWrong = new ModelNode();
-            enableNodeWrong.get(OP).set(ENABLE);
-            enableNodeWrong.get(OP_ADDR).add(SUBSYSTEM, "datasources");
-            enableNodeWrong.get(OP_ADDR).add("data-source", VAULT_BLOCK_WRONG);
-            managementClient.getControllerClient().execute(new OperationBuilder(enableNodeWrong).build());
+            LOGGER.debug(VAULT_BLOCK_WRONG + " datasource created");
 
         }
 
@@ -220,30 +182,8 @@ public class VaultDatasourceTestCase {
             op.get(OP_ADDR).add(CORE_SERVICE, VAULT);
             managementClient.getControllerClient().execute(new OperationBuilder(op).build());
 
-            // set original vault
-            if (originalVault.get("KEYSTORE_URL") != null) {
-                op = new ModelNode();
-                op.get(OP).set(ADD);
-                op.get(OP_ADDR).add(CORE_SERVICE, VAULT);
-                ModelNode vaultOption = op.get(VAULT_OPTIONS);
-                vaultOption.get("KEYSTORE_URL").set(originalVault.get("KEYSTORE_URL"));
-                vaultOption.get("KEYSTORE_PASSWORD").set(originalVault.get("KEYSTORE_PASSWORD"));
-                vaultOption.get("KEYSTORE_ALIAS").set(originalVault.get("KEYSTORE_ALIAS"));
-                vaultOption.get("SALT").set(originalVault.get("SALT"));
-                vaultOption.get("ITERATION_COUNT").set(originalVault.get("ITERATION_COUNT"));
-                vaultOption.get("ENC_FILE_DIR").set(originalVault.get("ENC_FILE_DIR"));
-                managementClient.getControllerClient().execute(new OperationBuilder(op).build());
-            }
-
             // remove temporary files
-            if (keyStoreFile.exists())
-                keyStoreFile.delete();
-            File datFile1 = new File(System.getProperty("java.io.tmpdir"), ENC_DAT_FILE);
-            if (datFile1.exists())
-                datFile1.delete();
-            File datFile2 = new File(System.getProperty("java.io.tmpdir"), SHARED_DAT_FILE);
-            if (datFile2.exists())
-                datFile2.delete();
+            vaultHandler.cleanUp();
 
             // stop DB
             executeUpdate(connection, "DROP TABLE TestPeople");
@@ -259,14 +199,12 @@ public class VaultDatasourceTestCase {
         }
     }
 
-    static final String KEYSTORE_FILENAME = "vaulttest.keystore";
+    static final String RESOURCE_LOCATION = VaultDatasourceTestCase.class.getProtectionDomain().getCodeSource().getLocation().getFile()
+            + "security/ds-vault/";
     static final String VAULT_BLOCK = "ds_TestDS";
     static final String VAULT_BLOCK_WRONG = VAULT_BLOCK + "Wrong";
     static final String RIGHT_PASSWORD = "passwordForVault";
     static final String WRONG_PASSWORD = "wrongPasswordForVault";
-    static final String ENC_DAT_FILE = "ENC.dat";
-    static final String SHARED_DAT_FILE = "Shared.dat";
-    static final File keyStoreFile = new File(System.getProperty("java.io.tmpdir"), KEYSTORE_FILENAME);
 
     /*
      * Tests that can access to database with right password

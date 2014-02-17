@@ -27,9 +27,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-core-model-test</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-core-model-test</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
     <!--
       Just here for the tests module to include as an optional dependency to avoid picking up
@@ -38,15 +38,20 @@
 			the classpath when setting up the legacy controller classloaders, and want to be able to choose
 			which one to use. 
 		-->
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-core-model-test-controller-optional</artifactId>
-    <name>JBoss Application Server: Core Model Test Controller Optional</name>
-    <version>8.0.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-core-model-test-controller-optional</artifactId>
+    <name>WildFly: Core Model Test Controller Optional</name>
+    <version>8.0.1.Final-SNAPSHOT</version>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-core-model-test-controller-7.1.2</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-core-model-test-controller-7.1.2</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-core-model-test-controller-7.2.0</artifactId>
             <scope>provided</scope>
         </dependency>
     </dependencies>

@@ -4,11 +4,12 @@
     <extensions>
         <extension module="org.jboss.as.clustering.infinispan"/>
         <extension module="org.jboss.as.clustering.jgroups"/>
-        <extension module="org.jboss.as.configadmin"/>
+        <extension module="org.jboss.as.cmp"/>
         <extension module="org.jboss.as.connector"/>
         <extension module="org.jboss.as.ee"/>
         <extension module="org.jboss.as.ejb3"/>
         <extension module="org.jboss.as.jacorb"/>
+        <extension module="org.jboss.as.jaxr"/>
         <extension module="org.jboss.as.jaxrs"/>
         <extension module="org.jboss.as.jdr"/>
         <extension module="org.jboss.as.jmx"/>
@@ -19,7 +20,6 @@
         <extension module="org.jboss.as.messaging"/>
         <extension module="org.jboss.as.modcluster"/>
         <extension module="org.jboss.as.naming"/>
-        <extension module="org.jboss.as.osgi"/>
         <extension module="org.jboss.as.pojo"/>
         <extension module="org.jboss.as.remoting"/>
         <extension module="org.jboss.as.sar"/>
@@ -74,7 +74,6 @@
                     </handlers>
                 </root-logger>
             </subsystem>
-            <subsystem xmlns="urn:jboss:domain:configadmin:1.0"/>
             <subsystem xmlns="urn:jboss:domain:datasources:1.1">
                 <datasources>
                     <datasource jndi-name="java:jboss/datasources/ExampleDS" pool-name="ExampleDS" enabled="true" use-java-context="true">
@@ -183,22 +182,6 @@
             <subsystem xmlns="urn:jboss:domain:naming:1.2">
                 <remote-naming/>
             </subsystem>
-            <subsystem xmlns="urn:jboss:domain:osgi:1.2" activation="lazy">
-                <properties>
-                    <!-- Specifies the beginning start level of the framework -->
-                    <property name="org.osgi.framework.startlevel.beginning">1</property>
-                </properties>
-                <capabilities>
-                    <!-- modules registered with the OSGi layer on startup -->
-                    <capability name="javax.servlet.api:v25"/>
-                    <capability name="javax.transaction.api"/>
-                    <!-- bundles started in startlevel 1 -->
-                    <capability name="org.apache.felix.log" startlevel="1"/>
-                    <capability name="org.jboss.osgi.logging" startlevel="1"/>
-                    <capability name="org.apache.felix.configadmin" startlevel="1"/>
-                    <capability name="org.jboss.as.osgi.configadmin" startlevel="1"/>
-                </capabilities>
-            </subsystem>
             <subsystem xmlns="urn:jboss:domain:pojo:1.0"/>
             <subsystem xmlns="urn:jboss:domain:remoting:1.1">
                 <connector name="remoting-connector" socket-binding="remoting" security-realm="ApplicationRealm"/>
@@ -297,7 +280,6 @@
                     </handlers>
                 </root-logger>
             </subsystem>
-            <subsystem xmlns="urn:jboss:domain:configadmin:1.0"/>
             <subsystem xmlns="urn:jboss:domain:datasources:1.1">
                 <datasources>
                     <datasource jndi-name="java:jboss/datasources/ExampleDS" pool-name="ExampleDS" enabled="true" use-java-context="true">
@@ -484,22 +466,6 @@
             <subsystem xmlns="urn:jboss:domain:naming:1.2">
                 <remote-naming/>
             </subsystem>
-            <subsystem xmlns="urn:jboss:domain:osgi:1.2" activation="lazy">
-                <properties>
-                    <!-- Specifies the beginning start level of the framework -->
-                    <property name="org.osgi.framework.startlevel.beginning">1</property>
-                </properties>
-                <capabilities>
-                    <!-- modules registered with the OSGi layer on startup -->
-                    <capability name="javax.servlet.api:v25"/>
-                    <capability name="javax.transaction.api"/>
-                    <!-- bundles started in startlevel 1 -->
-                    <capability name="org.apache.felix.log" startlevel="1"/>
-                    <capability name="org.jboss.osgi.logging" startlevel="1"/>
-                    <capability name="org.apache.felix.configadmin" startlevel="1"/>
-                    <capability name="org.jboss.as.osgi.configadmin" startlevel="1"/>
-                </capabilities>
-            </subsystem>
             <subsystem xmlns="urn:jboss:domain:pojo:1.0"/>
             <subsystem xmlns="urn:jboss:domain:remoting:1.1">
                 <connector name="remoting-connector" socket-binding="remoting" security-realm="ApplicationRealm"/>
@@ -599,7 +565,7 @@
                     </handlers>
                 </root-logger>
             </subsystem>
-            <subsystem xmlns="urn:jboss:domain:configadmin:1.0"/>
+            <subsystem xmlns="urn:jboss:domain:cmp:1.0"/>
             <subsystem xmlns="urn:jboss:domain:datasources:1.1">
                 <datasources>
                     <datasource jndi-name="java:jboss/datasources/ExampleDS" pool-name="ExampleDS" enabled="true" use-java-context="true">
@@ -681,6 +647,9 @@
                 <orb socket-binding="jacorb" ssl-socket-binding="jacorb-ssl">
                     <initializers transactions="spec" security="on"/>
                 </orb>
+            </subsystem>
+            <subsystem xmlns="urn:jboss:domain:jaxr:1.1">
+                <connection-factory jndi-name="java:jboss/jaxr/ConnectionFactory"/>
             </subsystem>
             <subsystem xmlns="urn:jboss:domain:jaxrs:1.0"/>
             <subsystem xmlns="urn:jboss:domain:jca:1.1">
@@ -787,22 +756,6 @@
             <subsystem xmlns="urn:jboss:domain:naming:1.2">
                 <remote-naming/>
             </subsystem>
-            <subsystem xmlns="urn:jboss:domain:osgi:1.2" activation="lazy">
-                <properties>
-                    <!-- Specifies the beginning start level of the framework -->
-                    <property name="org.osgi.framework.startlevel.beginning">1</property>
-                </properties>
-                <capabilities>
-                    <!-- modules registered with the OSGi layer on startup -->
-                    <capability name="javax.servlet.api:v25"/>
-                    <capability name="javax.transaction.api"/>
-                    <!-- bundles started in startlevel 1 -->
-                    <capability name="org.apache.felix.log" startlevel="1"/>
-                    <capability name="org.jboss.osgi.logging" startlevel="1"/>
-                    <capability name="org.apache.felix.configadmin" startlevel="1"/>
-                    <capability name="org.jboss.as.osgi.configadmin" startlevel="1"/>
-                </capabilities>
-            </subsystem>
             <subsystem xmlns="urn:jboss:domain:pojo:1.0"/>
             <subsystem xmlns="urn:jboss:domain:remoting:1.1">
                 <connector name="remoting-connector" socket-binding="remoting" security-realm="ApplicationRealm"/>
@@ -901,7 +854,7 @@
                     </handlers>
                 </root-logger>
             </subsystem>
-            <subsystem xmlns="urn:jboss:domain:configadmin:1.0"/>
+            <subsystem xmlns="urn:jboss:domain:cmp:1.0"/>
             <subsystem xmlns="urn:jboss:domain:datasources:1.1">
                 <datasources>
                     <datasource jndi-name="java:jboss/datasources/ExampleDS" pool-name="ExampleDS" enabled="true" use-java-context="true">
@@ -1018,6 +971,9 @@
                 <orb socket-binding="jacorb" ssl-socket-binding="jacorb-ssl">
                     <initializers transactions="spec" security="on"/>
                 </orb>
+            </subsystem>
+            <subsystem xmlns="urn:jboss:domain:jaxr:1.1">
+                <connection-factory jndi-name="java:jboss/jaxr/ConnectionFactory"/>
             </subsystem>
             <subsystem xmlns="urn:jboss:domain:jaxrs:1.0"/>
             <subsystem xmlns="urn:jboss:domain:jca:1.1">
@@ -1189,22 +1145,6 @@
             <subsystem xmlns="urn:jboss:domain:naming:1.2">
                 <remote-naming/>
             </subsystem>
-            <subsystem xmlns="urn:jboss:domain:osgi:1.2" activation="lazy">
-                <properties>
-                    <!-- Specifies the beginning start level of the framework -->
-                    <property name="org.osgi.framework.startlevel.beginning">1</property>
-                </properties>
-                <capabilities>
-                    <!-- modules registered with the OSGi layer on startup -->
-                    <capability name="javax.servlet.api:v25"/>
-                    <capability name="javax.transaction.api"/>
-                    <!-- bundles started in startlevel 1 -->
-                    <capability name="org.apache.felix.log" startlevel="1"/>
-                    <capability name="org.jboss.osgi.logging" startlevel="1"/>
-                    <capability name="org.apache.felix.configadmin" startlevel="1"/>
-                    <capability name="org.jboss.as.osgi.configadmin" startlevel="1"/>
-                </capabilities>
-            </subsystem>
             <subsystem xmlns="urn:jboss:domain:pojo:1.0"/>
             <subsystem xmlns="urn:jboss:domain:remoting:1.1">
                 <connector name="remoting-connector" socket-binding="remoting" security-realm="ApplicationRealm"/>
@@ -1286,7 +1226,6 @@
             <socket-binding name="ajp" port="8009"/>
             <socket-binding name="http" port="8080"/>
             <socket-binding name="https" port="8443"/>
-            <socket-binding name="osgi-http" interface="management" port="8090"/>
             <socket-binding name="remoting" port="4447"/>
             <socket-binding name="txn-recovery-environment" port="4712"/>
             <socket-binding name="txn-status-manager" port="4713"/>
@@ -1306,7 +1245,6 @@
             <socket-binding name="jgroups-udp" port="55200" multicast-address="${jboss.default.multicast.address:230.0.0.4}" multicast-port="45688"/>
             <socket-binding name="jgroups-udp-fd" port="54200"/>
             <socket-binding name="modcluster" port="0" multicast-address="224.0.1.105" multicast-port="23364"/>
-            <socket-binding name="osgi-http" interface="management" port="8090"/>
             <socket-binding name="remoting" port="4447"/>
             <socket-binding name="txn-recovery-environment" port="4712"/>
             <socket-binding name="txn-status-manager" port="4713"/>
@@ -1324,7 +1262,6 @@
             <socket-binding name="messaging" port="5445"/>
             <socket-binding name="messaging-group" port="0" multicast-address="${jboss.messaging.group.address:231.7.7.7}" multicast-port="${jboss.messaging.group.port:9876}"/>
             <socket-binding name="messaging-throughput" port="5455"/>
-            <socket-binding name="osgi-http" interface="management" port="8090"/>
             <socket-binding name="remoting" port="4447"/>
             <socket-binding name="txn-recovery-environment" port="4712"/>
             <socket-binding name="txn-status-manager" port="4713"/>
@@ -1349,7 +1286,6 @@
             <socket-binding name="messaging-group" port="0" multicast-address="${jboss.messaging.group.address:231.7.7.7}" multicast-port="${jboss.messaging.group.port:9876}"/>
             <socket-binding name="messaging-throughput" port="5455"/>
             <socket-binding name="modcluster" port="0" multicast-address="224.0.1.105" multicast-port="23364"/>
-            <socket-binding name="osgi-http" interface="management" port="8090"/>
             <socket-binding name="remoting" port="4447"/>
             <socket-binding name="txn-recovery-environment" port="4712"/>
             <socket-binding name="txn-status-manager" port="4713"/>

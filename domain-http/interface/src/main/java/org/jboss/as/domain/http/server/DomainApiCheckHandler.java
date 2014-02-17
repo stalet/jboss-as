@@ -26,7 +26,6 @@ import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.BlockingHandler;
 import io.undertow.server.handlers.ResponseCodeHandler;
-import io.undertow.server.handlers.form.MultiPartHandler;
 import io.undertow.util.HeaderMap;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
@@ -34,8 +33,8 @@ import io.undertow.util.Methods;
 
 import org.jboss.as.controller.ControlledProcessState;
 import org.jboss.as.controller.ControlledProcessStateService;
-import org.jboss.as.controller.client.ModelControllerClient;
-import org.jboss.as.domain.http.server.security.SubjectAssociationHandler;
+import org.jboss.as.controller.ModelController;
+import org.jboss.as.domain.http.server.security.SubjectDoAsHandler;
 
 /**
  *
@@ -48,13 +47,13 @@ class DomainApiCheckHandler implements HttpHandler {
 
     private final ControlledProcessStateService controlledProcessStateService;
     private final HttpHandler domainApiHandler;
-    private final MultiPartHandler uploadHandler = new MultiPartHandler();;
+    private final HttpHandler uploadHandler;
 
 
-    DomainApiCheckHandler(final ModelControllerClient modelController, final ControlledProcessStateService controlledProcessStateService) {
+    DomainApiCheckHandler(final ModelController modelController, final ControlledProcessStateService controlledProcessStateService) {
         this.controlledProcessStateService = controlledProcessStateService;
-        domainApiHandler = new BlockingHandler(new SubjectAssociationHandler(new DomainApiHandler(modelController)));
-        uploadHandler.setNext(new BlockingHandler(new SubjectAssociationHandler(new DomainApiUploadHandler(modelController))));
+        domainApiHandler = new BlockingHandler(new SubjectDoAsHandler(new DomainApiHandler(modelController)));
+        uploadHandler = new BlockingHandler(new SubjectDoAsHandler(new DomainApiUploadHandler(modelController)));
     }
 
     @Override
@@ -63,7 +62,7 @@ class DomainApiCheckHandler implements HttpHandler {
             return;
         }
 
-        boolean isUpload = UPLOAD_REQUEST.equals(exchange.getCanonicalPath());
+        boolean isUpload = UPLOAD_REQUEST.equals(exchange.getRequestPath());
         if (Methods.POST.equals(exchange.getRequestMethod())) {
             if (isUpload) {
                 uploadHandler.handleRequest(exchange);
@@ -100,7 +99,7 @@ class DomainApiCheckHandler implements HttpHandler {
     }
 
     private boolean commonChecks(HttpServerExchange exchange) throws Exception {
-     // AS7-2284 If we are starting or stopping, tell caller the service is unavailable and to try again
+        // AS7-2284 If we are starting or stopping, tell caller the service is unavailable and to try again
         // later. If "stopping" it's either a reload, in which case trying again will eventually succeed,
         // or it's a true process stop eventually the server will have stopped.
         @SuppressWarnings("deprecation")

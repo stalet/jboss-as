@@ -22,18 +22,16 @@
 
 package org.jboss.as.clustering.msc;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.util.EnumMap;
-import java.util.Map;
-
-import org.jboss.as.server.CurrentServiceContainer;
-import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.StabilityMonitor;
 import org.jboss.msc.service.ServiceController.Mode;
 import org.jboss.msc.service.ServiceController.State;
+import org.jboss.msc.service.ServiceName;
+import org.jboss.msc.service.ServiceRegistry;
+import org.jboss.msc.service.StabilityMonitor;
 import org.jboss.msc.service.StartException;
+
+import java.util.EnumMap;
+import java.util.Map;
 
 /**
  * Helper methods for interacting with a modular service container.
@@ -44,17 +42,17 @@ public class ServiceContainerHelper {
     // Mapping of service controller mode changes that appropriate for toggling to a given controller state
     private static final Map<State, Map<Mode, Mode>> modeToggle = new EnumMap<State, Map<Mode, Mode>>(State.class);
     static {
-        Map<Mode, Mode> map = new EnumMap<Mode, Mode>(Mode.class);
+        Map<Mode, Mode> map = new EnumMap<>(Mode.class);
         map.put(Mode.NEVER, Mode.ACTIVE);
         map.put(Mode.ON_DEMAND, Mode.PASSIVE);
         modeToggle.put(State.UP, map);
 
-        map = new EnumMap<Mode, Mode>(Mode.class);
+        map = new EnumMap<>(Mode.class);
         map.put(Mode.ACTIVE, Mode.NEVER);
         map.put(Mode.PASSIVE, Mode.ON_DEMAND);
         modeToggle.put(State.DOWN, map);
 
-        map = new EnumMap<Mode, Mode>(Mode.class);
+        map = new EnumMap<>(Mode.class);
         for (Mode mode: Mode.values()) {
             if (mode != Mode.REMOVE) {
                 map.put(mode, Mode.REMOVE);
@@ -64,28 +62,24 @@ public class ServiceContainerHelper {
     }
 
     /**
-     * Returns the current service container.
-     * @return a service container
+     * Generics friendly version of {@link ServiceRegistry#getService(ServiceName)}
+     * @param registry service registry
+     * @param name service name
+     * @return the service controller with the specified name, or null if the service does not exist
      */
-    public static ServiceContainer getCurrentServiceContainer() {
-        PrivilegedAction<ServiceContainer> action = new PrivilegedAction<ServiceContainer>() {
-            @Override
-            public ServiceContainer run() {
-                return CurrentServiceContainer.getServiceContainer();
-            }
-        };
-        return AccessController.doPrivileged(action);
+    public static <T> ServiceController<T> findService(ServiceRegistry registry, ServiceName name) {
+        return (ServiceController<T>) registry.getService(name);
     }
 
     /**
-     * Returns the service value of the specified service, starting it if necessary.
-     * @param controller a service controller
-     * @param targetClass the service value class
-     * @return the service value of the specified service
-     * @throws StartException if the specified service could not be started
+     * Generics friendly version of {@link ServiceRegistry#getRequiredService(ServiceName)}
+     * @param registry service registry
+     * @param name service name
+     * @return the service controller with the specified name
+     * @throws org.jboss.msc.ServiceNotFoundException if the service was not found
      */
-    public static <T> T getValue(ServiceController<?> controller, Class<T> targetClass) throws StartException {
-        return targetClass.cast(getValue(controller));
+    public static <T> ServiceController<T> getService(ServiceRegistry registry, ServiceName name) {
+        return (ServiceController<T>) registry.getRequiredService(name);
     }
 
     /**

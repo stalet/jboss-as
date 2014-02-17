@@ -54,6 +54,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import javax.management.Descriptor;
 import javax.management.ImmutableDescriptor;
 import javax.management.InstanceNotFoundException;
@@ -81,6 +82,7 @@ import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.AttributeAccess.AccessType;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.registry.OperationEntry.Flag;
 import org.jboss.as.jmx.model.ChildAddOperationFinder.ChildAddOperationEntry;
 import org.jboss.as.server.deployment.DeploymentUploadStreamAttachmentHandler;
 import org.jboss.as.server.operations.RootResourceHack;
@@ -153,7 +155,10 @@ public class MBeanInfoFactory {
         List<OpenMBeanAttributeInfo> infos = new ArrayList<OpenMBeanAttributeInfo>();
         if (providedDescription.hasDefined(ATTRIBUTES)) {
             for (final String name : providedDescription.require(ATTRIBUTES).keys()) {
-                infos.add(getAttribute(name));
+                OpenMBeanAttributeInfo attributeInfo = getAttribute(name);
+                if (attributeInfo != null) {
+                    infos.add(getAttribute(name));
+                }
             }
         }
         return infos.toArray(new OpenMBeanAttributeInfo[infos.size()]);
@@ -163,6 +168,13 @@ public class MBeanInfoFactory {
         final String escapedName = NameConverter.convertToCamelCase(name);
         ModelNode attribute = providedDescription.require(ATTRIBUTES).require(name);
         AttributeAccess access = resourceRegistration.getAttributeAccess(PathAddress.EMPTY_ADDRESS, name);
+        if (access == null) {
+            // Check for a bogus attribute in the description that's really a child
+            Set<String> childTypes = resourceRegistration.getChildNames(PathAddress.EMPTY_ADDRESS);
+            if (childTypes.contains(name)) {
+                return null;
+            }
+        }
         final boolean writable = standalone && (access != null && access.getAccessType() == AccessType.READ_WRITE);
 
         return new OpenMBeanAttributeInfoSupport(
@@ -237,7 +249,7 @@ public class MBeanInfoFactory {
                 getDescription(opNode),
                 params,
                 getReturnType(opNode),
-                MBeanOperationInfo.UNKNOWN,
+                entry.getFlags().contains(Flag.READ_ONLY) ? MBeanOperationInfo.INFO : MBeanOperationInfo.UNKNOWN,
                 createOperationDescriptor());
     }
 

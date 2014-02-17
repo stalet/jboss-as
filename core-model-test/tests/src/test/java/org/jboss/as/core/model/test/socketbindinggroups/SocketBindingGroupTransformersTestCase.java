@@ -29,31 +29,31 @@ import org.jboss.as.core.model.test.KernelServices;
 import org.jboss.as.core.model.test.KernelServicesBuilder;
 import org.jboss.as.core.model.test.LegacyKernelServicesInitializer;
 import org.jboss.as.core.model.test.TestModelType;
+import org.jboss.as.core.model.test.TransformersTestParameterized;
+import org.jboss.as.core.model.test.TransformersTestParameterized.TransformersParameter;
 import org.jboss.as.core.model.test.util.ExcludeCommonOperations;
-import org.jboss.as.core.model.test.util.TransformersTestParameters;
+import org.jboss.as.core.model.test.util.TransformersTestParameter;
 import org.jboss.as.model.test.ModelTestControllerVersion;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
 
 /**
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-@RunWith(Parameterized.class)
+@RunWith(TransformersTestParameterized.class)
 public class SocketBindingGroupTransformersTestCase extends AbstractCoreModelTest {
 
     private final ModelVersion modelVersion;
     private final ModelTestControllerVersion testControllerVersion;
 
-    @Parameters
-    public static List<Object[]> parameters(){
-        return TransformersTestParameters.setupVersions();
+    @TransformersParameter
+    public static List<TransformersTestParameter> parameters(){
+        return TransformersTestParameter.setupVersions();
     }
 
-    public SocketBindingGroupTransformersTestCase(TransformersTestParameters params) {
+    public SocketBindingGroupTransformersTestCase(TransformersTestParameter params) {
         this.modelVersion = params.getModelVersion();
         this.testControllerVersion = params.getTestControllerVersion();
     }
@@ -61,7 +61,7 @@ public class SocketBindingGroupTransformersTestCase extends AbstractCoreModelTes
     @Test
     public void testSocketBindingGroupsTransformer() throws Exception {
 
-        boolean below14 = modelVersion.getMajor() == 1 && modelVersion.getMinor() <= 3;
+        boolean below14 = ModelVersion.compare(ModelVersion.create(1, 4, 0), modelVersion) < 0;
 
         KernelServicesBuilder builder = createKernelServicesBuilder(TestModelType.DOMAIN)
                 .setXmlResource(below14 ? "domain-transformers-1.3.xml" : "domain.xml");

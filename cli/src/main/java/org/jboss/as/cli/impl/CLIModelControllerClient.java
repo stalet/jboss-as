@@ -24,7 +24,7 @@ package org.jboss.as.cli.impl;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.security.AccessController;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
@@ -35,14 +35,17 @@ import javax.net.ssl.SSLContext;
 import javax.security.auth.callback.CallbackHandler;
 
 import org.jboss.as.cli.CommandLineException;
+import org.jboss.as.cli.ControllerAddress;
 import org.jboss.as.cli.Util;
 import org.jboss.as.cli.impl.ModelControllerClientFactory.ConnectionCloseHandler;
 import org.jboss.as.controller.client.impl.AbstractModelControllerClient;
 import org.jboss.as.protocol.ProtocolChannelClient;
+import org.jboss.as.protocol.ProtocolTimeoutHandler;
 import org.jboss.as.protocol.StreamUtils;
 import org.jboss.as.protocol.mgmt.ManagementChannelAssociation;
 import org.jboss.as.protocol.mgmt.ManagementChannelHandler;
 import org.jboss.as.protocol.mgmt.ManagementClientChannelStrategy;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
 import org.jboss.dmr.ModelNode;
 import org.jboss.remoting3.Channel;
 import org.jboss.remoting3.CloseHandler;
@@ -50,9 +53,13 @@ import org.jboss.remoting3.Connection;
 import org.jboss.remoting3.Endpoint;
 import org.jboss.remoting3.Remoting;
 import org.jboss.remoting3.RemotingOptions;
+import org.jboss.remoting3.remote.HttpUpgradeConnectionProviderFactory;
 import org.jboss.remoting3.remote.RemoteConnectionProviderFactory;
 import org.jboss.threads.JBossThreadFactory;
 import org.xnio.OptionMap;
+import org.xnio.Options;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * @author Alexey Loubyansky
@@ -68,14 +75,17 @@ public class CLIModelControllerClient extends AbstractModelControllerClient {
     static {
         final BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<Runnable>();
         final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("cli-remoting"), Boolean.FALSE, null,
-                "%G - %t", null, null, AccessController.getContext());
+                "%G - %t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
         executorService = new ThreadPoolExecutor(2, 4, 60L, TimeUnit.SECONDS, workQueue, threadFactory);
         // Allow the core threads to time out as well
         executorService.allowCoreThreadTimeOut(true);
 
         try {
-            endpoint = Remoting.createEndpoint("cli-client", OptionMap.EMPTY);
+            endpoint = Remoting.createEndpoint("cli-client", OptionMap.create(Options.THREAD_DAEMON, true));
             endpoint.addConnectionProvider("remote", new RemoteConnectionProviderFactory(), OptionMap.EMPTY);
+            endpoint.addConnectionProvider("remoting", new RemoteConnectionProviderFactory(), OptionMap.EMPTY);
+            endpoint.addConnectionProvider("http-remoting", new HttpUpgradeConnectionProviderFactory(), OptionMap.create(Options.SSL_ENABLED, Boolean.FALSE));
+            endpoint.addConnectionProvider("https-remoting", new HttpUpgradeConnectionProviderFactory(),  OptionMap.create(Options.SSL_ENABLED, Boolean.TRUE));
         } catch (IOException e) {
             throw new IllegalStateException("Failed to create remoting endpoint", e);
         }
@@ -94,9 +104,10 @@ public class CLIModelControllerClient extends AbstractModelControllerClient {
         });
     }
 
-    private final Object lock = "lock";
+    private final Object lock = new Object();
 
     private final CallbackHandler handler;
+    private final Map<String, String> saslOptions;
     private final SSLContext sslContext;
     private final ConnectionCloseHandler closeHandler;
 
@@ -105,8 +116,9 @@ public class CLIModelControllerClient extends AbstractModelControllerClient {
     private final ProtocolChannelClient.Configuration channelConfig;
     private boolean closed;
 
-    CLIModelControllerClient(CallbackHandler handler, String hostName, int connectionTimeout,
-            final ConnectionCloseHandler closeHandler, int port, SSLContext sslContext) throws IOException {
+    CLIModelControllerClient(final ControllerAddress address, CallbackHandler handler, int connectionTimeout,
+            final ConnectionCloseHandler closeHandler, Map<String, String> saslOptions, SSLContext sslContext,
+            ProtocolTimeoutHandler timeoutHandler) throws IOException {
         this.handler = handler;
         this.sslContext = sslContext;
         this.closeHandler = closeHandler;
@@ -123,8 +135,10 @@ public class CLIModelControllerClient extends AbstractModelControllerClient {
         }, executorService, this);
 
         channelConfig = new ProtocolChannelClient.Configuration();
+        this.saslOptions = saslOptions;
+        channelConfig.setSaslOptions(saslOptions);
         try {
-            channelConfig.setUri(new URI("remote://" + formatPossibleIpv6Address(hostName) +  ":" + port));
+            channelConfig.setUri(new URI(address.getProtocol(), null, address.getHost(), address.getPort(), null, null, null));
         } catch (URISyntaxException e) {
             throw new IOException("Failed to create URI" , e);
         }
@@ -133,7 +147,7 @@ public class CLIModelControllerClient extends AbstractModelControllerClient {
             channelConfig.setConnectionTimeout(connectionTimeout);
         }
         channelConfig.setEndpoint(endpoint);
-
+        channelConfig.setTimeoutHandler(timeoutHandler);
     }
 
     @Override
@@ -147,7 +161,7 @@ public class CLIModelControllerClient extends AbstractModelControllerClient {
 
                 final ProtocolChannelClient setup = ProtocolChannelClient.create(channelConfig);
                 final ChannelCloseHandler channelCloseHandler = new ChannelCloseHandler();
-                strategy = ManagementClientChannelStrategy.create(setup, channelAssociation, handler, null, sslContext,
+                strategy = ManagementClientChannelStrategy.create(setup, channelAssociation, handler, saslOptions, sslContext,
                         channelCloseHandler);
                 channelCloseHandler.setOriginalStrategy(strategy);
             }
@@ -246,19 +260,6 @@ public class CLIModelControllerClient extends AbstractModelControllerClient {
                 }
             }
         }
-    }
-
-    private static String formatPossibleIpv6Address(String address) {
-        if (address == null) {
-            return address;
-        }
-        if (!address.contains(":")) {
-            return address;
-        }
-        if (address.startsWith("[") && address.endsWith("]")) {
-            return address;
-        }
-        return "[" + address + "]";
     }
 
     private final class ChannelCloseHandler implements CloseHandler<Channel> {

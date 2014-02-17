@@ -22,6 +22,9 @@
 
 package org.jboss.as.server;
 
+import static org.jboss.as.server.ServerLogger.AS_ROOT_LOGGER;
+import static org.jboss.as.server.ServerLogger.CONFIG_LOGGER;
+
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
 import java.util.Iterator;
@@ -40,6 +43,7 @@ import org.jboss.as.server.moduleservice.ExternalModuleService;
 import org.jboss.as.server.moduleservice.ModuleIndexService;
 import org.jboss.as.server.moduleservice.ServiceModuleLoader;
 import org.jboss.as.server.services.security.AbstractVaultReader;
+import org.jboss.as.version.ProductConfig;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceActivator;
 import org.jboss.msc.service.ServiceActivatorContext;
@@ -50,10 +54,10 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
+import org.jboss.msc.service.ValueService;
+import org.jboss.msc.value.ImmediateValue;
+import org.jboss.msc.value.Value;
 import org.jboss.threads.AsyncFuture;
-
-import static org.jboss.as.server.ServerLogger.AS_ROOT_LOGGER;
-import static org.jboss.as.server.ServerLogger.CONFIG_LOGGER;
 
 /**
  * The root service for an Application Server process.
@@ -88,7 +92,8 @@ final class ApplicationServerService implements Service<AsyncFuture<ServiceConta
         final Bootstrap.Configuration configuration = this.configuration;
         final ServerEnvironment serverEnvironment = configuration.getServerEnvironment();
 
-        String prettyVersion = serverEnvironment.getProductConfig().getPrettyVersionString();
+        final ProductConfig config = serverEnvironment.getProductConfig();
+        final String prettyVersion = config.getPrettyVersionString();
         AS_ROOT_LOGGER.serverStarting(prettyVersion);
         if (CONFIG_LOGGER.isDebugEnabled()) {
             final Properties properties = System.getProperties();
@@ -124,8 +129,7 @@ final class ApplicationServerService implements Service<AsyncFuture<ServiceConta
         CurrentServiceContainer.setServiceContainer(context.getController().getServiceContainer());
 
         final BootstrapListener bootstrapListener = new BootstrapListener(container, startTime, serviceTarget, futureContainer, prettyVersion);
-        serviceTarget.addListener(bootstrapListener);
-        myController.addListener(bootstrapListener);
+        bootstrapListener.getStabilityMonitor().addController(myController);
         // Install either a local or remote content repository
         if(standalone) {
             ContentRepository.Factory.addService(serviceTarget, serverEnvironment.getServerContentDir());
@@ -138,7 +142,7 @@ final class ApplicationServerService implements Service<AsyncFuture<ServiceConta
         ModuleIndexService.addService(serviceTarget);
         final AbstractVaultReader vaultReader = service(AbstractVaultReader.class);
         AS_ROOT_LOGGER.debugf("Using VaultReader %s", vaultReader);
-        ServerService.addService(serviceTarget, configuration, processState, bootstrapListener, runningModeControl, vaultReader);
+        ServerService.addService(serviceTarget, configuration, processState, bootstrapListener, runningModeControl, vaultReader, configuration.getAuditLogger(), configuration.getAuthorizer());
         final ServiceActivatorContext serviceActivatorContext = new ServiceActivatorContext() {
             @Override
             public ServiceTarget getServiceTarget() {
@@ -163,6 +167,12 @@ final class ApplicationServerService implements Service<AsyncFuture<ServiceConta
         //Add server path manager service
         ServerPathManagerService serverPathManagerService = new ServerPathManagerService();
         ServerPathManagerService.addService(serviceTarget, serverPathManagerService, serverEnvironment);
+
+        // Add product config service
+        final Value<ProductConfig> productConfigValue = new ImmediateValue<ProductConfig>(config);
+        serviceTarget.addService(Services.JBOSS_PRODUCT_CONFIG_SERVICE, new ValueService<ProductConfig>(productConfigValue))
+                .setInitialMode(ServiceController.Mode.ACTIVE)
+                .install();
 
         // BES 2011/06/11 -- moved this to AbstractControllerService.start()
 //        processState.setRunning();

@@ -27,53 +27,91 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-clustering</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-clustering</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-clustering-jgroups</artifactId>
+    <artifactId>wildfly-clustering-jgroups</artifactId>
     <packaging>jar</packaging>
 
-    <name>JBoss Application Server: JGroups Subsystem</name>
+    <name>WildFly: JGroups Subsystem</name>
+
+    <build>
+        <plugins>
+            <!-- this is only needed on windows because of bug in byteman-->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <useManifestOnlyJar>false</useManifestOnlyJar>
+                    <!-- the log manager needs to be setup before the agent this is only needed on windows!-->
+                    <argLine>-Xbootclasspath/a:"${org.jboss.logmanager:jboss-logmanager:jar}"
+                        -javaagent:"${org.jboss.byteman:byteman:jar}"=port:9091,boot:"${org.jboss.byteman:byteman:jar}"
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+
+    </build>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-common</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-common</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-jmx</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-jmx</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-network</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-network</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-server</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-server</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-threads</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-threads</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jgroups</groupId>
             <artifactId>jgroups</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-common</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-common</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
             <classifier>tests</classifier>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
-						<type>pom</type>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+            <type>pom</type>
             <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.logging</groupId>
+            <artifactId>jboss-logging-annotations</artifactId>
+            <!-- This is a compile-time dependency of this project, but is not needed at compile or runtime by other
+                  projects that depend on this project.-->
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
@@ -85,33 +123,4 @@
             <optional>true</optional>
         </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <goals><goal>properties</goal></goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <redirectTestOutputToFile>false</redirectTestOutputToFile>
-                    <useManifestOnlyJar>false</useManifestOnlyJar>
-                    <parallel>false</parallel>
-                    <argLine>-javaagent:${org.jboss.byteman:byteman:jar}=port:9091,boot:${org.jboss.byteman:byteman:jar}</argLine>
-                    <systemPropertyVariables>
-                        <org.jboss.byteman.contrib.bmunit.agent.inhibit>true</org.jboss.byteman.contrib.bmunit.agent.inhibit>
-                        <org.jboss.byteman.contrib.bmunit.agent.port>9091</org.jboss.byteman.contrib.bmunit.agent.port>
-                        <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
-	                      <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
-                    </systemPropertyVariables>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
 </project>

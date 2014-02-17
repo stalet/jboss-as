@@ -31,6 +31,8 @@ import static org.jboss.as.logging.CommonAttributes.LEVEL;
 import static org.jboss.as.logging.CommonAttributes.REMOVE_HANDLER_OPERATION_NAME;
 import static org.jboss.as.logging.Logging.join;
 
+import java.util.List;
+
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationDefinition;
@@ -40,7 +42,9 @@ import org.jboss.as.controller.ReadResourceNameOperationStepHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
-import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.constraint.ApplicationTypeConfig;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.ApplicationTypeAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
@@ -54,7 +58,7 @@ import org.jboss.dmr.ModelType;
  * @author <a href="mailto:tomaz.cerar@redhat.com">Tomaz Cerar</a>
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  */
-public class LoggerResourceDefinition extends SimpleResourceDefinition {
+public class LoggerResourceDefinition extends TransformerResourceDefinition {
 
     public static final String CHANGE_LEVEL_OPERATION_NAME = "change-log-level";
     public static final String LEGACY_ADD_HANDLER_OPERATION_NAME = "assign-handler";
@@ -120,6 +124,8 @@ public class LoggerResourceDefinition extends SimpleResourceDefinition {
     private final AttributeDefinition[] writableAttributes;
     private final OperationStepHandler writeHandler;
 
+    private final List<AccessConstraintDefinition> accessConstraints;
+
     public LoggerResourceDefinition(final boolean includeLegacy) {
         super(LOGGER_PATH,
                 LoggingExtension.getResourceDescriptionResolver(LOGGER),
@@ -128,6 +134,8 @@ public class LoggerResourceDefinition extends SimpleResourceDefinition {
                 LoggerOperations.REMOVE_LOGGER);
         writableAttributes = (includeLegacy ? join(WRITABLE_ATTRIBUTES, LEGACY_ATTRIBUTES) : WRITABLE_ATTRIBUTES);
         this.writeHandler = new LoggerOperations.LoggerWriteAttributeHandler(writableAttributes);
+        ApplicationTypeConfig atc = new ApplicationTypeConfig(LoggingExtension.SUBSYSTEM_NAME, LOGGER);
+        accessConstraints = new ApplicationTypeAccessConstraintDefinition(atc).wrapAsList();
     }
 
     @Override
@@ -154,44 +162,53 @@ public class LoggerResourceDefinition extends SimpleResourceDefinition {
         registration.registerOperationHandler(LEGACY_REMOVE_HANDLER_OPERATION, LoggerOperations.REMOVE_HANDLER);
     }
 
-    /**
-     * Add the transformers for the logger.
-     *
-     * @param subsystemBuilder      the default subsystem builder
-     * @param loggingProfileBuilder the logging profile builder
-     *
-     * @return the builder created for the resource
-     */
-    static ResourceTransformationDescriptionBuilder addTransformers(final ResourceTransformationDescriptionBuilder subsystemBuilder,
-                                                                    final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return accessConstraints;
+    }
 
-        // Reject logging profile resources
-        loggingProfileBuilder.rejectChildResource(LOGGER_PATH);
-
-        // Register the logger resource
-        return subsystemBuilder.addChildResource(LOGGER_PATH)
-                .getAttributeBuilder()
-                    // discard level="ALL"
-                    .setDiscard(Transformers1_1_0.LEVEL_ALL_DISCARD_CHECKER, LEVEL)
-                    .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, EXPRESSION_ATTRIBUTES)
-                    // Discard undefined filter-spec, else convert the value and rename to "filter"
-                    .setDiscard(DiscardAttributeChecker.UNDEFINED, FILTER_SPEC)
-                    .setValueConverter(Transformers1_1_0.FILTER_SPEC_CONVERTER, FILTER_SPEC)
-                    .addRename(FILTER_SPEC, FILTER.getName())
-                    .end()
-                // Register operation transformers
-                .addOperationTransformationOverride(ADD)
-                    .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
-                    .inheritResourceAttributeDefinitions()
-                    .end()
-                .addOperationTransformationOverride(ADD_HANDLER_OPERATION_NAME)
-                    .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
-                    .inheritResourceAttributeDefinitions()
-                    .end()
-                .addOperationTransformationOverride(REMOVE_HANDLER_OPERATION_NAME)
-                    .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
-                    .inheritResourceAttributeDefinitions()
-                    .end()
-                .setCustomResourceTransformer(new LoggingResourceTransformer(CATEGORY));
+    @Override
+    public void registerTransformers(final KnownModelVersion modelVersion,
+                                     final ResourceTransformationDescriptionBuilder rootResourceBuilder,
+                                     final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
+        if (modelVersion.hasTransformers()) {
+            final PathElement pathElement = getPathElement();
+            final ResourceTransformationDescriptionBuilder resourceBuilder = rootResourceBuilder.addChildResource(pathElement);
+            switch (modelVersion) {
+                case VERSION_1_1_0: {
+                    resourceBuilder
+                         .getAttributeBuilder()
+                            // discard level="ALL"
+                            .setDiscard(Transformers1_1_0.LEVEL_ALL_DISCARD_CHECKER, LEVEL)
+                            .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, EXPRESSION_ATTRIBUTES)
+                                    // Discard undefined filter-spec, else convert the value and rename to "filter"
+                            .setDiscard(DiscardAttributeChecker.UNDEFINED, FILTER_SPEC)
+                            .setValueConverter(Transformers1_1_0.FILTER_SPEC_CONVERTER, FILTER_SPEC)
+                            .addRename(FILTER_SPEC, FILTER.getName())
+                            .end()
+                                    // Register operation transformers
+                            .addOperationTransformationOverride(ADD)
+                            .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
+                            .inheritResourceAttributeDefinitions()
+                            .end()
+                            .addOperationTransformationOverride(ADD_HANDLER_OPERATION_NAME)
+                            .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
+                            .inheritResourceAttributeDefinitions()
+                            .end()
+                            .addOperationTransformationOverride(REMOVE_HANDLER_OPERATION_NAME)
+                            .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
+                            .inheritResourceAttributeDefinitions()
+                            .end();
+                }
+                case VERSION_1_2_0:
+                case VERSION_1_3_0: {
+                    resourceBuilder.setCustomResourceTransformer(new LoggingResourceTransformer(CATEGORY));
+                    if (loggingProfileBuilder != null) {
+                        final ResourceTransformationDescriptionBuilder loggingProfileResourceBuilder = loggingProfileBuilder.addChildResource(pathElement);
+                        loggingProfileResourceBuilder.setCustomResourceTransformer(new LoggingResourceTransformer(CATEGORY));
+                    }
+                }
+            }
+        }
     }
 }

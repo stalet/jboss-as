@@ -21,7 +21,8 @@
  */
 package org.jboss.as.test.integration.security.loginmodules.negotiation;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -29,6 +30,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.PrivilegedActionException;
+import java.security.Security;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -43,6 +45,12 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.apache.commons.lang.text.StrSubstitutor;
+import org.apache.directory.api.ldap.model.constants.SupportedSaslMechanisms;
+import org.apache.directory.api.ldap.model.entry.DefaultEntry;
+import org.apache.directory.api.ldap.model.ldif.LdifEntry;
+import org.apache.directory.api.ldap.model.ldif.LdifReader;
+import org.apache.directory.api.ldap.model.schema.SchemaManager;
+import org.apache.directory.server.annotations.CreateKdcServer;
 import org.apache.directory.server.annotations.CreateLdapServer;
 import org.apache.directory.server.annotations.CreateTransport;
 import org.apache.directory.server.annotations.SaslMechanism;
@@ -57,20 +65,16 @@ import org.apache.directory.server.core.kerberos.KeyDerivationInterceptor;
 import org.apache.directory.server.factory.ServerAnnotationProcessor;
 import org.apache.directory.server.kerberos.kdc.KdcServer;
 import org.apache.directory.server.ldap.LdapServer;
-import org.apache.directory.server.ldap.handlers.bind.cramMD5.CramMd5MechanismHandler;
-import org.apache.directory.server.ldap.handlers.bind.digestMD5.DigestMd5MechanismHandler;
-import org.apache.directory.server.ldap.handlers.bind.gssapi.GssapiMechanismHandler;
-import org.apache.directory.server.ldap.handlers.bind.ntlm.NtlmMechanismHandler;
-import org.apache.directory.server.ldap.handlers.bind.plain.PlainMechanismHandler;
-import org.apache.directory.shared.ldap.model.constants.SupportedSaslMechanisms;
-import org.apache.directory.shared.ldap.model.entry.DefaultEntry;
-import org.apache.directory.shared.ldap.model.ldif.LdifEntry;
-import org.apache.directory.shared.ldap.model.ldif.LdifReader;
-import org.apache.directory.shared.ldap.model.schema.SchemaManager;
+import org.apache.directory.server.ldap.handlers.sasl.cramMD5.CramMd5MechanismHandler;
+import org.apache.directory.server.ldap.handlers.sasl.digestMD5.DigestMd5MechanismHandler;
+import org.apache.directory.server.ldap.handlers.sasl.gssapi.GssapiMechanismHandler;
+import org.apache.directory.server.ldap.handlers.sasl.ntlm.NtlmMechanismHandler;
+import org.apache.directory.server.ldap.handlers.sasl.plain.PlainMechanismHandler;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.http.message.BasicNameValuePair;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.container.test.api.OperateOnDeployment;
 import org.jboss.arquillian.container.test.api.RunAsClient;
@@ -82,17 +86,15 @@ import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.network.NetworkUtils;
 import org.jboss.as.test.integration.security.common.AbstractSecurityDomainsServerSetupTask;
 import org.jboss.as.test.integration.security.common.AbstractSystemPropertiesServerSetupTask;
-import org.jboss.as.test.integration.security.common.ExtCreateKdcServer;
-import org.jboss.as.test.integration.security.common.KDCServerAnnotationProcessor;
 import org.jboss.as.test.integration.security.common.ManagedCreateLdapServer;
 import org.jboss.as.test.integration.security.common.ManagedCreateTransport;
 import org.jboss.as.test.integration.security.common.Utils;
 import org.jboss.as.test.integration.security.common.config.SecurityDomain;
 import org.jboss.as.test.integration.security.common.config.SecurityModule;
-import org.jboss.as.test.integration.security.loginmodules.common.servlets.PrincipalPrintingServlet;
-import org.jboss.as.test.integration.security.loginmodules.common.servlets.RolePrintingServlet;
-import org.jboss.as.test.integration.security.loginmodules.common.servlets.SimpleSecuredServlet;
-import org.jboss.as.test.integration.security.loginmodules.common.servlets.SimpleServlet;
+import org.jboss.as.test.integration.security.common.servlets.PrincipalPrintingServlet;
+import org.jboss.as.test.integration.security.common.servlets.RolePrintingServlet;
+import org.jboss.as.test.integration.security.common.servlets.SimpleSecuredServlet;
+import org.jboss.as.test.integration.security.common.servlets.SimpleServlet;
 import org.jboss.logging.Logger;
 import org.jboss.security.SecurityConstants;
 import org.jboss.security.negotiation.AdvancedLdapLoginModule;
@@ -106,11 +108,11 @@ import org.junit.runner.RunWith;
 /**
  * JUnit testcase for AdvancedLdapLoginModule. It's slightly modified version of
  * {@link org.jboss.as.test.integration.security.loginmodules.LdapExtLoginModuleTestCase}.
- * 
+ *
  * @author Josef Cacek
  */
 @RunWith(Arquillian.class)
-@ServerSetup({ Krb5ConfServerSetupTask.class, // 
+@ServerSetup({ Krb5ConfServerSetupTask.class, //
         AdvancedLdapLoginModuleTestCase.KerberosSystemPropertiesSetupTask.class, //
         AdvancedLdapLoginModuleTestCase.DirectoryServerSetupTask.class, //
         AdvancedLdapLoginModuleTestCase.SecurityDomainsSetup.class })
@@ -151,7 +153,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Creates {@link WebArchive} for {@link #test1(URL)}.
-     * 
+     *
      * @return
      */
     @Deployment(name = DEP1)
@@ -161,7 +163,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Creates {@link WebArchive} for {@link #test2(URL)}.
-     * 
+     *
      * @return
      */
     @Deployment(name = DEP2)
@@ -171,7 +173,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Creates {@link WebArchive} for {@link #test3(URL)}.
-     * 
+     *
      * @return
      */
     @Deployment(name = DEP3)
@@ -181,7 +183,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Creates {@link WebArchive} for {@link #test3(URL)}.
-     * 
+     *
      * @return
      */
     @Deployment(name = DEP4)
@@ -191,7 +193,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Test case for Example 1.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -202,7 +204,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Test case for Example 2.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -214,7 +216,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Test case for Example 3.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -225,7 +227,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Test case for Example 4.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -240,7 +242,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Creates {@link WebArchive} (WAR) for given deployment name.
-     * 
+     *
      * @param deploymentName
      * @return
      */
@@ -285,7 +287,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Constructs URI for given servlet path.
-     * 
+     *
      * @param servletPath
      * @return
      * @throws URISyntaxException
@@ -296,7 +298,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Asserts, the role list returned from the {@link RolePrintingServlet} contains the given role.
-     * 
+     *
      * @param rolePrintResponse
      * @param role
      */
@@ -308,7 +310,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
     /**
      * Asserts, the role list returned from the {@link RolePrintingServlet} doesn't contain the given role.
-     * 
+     *
      * @param rolePrintResponse
      * @param role
      */
@@ -345,26 +347,26 @@ public class AdvancedLdapLoginModuleTestCase {
                 })
         },
         additionalInterceptors = { KeyDerivationInterceptor.class })
-    @CreateLdapServer ( 
-            transports = 
+    @CreateLdapServer (
+            transports =
             {
                 @CreateTransport( protocol = "LDAP",  port = LDAP_PORT)
             },
             saslHost="localhost",
             saslPrincipal="ldap/localhost@JBOSS.ORG",
-            saslMechanisms = 
+            saslMechanisms =
             {
-                @SaslMechanism( name=SupportedSaslMechanisms.PLAIN, implClass=PlainMechanismHandler.class ),
+                @SaslMechanism( name= SupportedSaslMechanisms.PLAIN, implClass=PlainMechanismHandler.class ),
                 @SaslMechanism( name=SupportedSaslMechanisms.CRAM_MD5, implClass=CramMd5MechanismHandler.class),
                 @SaslMechanism( name= SupportedSaslMechanisms.DIGEST_MD5, implClass=DigestMd5MechanismHandler.class),
                 @SaslMechanism( name=SupportedSaslMechanisms.GSSAPI, implClass=GssapiMechanismHandler.class),
                 @SaslMechanism( name=SupportedSaslMechanisms.NTLM, implClass=NtlmMechanismHandler.class),
                 @SaslMechanism( name=SupportedSaslMechanisms.GSS_SPNEGO, implClass=NtlmMechanismHandler.class)
             })
-    @ExtCreateKdcServer(primaryRealm = "JBOSS.ORG",
+    @CreateKdcServer(primaryRealm = "JBOSS.ORG",
         kdcPrincipal = "krbtgt/JBOSS.ORG@JBOSS.ORG",
         searchBaseDn = "dc=jboss,dc=org",
-        transports = 
+        transports =
         {
             @CreateTransport(protocol = "UDP", port = 6088)
         })
@@ -374,10 +376,11 @@ public class AdvancedLdapLoginModuleTestCase {
         private DirectoryService directoryService;
         private KdcServer kdcServer;
         private LdapServer ldapServer;
+        private boolean removeBouncyCastle = false;
 
         /**
          * Creates directory services, starts LDAP server and KDCServer
-         * 
+         *
          * @param managementClient
          * @param containerId
          * @throws Exception
@@ -385,6 +388,14 @@ public class AdvancedLdapLoginModuleTestCase {
          *      java.lang.String)
          */
         public void setup(ManagementClient managementClient, String containerId) throws Exception {
+            try {
+                if(Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+                    Security.addProvider(new BouncyCastleProvider());
+                    removeBouncyCastle = true;
+                }
+            } catch(SecurityException ex) {
+                LOGGER.warn("Cannot register BouncyCastleProvider", ex);
+            }
             directoryService = DSAnnotationProcessor.getDirectoryService();
             final String hostname = Utils.getCannonicalHost(managementClient);
             final Map<String, String> map = new HashMap<String, String>();
@@ -405,7 +416,7 @@ public class AdvancedLdapLoginModuleTestCase {
                 e.printStackTrace();
                 throw e;
             }
-            kdcServer = KDCServerAnnotationProcessor.getKdcServer(directoryService, 1024, hostname);
+            kdcServer = ServerAnnotationProcessor.getKdcServer(directoryService, 1024);
             final ManagedCreateLdapServer createLdapServer = new ManagedCreateLdapServer(
                     (CreateLdapServer) AnnotationUtils.getInstance(CreateLdapServer.class));
             createLdapServer.setSaslHost(secondaryTestAddress);
@@ -419,7 +430,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
         /**
          * Fixes bind address in the CreateTransport annotation.
-         * 
+         *
          * @param createLdapServer
          */
         private void fixTransportAddress(ManagedCreateLdapServer createLdapServer, String address) {
@@ -433,7 +444,7 @@ public class AdvancedLdapLoginModuleTestCase {
 
         /**
          * Stops LDAP server and KDCServer and shuts down the directory service.
-         * 
+         *
          * @param managementClient
          * @param containerId
          * @throws Exception
@@ -445,20 +456,28 @@ public class AdvancedLdapLoginModuleTestCase {
             kdcServer.stop();
             directoryService.shutdown();
             FileUtils.deleteDirectory(directoryService.getInstanceLayout().getInstanceDirectory());
+            if(removeBouncyCastle) {
+                try {
+                    Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME);
+                } catch(SecurityException ex) {
+                    LOGGER.warn("Cannot deregister BouncyCastleProvider", ex);
+                }
+            }
+
         }
 
     }
 
     /**
      * A {@link ServerSetupTask} instance which creates security domains for this test case.
-     * 
+     *
      * @author Josef Cacek
      */
     static class SecurityDomainsSetup extends AbstractSecurityDomainsServerSetupTask {
 
         /**
          * Returns SecurityDomains configuration for this testcase.
-         * 
+         *
          * @see org.jboss.as.test.integration.security.common.AbstractSecurityDomainsServerSetupTask#getSecurityDomains()
          */
         @Override
@@ -475,7 +494,7 @@ public class AdvancedLdapLoginModuleTestCase {
                         .putOption("proxiable", TRUE) //
                         .putOption("noAddress", TRUE);
             } else {
-                kerberosModuleBuilder.name("Kerberos") // 
+                kerberosModuleBuilder.name("Kerberos") //
                         .putOption("storeKey", TRUE) //
                         .putOption("refreshKrb5Config", TRUE) //
                         .putOption("useKeyTab", TRUE) //
@@ -564,14 +583,14 @@ public class AdvancedLdapLoginModuleTestCase {
     /**
      * A Kerberos system-properties server setup task. Sets path to a <code>krb5.conf</code> file and enables Kerberos debug
      * messages.
-     * 
+     *
      * @author Josef Cacek
      */
     static class KerberosSystemPropertiesSetupTask extends AbstractSystemPropertiesServerSetupTask {
 
         /**
          * Returns "java.security.krb5.conf" and "sun.security.krb5.debug" properties.
-         * 
+         *
          * @return Kerberos properties
          * @see org.jboss.as.test.integration.security.common.AbstractSystemPropertiesServerSetupTask#getSystemProperties()
          */

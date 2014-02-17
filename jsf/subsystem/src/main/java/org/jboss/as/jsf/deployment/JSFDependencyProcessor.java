@@ -21,14 +21,12 @@
  */
 package org.jboss.as.jsf.deployment;
 
-import com.sun.faces.flow.FlowCDIExtension;
-import com.sun.faces.flow.FlowDiscoveryCDIExtension;
-import com.sun.faces.application.view.ViewScopeExtension;
-
-import javax.enterprise.inject.spi.Extension;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.jboss.as.ee.structure.DeploymentType;
 import org.jboss.as.ee.structure.DeploymentTypeMarker;
+import org.jboss.as.ee.weld.WeldDeploymentMarker;
 import org.jboss.as.jsf.JSFLogger;
 import org.jboss.as.jsf.JSFMessages;
 import org.jboss.as.server.deployment.Attachments;
@@ -38,21 +36,22 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.module.ModuleDependency;
 import org.jboss.as.server.deployment.module.ModuleSpecification;
-import org.jboss.as.weld.deployment.WeldAttachments;
+import org.jboss.as.web.common.WarMetaData;
+import org.jboss.metadata.javaee.spec.ParamValueMetaData;
+import org.jboss.metadata.web.jboss.JBossWebMetaData;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoader;
 import org.jboss.modules.filter.PathFilters;
-import org.jboss.weld.bootstrap.spi.Metadata;
 
 /**
  * @author Stan Silvert ssilvert@redhat.com (C) 2012 Red Hat Inc.
  * @author Stuart Douglas
  */
 public class JSFDependencyProcessor implements DeploymentUnitProcessor {
+    public static final String IS_CDI_PARAM = "org.jboss.jbossfaces.IS_CDI";
 
     private static final ModuleIdentifier JSF_SUBSYSTEM = ModuleIdentifier.create("org.jboss.as.jsf");
-    private static final ModuleIdentifier BEAN_VALIDATION = ModuleIdentifier.create("org.hibernate.validator");
     private static final ModuleIdentifier JSTL = ModuleIdentifier.create("javax.servlet.jstl.api");
 
     private JSFModuleIdFactory moduleIdFactory = JSFModuleIdFactory.getInstance();
@@ -60,23 +59,20 @@ public class JSFDependencyProcessor implements DeploymentUnitProcessor {
     @Override
     public void deploy(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
+        final DeploymentUnit tl = deploymentUnit.getParent() == null ? deploymentUnit : deploymentUnit.getParent();
 
-        if (!DeploymentTypeMarker.isType(DeploymentType.WAR, deploymentUnit)) {
+        if (!DeploymentTypeMarker.isType(DeploymentType.WAR, deploymentUnit) && !DeploymentTypeMarker.isType(DeploymentType.EAR, deploymentUnit)) {
             return;
         }
-        if (JsfVersionMarker.getVersion(deploymentUnit).equals(JsfVersionMarker.WAR_BUNDLES_JSF_IMPL)) {
+        String jsfVersion = JsfVersionMarker.getVersion(tl);
+        if (jsfVersion.equals(JsfVersionMarker.WAR_BUNDLES_JSF_IMPL)) {
             //if JSF is provided by the application we leave it alone
             return;
         }
         //TODO: we should do that same check that is done in com.sun.faces.config.FacesInitializer
         //and only add the dependency if JSF is actually needed
 
-        final DeploymentUnit topLevelDeployment = deploymentUnit.getParent() == null ? deploymentUnit : deploymentUnit.getParent();
-        final ModuleSpecification moduleSpecification = deploymentUnit.getAttachment(Attachments.MODULE_SPECIFICATION);
-        final ModuleLoader moduleLoader = Module.getBootModuleLoader();
-
         String defaultJsfVersion = JSFModuleIdFactory.getInstance().getDefaultSlot();
-        String jsfVersion = JsfVersionMarker.getVersion(topLevelDeployment);
         if (!moduleIdFactory.isValidJSFSlot(jsfVersion)) {
             JSFLogger.ROOT_LOGGER.unknownJSFVersion(jsfVersion, defaultJsfVersion);
             jsfVersion = defaultJsfVersion;
@@ -86,48 +82,53 @@ public class JSFDependencyProcessor implements DeploymentUnitProcessor {
             throw JSFMessages.MESSAGES.invalidDefaultJSFImpl(defaultJsfVersion);
         }
 
+        final ModuleSpecification moduleSpecification = deploymentUnit.getAttachment(Attachments.MODULE_SPECIFICATION);
+        final ModuleLoader moduleLoader = Module.getBootModuleLoader();
+
         addJSFAPI(jsfVersion, moduleSpecification, moduleLoader);
-        addJSFImpl(jsfVersion, moduleSpecification, moduleLoader, topLevelDeployment);
+        addJSFImpl(jsfVersion, moduleSpecification, moduleLoader);
 
         moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, JSTL, false, false, false, false));
-        moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, BEAN_VALIDATION, false, false, true, false));
         moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, JSF_SUBSYSTEM, false, false, true, false));
 
         addJSFInjection(jsfVersion, moduleSpecification, moduleLoader);
+
+        WarMetaData warMetaData = deploymentUnit.getAttachment(WarMetaData.ATTACHMENT_KEY);
+        if(warMetaData != null) {
+            addCDIFlag(warMetaData, deploymentUnit);
+        }
     }
 
     @Override
     public void undeploy(DeploymentUnit context) {
     }
 
-    private void addJSFAPI(String jsfVersion, ModuleSpecification moduleSpecification, ModuleLoader moduleLoader) {
+    private void addJSFAPI(String jsfVersion, ModuleSpecification moduleSpecification, ModuleLoader moduleLoader) throws DeploymentUnitProcessingException {
         if (jsfVersion.equals(JsfVersionMarker.WAR_BUNDLES_JSF_IMPL)) return;
 
         ModuleIdentifier jsfModule = moduleIdFactory.getApiModId(jsfVersion);
-        moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, jsfModule, false, false, false, false));
+        ModuleDependency jsfAPI = new ModuleDependency(moduleLoader, jsfModule, false, false, false, false);
+        moduleSpecification.addSystemDependency(jsfAPI);
     }
 
+    // Is JSF spec greater than 1.1?  If we add JSF 1.1 support we'll need this to keep from calling addJSFInjection()
+  /*  private boolean isJSFSpecOver1_1(ModuleIdentifier jsfModule, ModuleDependency jsfAPI) throws DeploymentUnitProcessingException {
+        try {
+            return (jsfAPI.getModuleLoader().loadModule(jsfModule).getClassLoader().getResource("/javax/faces/component/ActionSource2.class") != null);
+        } catch (ModuleLoadException e) {
+            throw new DeploymentUnitProcessingException(e);
+        }
+    } */
+
     private void addJSFImpl(String jsfVersion,
-                            ModuleSpecification moduleSpecification,
-                            ModuleLoader moduleLoader,
-                            DeploymentUnit topLevelDeployment) {
+            ModuleSpecification moduleSpecification,
+            ModuleLoader moduleLoader) {
         if (jsfVersion.equals(JsfVersionMarker.WAR_BUNDLES_JSF_IMPL)) return;
 
         ModuleIdentifier jsfModule = moduleIdFactory.getImplModId(jsfVersion);
-        ModuleDependency jsfImpl = new ModuleDependency(moduleLoader, jsfModule, false, false, false, false);
+        ModuleDependency jsfImpl = new ModuleDependency(moduleLoader, jsfModule, false, false, true, false);
         jsfImpl.addImportFilter(PathFilters.getMetaInfFilter(), true);
         moduleSpecification.addSystemDependency(jsfImpl);
-
-        // HACK!! Determine if we are using Mojarra 2.2 or greater
-        try {
-            jsfImpl.getModuleLoader().loadModule(jsfModule).getClassLoader().loadClass("com.sun.faces.flow.FlowCDIExtension");
-        } catch (Exception e) {
-            // If we can't load FlowCDIExtension then we must be using MyFaces or a pre-2.2 Mojarra impl.
-            return;
-        }
-
-        // If using Mojarra 2.2 or greater, enable CDI Extensions
-        addCDIExtensions(topLevelDeployment);
     }
 
     private void addJSFInjection(String jsfVersion, ModuleSpecification moduleSpecification, ModuleLoader moduleLoader) {
@@ -135,46 +136,30 @@ public class JSFDependencyProcessor implements DeploymentUnitProcessor {
 
         ModuleIdentifier jsfInjectionModule = moduleIdFactory.getInjectionModId(jsfVersion);
         ModuleDependency jsfInjectionDependency = new ModuleDependency(moduleLoader, jsfInjectionModule, false, true, true, false);
+        jsfInjectionDependency.addImportFilter(PathFilters.getMetaInfFilter(), true);
         moduleSpecification.addSystemDependency(jsfInjectionDependency);
     }
 
-    // HACK!!! CDI Extensions should be automatically loaded from the Weld subsystem.  For now, CDI Extensions are only
-    // recognized if the jar containing the service resides in the deployment.  Since Weld subsystem doesn't handle this yet,
-    // we do it here.
-    private void addCDIExtensions(DeploymentUnit topLevelDeployment) {
-        final ClassLoader classLoader = SecurityActions.getContextClassLoader();
-        try {
-            SecurityActions.setContextClassLoader(FlowCDIExtension.class.getClassLoader());
-
-            Metadata<Extension> metadata = new CDIExtensionMetadataImpl(new FlowCDIExtension());
-            topLevelDeployment.addToAttachmentList(WeldAttachments.PORTABLE_EXTENSIONS, metadata);
-
-            metadata = new CDIExtensionMetadataImpl(new ViewScopeExtension());
-            topLevelDeployment.addToAttachmentList(WeldAttachments.PORTABLE_EXTENSIONS, metadata);
-
-            metadata = new CDIExtensionMetadataImpl(new FlowDiscoveryCDIExtension());
-            topLevelDeployment.addToAttachmentList(WeldAttachments.PORTABLE_EXTENSIONS, metadata);
-        } finally {
-            SecurityActions.setContextClassLoader(classLoader);
-        }
-    }
-
-    private static class CDIExtensionMetadataImpl implements Metadata<Extension> {
-
-        private final Extension ext;
-
-        public CDIExtensionMetadataImpl(Extension ext) {
-            this.ext = ext;
+    // Add a flag to the sevlet context so that we know if we need to instantiate
+    // a CDI ViewHandler.
+    private void addCDIFlag(WarMetaData warMetaData, DeploymentUnit deploymentUnit) {
+        JBossWebMetaData webMetaData = warMetaData.getMergedJBossWebMetaData();
+        if (webMetaData == null) {
+            webMetaData = new JBossWebMetaData();
+            warMetaData.setMergedJBossWebMetaData(webMetaData);
         }
 
-        @Override
-        public Extension getValue() {
-            return ext;
+        List<ParamValueMetaData> contextParams = webMetaData.getContextParams();
+        if (contextParams == null) {
+            contextParams = new ArrayList<ParamValueMetaData>();
         }
 
-        @Override
-        public String getLocation() {
-            return ext.getClass().getName();
-        }
+        boolean isCDI = WeldDeploymentMarker.isPartOfWeldDeployment(deploymentUnit);
+        ParamValueMetaData param = new ParamValueMetaData();
+        param.setParamName(IS_CDI_PARAM);
+        param.setParamValue(Boolean.toString(isCDI));
+        contextParams.add(param);
+
+        webMetaData.setContextParams(contextParams);
     }
 }

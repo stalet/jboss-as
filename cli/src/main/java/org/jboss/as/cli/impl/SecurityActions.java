@@ -21,17 +21,10 @@
  */
 package org.jboss.as.cli.impl;
 
-import org.jboss.as.util.security.AddShutdownHookAction;
-import org.jboss.as.util.security.GetClassLoaderAction;
-import org.jboss.as.util.security.ReadEnvironmentPropertyAction;
-import org.jboss.as.util.security.ReadPropertyAction;
-import org.jboss.as.util.security.WritePropertyAction;
+import org.wildfly.security.manager.action.AddShutdownHookAction;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 import static java.lang.Runtime.getRuntime;
-import static java.lang.System.getProperty;
-import static java.lang.System.getSecurityManager;
-import static java.lang.System.getenv;
-import static java.lang.System.setProperty;
 import static java.security.AccessController.doPrivileged;
 
 /**
@@ -43,30 +36,10 @@ import static java.security.AccessController.doPrivileged;
  */
 class SecurityActions {
     static void addShutdownHook(Thread hook) {
-        if (getSecurityManager() == null) {
+        if (! WildFlySecurityManager.isChecking()) {
             getRuntime().addShutdownHook(hook);
         } else {
             doPrivileged(new AddShutdownHookAction(hook));
         }
-    }
-
-    static String getSystemProperty(String name) {
-        return getSecurityManager() == null ? getProperty(name) : doPrivileged(new ReadPropertyAction(name));
-    }
-
-    static void setSystemProperty(String name, String value) {
-        if (getSecurityManager() == null) {
-            setProperty(name, value);
-        } else {
-            doPrivileged(new WritePropertyAction(name, value));
-        }
-    }
-
-    static ClassLoader getClassLoader(Class<?> cls) {
-        return getSecurityManager() == null ? cls.getClassLoader() : doPrivileged(new GetClassLoaderAction(cls));
-    }
-
-    static String getEnvironmentVariable(String name) {
-        return getSecurityManager() == null ? getenv(name) : doPrivileged(new ReadEnvironmentPropertyAction(name));
     }
 }

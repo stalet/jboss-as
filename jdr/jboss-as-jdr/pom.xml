@@ -27,31 +27,15 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
+        <groupId>org.wildfly</groupId>
         <artifactId>jdr</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-jdr</artifactId>
-    <name>JBoss Application Server: JDR</name>
+    <artifactId>wildfly-jdr</artifactId>
+    <name>WildFly: JDR</name>
 
-    <build>
-       <plugins>
-          <plugin>
-              <groupId>org.apache.maven.plugins</groupId>
-              <artifactId>maven-surefire-plugin</artifactId>
-              <configuration>
-                  <redirectTestOutputToFile>true</redirectTestOutputToFile>
-                  <enableAssertions>true</enableAssertions>
-                  <systemPropertyVariables>
-                      <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
-                      <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
-                  </systemPropertyVariables>
-              </configuration>
-          </plugin>
-       </plugins>
-    </build>
-    
+
     <dependencies>
         <dependency>
             <groupId>commons-cli</groupId>
@@ -70,12 +54,12 @@
             <artifactId>jboss-msc</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-network</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-network</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-server</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-server</artifactId>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -83,27 +67,38 @@
             <scope>test</scope>
         </dependency>
        <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
-						<type>pom</type>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+            <type>pom</type>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-cli</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-cli</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-threads</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-threads</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.logging</groupId>
+            <artifactId>jboss-logging-annotations</artifactId>
+            <!-- This is a compile-time dependency of this project, but is not needed at compile or runtime by other
+                  projects that depend on this project.-->
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
             <artifactId>jboss-logging-processor</artifactId>
+            <!-- This is a compile-time dependency of this project, but is not needed at compile or runtime by other
+                  projects that depend on this project.-->
             <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
     </dependencies>
 </project>

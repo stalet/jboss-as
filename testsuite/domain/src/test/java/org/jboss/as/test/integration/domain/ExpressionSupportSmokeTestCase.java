@@ -60,6 +60,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.junit.Assert;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
@@ -151,19 +152,9 @@ public class ExpressionSupportSmokeTestCase extends BuildConfigurationTestBase {
         validateExpectedValues(PathAddress.EMPTY_ADDRESS, expectedValues, "master");
     }
 
-    @Override
-    protected String getDomainConfigFile() {
-        return "domain.xml";
-    }
-
-    @Override
-    protected String getHostConfigFile() {
-        return "host.xml";
-    }
-
     @Before
     public void setUp() throws IOException {
-        final JBossAsManagedConfiguration config = createConfiguration(getDomainConfigFile(), getHostConfigFile(), getClass().getSimpleName());
+        final JBossAsManagedConfiguration config = createConfiguration("domain.xml", "host.xml", getClass().getSimpleName());
         config.setAdminOnly(true);
 
         // Trigger the servers to fail on boot if there are runtime errors
@@ -171,9 +162,8 @@ public class ExpressionSupportSmokeTestCase extends BuildConfigurationTestBase {
         hostProps = hostProps == null ? "" : hostProps;
         config.setHostCommandLineProperties(hostProps + "\n-Djboss.unsupported.fail-boot-on-runtime-failure=true");
 
-        final DomainLifecycleUtil utils = new DomainLifecycleUtil(config);
-        utils.start(); // Start
-        this.domainMasterLifecycleUtil = utils;
+        domainMasterLifecycleUtil = new DomainLifecycleUtil(config);
+        domainMasterLifecycleUtil.start(); // Start
 
         conflicts = noSimple = noSimpleCollection = noComplexList = noComplexProperty = noObject = noComplexProperty =
                 supportedUndefined = simple = simpleCollection = object = complexProperty = complexList = 0;
@@ -366,6 +356,10 @@ public class ExpressionSupportSmokeTestCase extends BuildConfigurationTestBase {
                 && !attrDesc.get(STORAGE).asString().equalsIgnoreCase("configuration")) {
             return true;
         }
+        if (attrDesc.get(ModelDescriptionConstants.DEPRECATED).isDefined()){
+            return true;
+        }
+
 
         // Special cases
         if ("default-web-module".equals(attrName)) {
@@ -402,9 +396,14 @@ public class ExpressionSupportSmokeTestCase extends BuildConfigurationTestBase {
                 }
             }
         } else if (address.size() > 0 && "transactions".equals(address.getLastElement().getValue())
-                &&  "subsystem".equals(address.getLastElement().getKey()) && attrName.contains("jdbc")) {
-            // Ignore jdbc store attributes unless the store is enabled
-            return !resourceNoDefaults.hasDefined("use-jdbc-store") || !resourceNoDefaults.get("use-jdbc-store").asBoolean();
+                &&  "subsystem".equals(address.getLastElement().getKey())) {
+            if (attrName.contains("jdbc")) {
+                // Ignore jdbc store attributes unless jdbc store is enabled
+                return !resourceNoDefaults.hasDefined("use-jdbc-store") || !resourceNoDefaults.get("use-jdbc-store").asBoolean();
+            } else if (attrName.contains("hornetq")) {
+                // Ignore hornetq store attributes unless hornetq store is enabled
+                return !resourceNoDefaults.hasDefined("use-hornetq-store") || !resourceNoDefaults.get("use-hornetq-store").asBoolean();
+            }
         }
 
         return false;

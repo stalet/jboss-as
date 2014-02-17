@@ -1,6 +1,6 @@
 /*
  * JBoss, Home of Professional Open Source.
- * Copyright 2011, Red Hat, Inc., and individual contributors
+ * Copyright 2013, Red Hat, Inc., and individual contributors
  * as indicated by the @author tags. See the copyright.txt file in the
  * distribution for a full listing of individual contributors.
  *
@@ -22,49 +22,131 @@
 
 package org.jboss.as.controller;
 
-import org.jboss.as.util.security.ReadPropertyAction;
-import org.jboss.as.util.security.SetContextClassLoaderAction;
-import org.jboss.as.util.security.SetContextClassLoaderFromClassAction;
-
-import static java.lang.System.getProperty;
-import static java.lang.System.getSecurityManager;
-import static java.lang.Thread.currentThread;
 import static java.security.AccessController.doPrivileged;
 
+import java.security.AccessControlContext;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+
+import javax.security.auth.Subject;
+
+import org.jboss.as.controller.access.Caller;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
 /**
- * Security actions to perform possibly privileged operations.  no methods in
- * this class are to be made public under any circumstances!
+ * Security actions for the 'org.jboss.as.controller' package.
  *
- * @author Brian Stansberry (c) 2011 Red Hat Inc.
+ * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
 class SecurityActions {
 
-    static String getSystemProperty(final String key) {
-        return getSecurityManager() == null ? getProperty(key) : doPrivileged(new ReadPropertyAction(key));
+    private SecurityActions() {
     }
 
-    static String getSystemProperty(final String key, final String defaultValue) {
-        return getSecurityManager() == null ? getSystemProperty(key, defaultValue) : doPrivileged(new ReadPropertyAction(key, defaultValue));
+    static Caller getCaller(final Caller currentCaller) {
+        AccessControlContext acc = AccessController.getContext();
+        return createCallerActions().getCaller(acc, currentCaller);
     }
 
-    static ClassLoader setThreadContextClassLoader(Class cl) {
-        if (getSecurityManager() == null) {
-            final Thread thread = currentThread();
-            try {
-                return thread.getContextClassLoader();
-            } finally {
-                thread.setContextClassLoader(cl.getClassLoader());
+    static Subject getSubject(final Caller caller) {
+        return createCallerActions().getSubject(caller);
+    }
+
+    static AccessAuditContext currentAccessAuditContext() {
+        return createAccessAuditContextActions().currentContext();
+    }
+
+    private static AccessAuditContextActions createAccessAuditContextActions() {
+        return WildFlySecurityManager.isChecking() ? AccessAuditContextActions.PRIVILEGED : AccessAuditContextActions.NON_PRIVILEGED;
+    }
+
+    private static CallerActions createCallerActions() {
+        return WildFlySecurityManager.isChecking() ? CallerActions.PRIVILEGED : CallerActions.NON_PRIVILEGED;
+    }
+
+    private interface AccessAuditContextActions {
+
+        AccessAuditContext currentContext();
+
+        AccessAuditContextActions NON_PRIVILEGED = new AccessAuditContextActions() {
+
+            @Override
+            public AccessAuditContext currentContext() {
+                return AccessAuditContext.currentAccessAuditContext();
             }
-        } else {
-            return doPrivileged(new SetContextClassLoaderFromClassAction(cl));
-        }
+        };
+
+        AccessAuditContextActions PRIVILEGED = new AccessAuditContextActions() {
+
+            private final PrivilegedAction<AccessAuditContext> PRIVILEGED_ACTION = new PrivilegedAction<AccessAuditContext>() {
+
+                @Override
+                public AccessAuditContext run() {
+                    return NON_PRIVILEGED.currentContext();
+                }
+
+            };
+
+            @Override
+            public AccessAuditContext currentContext() {
+                return doPrivileged(PRIVILEGED_ACTION);
+            }
+        };
+
     }
 
-    static void setThreadContextClassLoader(ClassLoader cl) {
-        if (getSecurityManager() == null) {
-            currentThread().setContextClassLoader(cl);
-        } else {
-            doPrivileged(new SetContextClassLoaderAction(cl));
-        }
+    private interface CallerActions {
+
+        Caller getCaller(AccessControlContext acc, Caller currentCaller);
+
+        Subject getSubject(Caller caller);
+
+        CallerActions NON_PRIVILEGED = new CallerActions() {
+
+            @Override
+            public Caller getCaller(AccessControlContext acc, Caller currentCaller) {
+                Subject subject = Subject.getSubject(acc);
+                // This is deliberately checking the Subject is the exact same instance.
+                if (currentCaller == null || subject != currentCaller.getSubject()) {
+                    if (subject != null) {
+                        subject.setReadOnly();
+                    }
+                    return Caller.createCaller(subject);
+                }
+
+                return currentCaller;
+            }
+
+            @Override
+            public Subject getSubject(Caller caller) {
+                return caller.getSubject();
+            }
+        };
+
+        CallerActions PRIVILEGED = new CallerActions() {
+
+            @Override
+            public Caller getCaller(final AccessControlContext acc, final Caller currentCaller) {
+                return doPrivileged(new PrivilegedAction<Caller>() {
+
+                    @Override
+                    public Caller run() {
+                        return NON_PRIVILEGED.getCaller(acc, currentCaller);
+                    }
+                });
+            }
+
+            @Override
+            public Subject getSubject(final Caller caller) {
+                return doPrivileged(new PrivilegedAction<Subject>() {
+
+                    @Override
+                    public Subject run() {
+                        return NON_PRIVILEGED.getSubject(caller);
+                    }
+                });
+            }
+        };
+
     }
 }

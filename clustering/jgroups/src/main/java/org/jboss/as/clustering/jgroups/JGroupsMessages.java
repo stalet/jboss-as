@@ -32,7 +32,7 @@ import org.jboss.logging.Messages;
 /**
  * JGroupsMessages
  *
- * logging id range: 10270 - 10279
+ * logging id range: 10270 - 10279, 10390 - 10399
  *
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  */
@@ -80,4 +80,22 @@ public interface JGroupsMessages {
 
     @Message(id = 10277, value = "Property %s for protocol with relative path %s is not defined.")
     OperationFailedException propertyNotDefined(String propertyName, String protocolRelativePath);
+
+    @Message(id = 10278, value = "Unknown metric %s")
+    String unknownMetric(String metricName);
+
+    @Message(id = 10279, value = "Unable to load protocol class %s")
+    OperationFailedException unableToLoadProtocolClass(String protocolName);
+
+    @Message(id = 10390, value = "Privileged access exception on attribute %s")
+    String privilegedAccessExceptionForAttribute(String attrName);
+
+    @Message(id = 10391, value = "Instantiation exception on converter for attribute %s")
+    String instantiationExceptionOnConverterForAttribute(String attrName);
+
+    @Message(id = 10392, value = "Protocol %s not found in current stack")
+    String protocolNotFoundInStack(String protocolName);
+
+    @Message(id = 10393, value = "Unable to load protocol class %s")
+    String unableToLoadProtocol(String protocolName);
 }

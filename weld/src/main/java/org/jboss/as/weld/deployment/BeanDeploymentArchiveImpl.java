@@ -21,21 +21,23 @@
  */
 package org.jboss.as.weld.deployment;
 
-import org.jboss.as.weld.WeldModuleResourceLoader;
-import org.jboss.modules.Module;
-import org.jboss.weld.bootstrap.api.ServiceRegistry;
-import org.jboss.weld.bootstrap.api.helpers.SimpleServiceRegistry;
-import org.jboss.weld.bootstrap.spi.BeanDeploymentArchive;
-import org.jboss.weld.bootstrap.spi.BeansXml;
-import org.jboss.weld.ejb.spi.EjbDescriptor;
-import org.jboss.weld.resources.spi.ResourceLoader;
-
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CopyOnWriteArraySet;
+
+import org.jboss.as.weld.WeldModuleResourceLoader;
+import org.jboss.modules.DependencySpec;
+import org.jboss.modules.Module;
+import org.jboss.modules.ModuleDependencySpec;
+import org.jboss.weld.bootstrap.api.ServiceRegistry;
+import org.jboss.weld.bootstrap.api.helpers.SimpleServiceRegistry;
+import org.jboss.weld.bootstrap.spi.BeanDeploymentArchive;
+import org.jboss.weld.bootstrap.spi.BeansXml;
+import org.jboss.weld.ejb.spi.EjbDescriptor;
+import org.jboss.weld.resources.spi.ResourceLoader;
 
 /**
  * Implementation of {@link BeanDeploymentArchive}.
@@ -46,6 +48,10 @@ import java.util.concurrent.CopyOnWriteArraySet;
  *
  */
 public class BeanDeploymentArchiveImpl implements BeanDeploymentArchive {
+
+    public enum BeanArchiveType {
+        IMPLICIT, EXPLICIT, EXTERNAL, SYNTHETIC;
+    }
 
     private final Set<String> beanClasses;
 
@@ -63,7 +69,15 @@ public class BeanDeploymentArchiveImpl implements BeanDeploymentArchive {
 
     private final Set<EjbDescriptor<?>> ejbDescriptors;
 
-    public BeanDeploymentArchiveImpl(Set<String> beanClasses, BeansXml beansXml, Module module, String id) {
+    private final boolean root; // indicates whether this is a root BDA
+
+    private final BeanArchiveType beanArchiveType;
+
+    public BeanDeploymentArchiveImpl(Set<String> beanClasses, BeansXml beansXml, Module module, String id, BeanArchiveType beanArchiveType) {
+        this(beanClasses, beansXml, module, id, beanArchiveType, false);
+    }
+
+    public BeanDeploymentArchiveImpl(Set<String> beanClasses, BeansXml beansXml, Module module, String id, BeanArchiveType beanArchiveType, boolean root) {
         this.beanClasses = new ConcurrentSkipListSet<String>(beanClasses);
         this.beanDeploymentArchives = new CopyOnWriteArraySet<BeanDeploymentArchive>();
         this.beansXml = beansXml;
@@ -73,6 +87,8 @@ public class BeanDeploymentArchiveImpl implements BeanDeploymentArchive {
         this.serviceRegistry.add(ResourceLoader.class, resourceLoader);
         this.module = module;
         this.ejbDescriptors = new HashSet<EjbDescriptor<?>>();
+        this.beanArchiveType = beanArchiveType;
+        this.root = root;
     }
 
     /**
@@ -147,5 +163,73 @@ public class BeanDeploymentArchiveImpl implements BeanDeploymentArchive {
 
     public Module getModule() {
         return module;
+    }
+
+    public ClassLoader getClassLoader() {
+        if (module != null) {
+            return module.getClassLoader();
+        }
+        return null;
+    }
+
+    public boolean isRoot() {
+        return root;
+    }
+
+    /**
+     * Determines if a class from this {@link BeanDeploymentArchiveImpl} instance can access a class in the
+     * {@link BeanDeploymentArchive} instance represented by the specified <code>BeanDeploymentArchive</code> parameter
+     * according to the Java EE class accessibility requirements.
+     *
+     * @param target
+     * @return true if an only if a class this archive can access a class from the archive represented by the specified parameter
+     */
+    public boolean isAccessible(BeanDeploymentArchive target) {
+        if (this == target) {
+            return true;
+        }
+
+        BeanDeploymentArchiveImpl that = (BeanDeploymentArchiveImpl) target;
+
+        if (that.getModule() == null) {
+            /*
+             * The target BDA is the bootstrap BDA - it bundles classes loaded by the bootstrap classloader.
+             * Everyone can see the bootstrap classloader.
+             */
+            return true;
+        }
+        if (module == null) {
+            /*
+             * This BDA is the bootstrap BDA - it bundles classes loaded by the bootstrap classloader. We assume that a
+             * bean whose class is loaded by the bootstrap classloader can only see other beans in the "bootstrap BDA".
+             */
+            return that.getModule() == null;
+        }
+
+        if (module.equals(that.getModule())) {
+            return true;
+        }
+        for (DependencySpec dependency : module.getDependencies()) {
+            if (dependency instanceof ModuleDependencySpec) {
+                ModuleDependencySpec moduleDependency = (ModuleDependencySpec) dependency;
+                if (moduleDependency.getIdentifier().equals(that.getModule().getIdentifier())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public BeanArchiveType getBeanArchiveType() {
+        return beanArchiveType;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder builder = new StringBuilder(this.beanArchiveType.toString());
+        builder.append(" BeanDeploymentArchive (");
+        builder.append(this.id);
+        builder.append(")");
+        return builder.toString();
     }
 }

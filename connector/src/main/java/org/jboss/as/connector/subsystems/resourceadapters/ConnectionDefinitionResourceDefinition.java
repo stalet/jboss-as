@@ -42,7 +42,7 @@ import org.jboss.as.controller.transform.description.ResourceTransformationDescr
  */
 public class ConnectionDefinitionResourceDefinition extends SimpleResourceDefinition {
 
-    private static final PathElement PATH = PathElement.pathElement(CONNECTIONDEFINITIONS_NAME);
+    static final PathElement PATH = PathElement.pathElement(CONNECTIONDEFINITIONS_NAME);
     private static final ResourceDescriptionResolver RESOLVER = ResourceAdaptersExtension.getResourceDescriptionResolver(CONNECTIONDEFINITIONS_NAME);
     private static final OperationDefinition FLUSH__IDLE_DEFINITION = new SimpleOperationDefinitionBuilder(Constants.FLUSH_IDLE_CONNECTION_IN_POOL, RESOLVER)
             .withFlag(Flag.RUNTIME_ONLY)
@@ -50,6 +50,12 @@ public class ConnectionDefinitionResourceDefinition extends SimpleResourceDefini
     private static final OperationDefinition FLUSH_ALL_DEFINITION = new SimpleOperationDefinitionBuilder(Constants.FLUSH_ALL_CONNECTION_IN_POOL, RESOLVER)
             .withFlag(Flag.RUNTIME_ONLY)
             .build();
+    private static final OperationDefinition FLUSH_INVALID_DEFINITION = new SimpleOperationDefinitionBuilder(Constants.FLUSH_INVALID_CONNECTION_IN_POOL, RESOLVER)
+                .withFlag(Flag.RUNTIME_ONLY)
+                .build();
+    private static final OperationDefinition FLUSH_GRACEFULY_DEFINITION = new SimpleOperationDefinitionBuilder(Constants.FLUSH_GRACEFULLY_CONNECTION_IN_POOL, RESOLVER)
+                .withFlag(Flag.RUNTIME_ONLY)
+                .build();
     private static final OperationDefinition TEST_DEFINITION = new SimpleOperationDefinitionBuilder(Constants.TEST_CONNECTION_IN_POOL, RESOLVER)
             .withFlag(Flag.RUNTIME_ONLY)
             .build();
@@ -81,6 +87,8 @@ public class ConnectionDefinitionResourceDefinition extends SimpleResourceDefini
         if (runtimeOnlyRegistrationValid) {
             resourceRegistration.registerOperationHandler(FLUSH__IDLE_DEFINITION, PoolOperations.FlushIdleConnectionInPool.RA_INSTANCE);
             resourceRegistration.registerOperationHandler(FLUSH_ALL_DEFINITION, PoolOperations.FlushAllConnectionInPool.RA_INSTANCE);
+            resourceRegistration.registerOperationHandler(FLUSH_INVALID_DEFINITION, PoolOperations.FlushInvalidConnectionInPool.RA_INSTANCE);
+            resourceRegistration.registerOperationHandler(FLUSH_GRACEFULY_DEFINITION, PoolOperations.FlushGracefullyConnectionInPool.RA_INSTANCE);
             resourceRegistration.registerOperationHandler(TEST_DEFINITION, PoolOperations.TestConnectionInPool.RA_INSTANCE);
         }
     }
@@ -90,8 +98,11 @@ public class ConnectionDefinitionResourceDefinition extends SimpleResourceDefini
         resourceRegistration.registerSubModel(new ConfigPropertyResourceDefinition(readOnly ? null : CDConfigPropertyAdd.INSTANCE, readOnly ? null : ReloadRequiredRemoveStepHandler.INSTANCE));
     }
 
-    static void registerTransformers(ResourceTransformationDescriptionBuilder parentBuilder) {
+    static void registerTransformer120(ResourceTransformationDescriptionBuilder parentBuilder) {
         parentBuilder.addChildResource(PATH)
-            .getAttributeBuilder().setDiscard(DiscardAttributeChecker.UNDEFINED, Constants.SECURITY_DOMAIN, Constants.SECURITY_DOMAIN_AND_APPLICATION, Constants.APPLICATION);
+                .getAttributeBuilder().setDiscard(DiscardAttributeChecker.ALWAYS, Constants.ENLISTMENT, Constants.SHARABLE, org.jboss.as.connector.subsystems.common.pool.Constants.INITIAL_POOL_SIZE,
+                org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_CLASS, org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_CLASS,
+                org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_PROPERTIES, org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_PROPERTIES);
     }
+
 }

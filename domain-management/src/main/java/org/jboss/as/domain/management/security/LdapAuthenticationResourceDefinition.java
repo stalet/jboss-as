@@ -32,7 +32,6 @@ import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
-import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
@@ -40,6 +39,7 @@ import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.as.controller.registry.Resource;
+import org.jboss.as.domain.management.security.LdapCacheResourceDefinition.CacheFor;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
@@ -48,10 +48,7 @@ import org.jboss.dmr.ModelType;
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
-public class LdapAuthenticationResourceDefinition extends SimpleResourceDefinition {
-
-    public static final SimpleAttributeDefinition CONNECTION = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.CONNECTION, ModelType.STRING, false)
-            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, false)).setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
+public class LdapAuthenticationResourceDefinition extends LdapResourceDefinition {
 
     public static final SimpleAttributeDefinition BASE_DN = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.BASE_DN, ModelType.STRING, false)
             .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, false))
@@ -95,8 +92,15 @@ public class LdapAuthenticationResourceDefinition extends SimpleResourceDefiniti
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
             .build();
 
+    public static final SimpleAttributeDefinition USERNAME_LOAD = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.USERNAME_LOAD, ModelType.STRING, true)
+            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
+            .setValidateNull(false)
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
+
     public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = {
-        CONNECTION, BASE_DN, RECURSIVE, USER_DN, ALLOW_EMPTY_PASSWORDS, USERNAME_FILTER, ADVANCED_FILTER
+        CONNECTION, BASE_DN, RECURSIVE, USER_DN, ALLOW_EMPTY_PASSWORDS, USERNAME_FILTER, ADVANCED_FILTER, USERNAME_LOAD
     };
 
     public LdapAuthenticationResourceDefinition() {
@@ -110,6 +114,24 @@ public class LdapAuthenticationResourceDefinition extends SimpleResourceDefiniti
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
         SecurityRealmChildWriteAttributeHandler handler = new LdapAuthenticationWriteHandler();
         handler.registerAttributes(resourceRegistration);
+    }
+
+    @Override
+    public void registerChildren(ManagementResourceRegistration resourceRegistration) {
+        resourceRegistration.registerSubModel(LdapCacheResourceDefinition.createByAccessTime(CacheFor.AuthUser));
+        resourceRegistration.registerSubModel(LdapCacheResourceDefinition.createBySearchTime(CacheFor.AuthUser));
+    }
+
+    protected static void validateAttributeCombination(ModelNode operation) throws OperationFailedException {
+        boolean usernameFileDefined = operation.hasDefined(ModelDescriptionConstants.USERNAME_ATTRIBUTE);
+        boolean advancedFilterDefined = operation.hasDefined(ModelDescriptionConstants.ADVANCED_FILTER);
+        if (usernameFileDefined && advancedFilterDefined) {
+            throw MESSAGES.operationFailedOnlyOneOfRequired(ModelDescriptionConstants.USERNAME_ATTRIBUTE,
+                    ModelDescriptionConstants.ADVANCED_FILTER);
+        } else if ((usernameFileDefined || advancedFilterDefined) == false) {
+            throw MESSAGES.operationFailedOneOfRequired(ModelDescriptionConstants.USERNAME_ATTRIBUTE,
+                    ModelDescriptionConstants.ADVANCED_FILTER);
+        }
     }
 
     private static class LdapAuthenticationWriteHandler extends SecurityRealmChildWriteAttributeHandler {
@@ -139,7 +161,7 @@ public class LdapAuthenticationResourceDefinition extends SimpleResourceDefiniti
     private static class LdapAuthenticationAddHandler extends SecurityRealmChildAddHandler {
 
         private LdapAuthenticationAddHandler() {
-            super(true, ATTRIBUTE_DEFINITIONS);
+            super(true, false, ATTRIBUTE_DEFINITIONS);
         }
 
         @Override
@@ -147,18 +169,6 @@ public class LdapAuthenticationResourceDefinition extends SimpleResourceDefiniti
             validateAttributeCombination(operation);
 
             super.updateModel(context, operation);
-        }
-    }
-
-    private static void validateAttributeCombination(ModelNode operation) throws OperationFailedException {
-        boolean usernameFileDefined = operation.hasDefined(ModelDescriptionConstants.USERNAME_ATTRIBUTE);
-        boolean advancedFilterDefined = operation.hasDefined(ModelDescriptionConstants.ADVANCED_FILTER);
-        if (usernameFileDefined && advancedFilterDefined) {
-            throw MESSAGES.operationFailedOnlyOneOfRequired(ModelDescriptionConstants.USERNAME_ATTRIBUTE,
-                    ModelDescriptionConstants.ADVANCED_FILTER);
-        } else if ((usernameFileDefined || advancedFilterDefined) == false) {
-            throw MESSAGES.operationFailedOneOfRequired(ModelDescriptionConstants.USERNAME_ATTRIBUTE,
-                    ModelDescriptionConstants.ADVANCED_FILTER);
         }
     }
 }

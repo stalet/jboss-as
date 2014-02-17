@@ -44,12 +44,14 @@ public enum Namespace {
 
     CLI_1_1("urn:jboss:cli:1.1"),
 
-    CLI_1_2("urn:jboss:cli:1.2");
+    CLI_1_2("urn:jboss:cli:1.2"),
+
+    CLI_2_0("urn:jboss:cli:2.0");
 
     /**
      * The current namespace version.
      */
-    public static final Namespace CURRENT = CLI_1_2;
+    public static final Namespace CURRENT = CLI_2_0;
 
     private final String name;
 

@@ -26,24 +26,24 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-arquillian</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-arquillian</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
-    <artifactId>jboss-as-arquillian-container-domain-managed</artifactId>
+    <artifactId>wildfly-arquillian-container-domain-managed</artifactId>
 
-    <name>JBoss Application Server: Arquillian Managed Domain Container</name>
+    <name>WildFly: Arquillian Managed Domain Container</name>
 
     <packaging>jar</packaging>
 
     <properties>
-        <jboss.home>${project.basedir}/../../build/target/jboss-as-${jboss.as.release.version}</jboss.home>
+        <jboss.home>${project.basedir}/../../${wildfly.build.output.dir}</jboss.home>
     </properties>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-arquillian-common-domain</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-arquillian-common-domain</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
@@ -100,7 +100,6 @@
                                     <directory>${jboss.home}</directory>
                                     <excludes>
                                         <exclude>modules/</exclude>
-                                        <exclude>bundles/</exclude>
                                     </excludes>
                                 </resource>
                             </resources>
@@ -111,6 +110,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
+                <version>${version.surefire.plugin}</version>
                 <configuration>
                     <systemProperties>
                         <property>

@@ -38,6 +38,7 @@ import org.jboss.as.cli.Util;
 import org.jboss.as.cli.gui.GuiMain;
 import org.jboss.as.cli.handlers.VersionHandler;
 import org.jboss.as.protocol.StreamUtils;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  *
@@ -54,63 +55,19 @@ public class CliLauncher {
             List<String> commands = null;
             File file = null;
             boolean connect = false;
-            String defaultControllerHost = null;
-            int defaultControllerPort = -1;
+            String defaultController = null;
             boolean version = false;
             String username = null;
             char[] password = null;
+            boolean noLocalAuth = false;
             int connectionTimeout = -1;
 
             for(String arg : args) {
                 if(arg.startsWith("--controller=") || arg.startsWith("controller=")) {
-                    final String value;
                     if(arg.startsWith("--")) {
-                        value = arg.substring(13);
+                        defaultController = arg.substring(13);
                     } else {
-                        value = arg.substring(11);
-                    }
-                    String portStr = null;
-                    int colonIndex = value.lastIndexOf(':');
-                    if(colonIndex < 0) {
-                        // default port
-                        defaultControllerHost = value;
-                    } else if(colonIndex == 0) {
-                        // default host
-                        portStr = value.substring(1);
-                    } else {
-                        final boolean hasPort;
-                        int closeBracket = value.lastIndexOf(']');
-                        if (closeBracket != -1) {
-                            //possible ip v6
-                            if (closeBracket > colonIndex) {
-                                hasPort = false;
-                            } else {
-                                hasPort = true;
-                            }
-                        } else {
-                            //probably ip v4
-                            hasPort = true;
-                        }
-                        if (hasPort) {
-                            defaultControllerHost = value.substring(0, colonIndex).trim();
-                            portStr = value.substring(colonIndex + 1).trim();
-                        } else {
-                            defaultControllerHost = value;
-                        }
-                    }
-
-                    if(portStr != null) {
-                        int port = -1;
-                        try {
-                            port = Integer.parseInt(portStr);
-                            if(port < 0) {
-                                argError = "The port must be a valid non-negative integer: '" + args + "'";
-                            } else {
-                                defaultControllerPort = port;
-                            }
-                        } catch(NumberFormatException e) {
-                            argError = "The port must be a valid non-negative integer: '" + arg + "'";
-                        }
+                        defaultController = arg.substring(11);
                     }
                 } else if("--connect".equals(arg) || "-c".equals(arg)) {
                     connect = true;
@@ -156,28 +113,64 @@ public class CliLauncher {
                         break;
                     }
                     if(commands != null) {
-                        argError = "Duplicate argument '--command'/'--commands'.";
+                        argError = "'" + arg +
+                                "' is assumed to be a command(s) but the commands to execute have been specified by another argument: " +
+                                commands;
                         break;
                     }
                     final String value = arg.startsWith("--") ? arg.substring(10) : arg.substring(8);
                     commands = Collections.singletonList(value);
-                } else if (arg.startsWith("--user=")) {
-                    username = arg.startsWith("--") ? arg.substring(7) : arg.substring(5);
-                } else if (arg.startsWith("--password=")) {
-                    password = (arg.startsWith("--") ? arg.substring(11) : arg.substring(9)).toCharArray();
-                } else if (arg.startsWith("--timeout=")) {
+                } else if (arg.startsWith("--user")) {
+                    if(arg.length() > 6 && arg.charAt(6) == '=') {
+                        username = arg.substring(7);
+                        noLocalAuth = true;
+                    } else {
+                        argError = "'=' is missing after --user";
+                        break;
+                    }
+                } else if (arg.startsWith("--password")) {
+                    if(arg.length() > 10 && arg.charAt(10) == '=') {
+                        password = arg.substring(11).toCharArray();
+                    } else {
+                        argError = "'=' is missing after --password";
+                        break;
+                    }
+                } else if (arg.startsWith("-u")) {
+                    if(arg.length() > 2 && arg.charAt(2) == '=') {
+                        username = arg.substring(3);
+                        noLocalAuth = true;
+                    } else {
+                        argError = "'=' is missing after -u";
+                        break;
+                    }
+                } else if (arg.startsWith("-p")) {
+                    if(arg.length() > 2 && arg.charAt(2) == '=') {
+                        password = arg.substring(3).toCharArray();
+                    } else {
+                        argError = "'=' is missing after -p";
+                        break;
+                    }
+                } else if (arg.equals("--no-local-auth")) {
+                    noLocalAuth = true;
+                } else if (arg.startsWith("--timeout")) {
                     if (connectionTimeout > 0) {
                         argError = "Duplicate argument '--timeout'";
                         break;
                     }
-                    final String value = arg.substring(10);
-                    try {
-                        connectionTimeout = Integer.parseInt(value);
-                    } catch (final NumberFormatException e) {
-                        //
-                    }
-                    if (connectionTimeout <= 0) {
-                        argError = "The timeout must be a valid positive integer: '" + value + "'";
+                    if(arg.length() > 9 && arg.charAt(9) == '=') {
+                        final String value = arg.substring(10);
+                        try {
+                            connectionTimeout = Integer.parseInt(value);
+                        } catch (final NumberFormatException e) {
+                            //
+                        }
+                        if (connectionTimeout <= 0) {
+                            argError = "The timeout must be a valid positive integer: '" + value + "'";
+                            break;
+                        }
+                    } else {
+                        argError = "'=' is missing after --timeout";
+                        break;
                     }
                 } else if (arg.equals("--help") || arg.equals("-h")) {
                     commands = Collections.singletonList("help");
@@ -208,7 +201,7 @@ public class CliLauncher {
                         }
                     }
                     for(Object prop : props.keySet()) {
-                        SecurityActions.setSystemProperty((String)prop, (String)props.get(prop));
+                        WildFlySecurityManager.setPropertyPrivileged((String) prop, (String) props.get(prop));
                     }
                 } else if(!(arg.startsWith("-D") || arg.equals("-XX:"))) {// skip system properties and jvm options
                     // assume it's commands
@@ -217,7 +210,9 @@ public class CliLauncher {
                         break;
                     }
                     if(commands != null) {
-                        argError = "Duplicate argument '--command'/'--commands'.";
+                        argError = "'" + arg +
+                                "' is assumed to be a command(s) but the commands to execute have been specified by another argument: " +
+                                commands;
                         break;
                     }
                     commands = Util.splitCommands(arg);
@@ -231,38 +226,41 @@ public class CliLauncher {
             }
 
             if(version) {
-                cmdCtx = initCommandContext(defaultControllerHost, defaultControllerPort, username, password, false, connect, connectionTimeout);
+                cmdCtx = initCommandContext(defaultController, username, password, noLocalAuth, false, connect, connectionTimeout);
                 VersionHandler.INSTANCE.handle(cmdCtx);
                 return;
             }
 
             if(file != null) {
-                cmdCtx = initCommandContext(defaultControllerHost, defaultControllerPort, username, password, false, connect, connectionTimeout);
+                cmdCtx = initCommandContext(defaultController, username, password, noLocalAuth, false, connect, connectionTimeout);
                 processFile(file, cmdCtx);
                 return;
             }
 
             if(commands != null) {
-                cmdCtx = initCommandContext(defaultControllerHost, defaultControllerPort, username, password, false, connect, connectionTimeout);
+                cmdCtx = initCommandContext(defaultController, username, password, noLocalAuth, false, connect, connectionTimeout);
                 processCommands(commands, cmdCtx);
                 return;
             }
 
             if (gui) {
-                cmdCtx = initCommandContext(defaultControllerHost, defaultControllerPort, username, password, false, true, connectionTimeout);
+                cmdCtx = initCommandContext(defaultController, username, password, noLocalAuth, false, true, connectionTimeout);
                 processGui(cmdCtx);
                 return;
             }
 
             // Interactive mode
-            cmdCtx = initCommandContext(defaultControllerHost, defaultControllerPort, username, password, true, connect, connectionTimeout);
+            cmdCtx = initCommandContext(defaultController, username, password, noLocalAuth, true, connect, connectionTimeout);
             cmdCtx.interact();
         } catch(Throwable t) {
             t.printStackTrace();
             exitCode = 1;
         } finally {
-            if(cmdCtx != null && cmdCtx.getExitCode() != 0) {
-                exitCode = cmdCtx.getExitCode();
+            if(cmdCtx != null) {
+                cmdCtx.terminateSession();
+                if(cmdCtx.getExitCode() != 0) {
+                    exitCode = cmdCtx.getExitCode();
+                }
             }
             if (!gui) {
                 System.exit(exitCode);
@@ -271,8 +269,8 @@ public class CliLauncher {
         System.exit(exitCode);
     }
 
-    private static CommandContext initCommandContext(String defaultHost, int defaultPort, String username, char[] password, boolean initConsole, boolean connect, final int connectionTimeout) throws CliInitializationException {
-        final CommandContext cmdCtx = CommandContextFactory.getInstance().newCommandContext(defaultHost, defaultPort, username, password, initConsole, connectionTimeout);
+    private static CommandContext initCommandContext(String defaultController, String username, char[] password, boolean disableLocalAuth, boolean initConsole, boolean connect, final int connectionTimeout) throws CliInitializationException {
+        final CommandContext cmdCtx = CommandContextFactory.getInstance().newCommandContext(defaultController, username, password, disableLocalAuth, initConsole, connectionTimeout);
         if(connect) {
             try {
                 cmdCtx.connectController();
@@ -293,13 +291,9 @@ public class CliLauncher {
 
     private static void processCommands(List<String> commands, CommandContext cmdCtx) {
         int i = 0;
-        try {
-            while (cmdCtx.getExitCode() == 0 && i < commands.size() && !cmdCtx.isTerminated()) {
-                cmdCtx.handleSafe(commands.get(i));
-                ++i;
-            }
-        } finally {
-            cmdCtx.terminateSession();
+        while (cmdCtx.getExitCode() == 0 && i < commands.size() && !cmdCtx.isTerminated()) {
+            cmdCtx.handleSafe(commands.get(i));
+            ++i;
         }
     }
 
@@ -317,7 +311,46 @@ public class CliLauncher {
             throw new IllegalStateException("Failed to process file '" + file.getAbsolutePath() + "'", e);
         } finally {
             StreamUtils.safeClose(reader);
-            cmdCtx.terminateSession();
+        }
+    }
+
+    private static final String JBOSS_CLI_RC_PROPERTY = "jboss.cli.rc";
+    private static final String CURRENT_WORKING_DIRECTORY = "user.dir";
+    private static final String JBOSS_CLI_RC_FILE = ".jbossclirc";
+
+    static void runcom(CommandContext ctx) throws CliInitializationException {
+        File jbossCliRcFile = null;
+        // system property first
+        String jbossCliRc = WildFlySecurityManager.getPropertyPrivileged(JBOSS_CLI_RC_PROPERTY, null);
+        if(jbossCliRc == null) {
+            // current dir second
+            String dir = WildFlySecurityManager.getPropertyPrivileged(CURRENT_WORKING_DIRECTORY, null);
+            File f = new File(dir, JBOSS_CLI_RC_FILE);
+            if(!f.exists()) {
+                // WildFly home bin dir third
+                dir = WildFlySecurityManager.getEnvPropertyPrivileged("JBOSS_HOME", null);
+                if(dir != null) {
+                    f = new File(dir + File.separatorChar + "bin", JBOSS_CLI_RC_FILE);
+                    if(f.exists()) {
+                        jbossCliRcFile = f;
+                    }
+                }
+            } else {
+                jbossCliRcFile = f;
+            }
+        } else {
+            jbossCliRcFile = new File(jbossCliRc);
+            if(!jbossCliRcFile.exists()) {
+                throw new CliInitializationException("Property " + JBOSS_CLI_RC_PROPERTY +
+                        " points to a file that doesn't exist: " + jbossCliRcFile.getAbsolutePath());
+            }
+        }
+
+        if(jbossCliRcFile != null) {
+            processFile(jbossCliRcFile, ctx);
+            if(ctx.getExitCode() != 0) {
+                throw new CliInitializationException("Failed to process " + jbossCliRcFile.getAbsoluteFile());
+            }
         }
     }
 }

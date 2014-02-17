@@ -43,14 +43,15 @@
         <module name="javax.rmi.api"/>
         <module name="org.hibernate"/>
         <module name="org.jacorb"/>
-        <module name="org.jboss.as.clustering.api"/>
-        <module name="org.jboss.as.clustering.ejb3.infinispan" services="import" optional="true"/>
-        <module name="org.jboss.as.clustering.infinispan"/>
-        <module name="org.jboss.as.clustering.registry"/>
+        <module name="org.jboss.as.clustering.common"/>
+        <module name="org.wildfly.clustering.api"/>
+        <module name="org.wildfly.clustering.ejb.spi"/>
         <module name="org.jboss.as.controller"/>
         <module name="org.jboss.as.weld"/>
         <!-- So we can access its integration API -->
         <module name="org.jboss.as.connector"/>
+        <!-- Need access to org.jboss.as.core.security.ServerSecurityManager -->
+        <module name="org.jboss.as.core-security"/>
         <!-- Need access to org.jboss.as.domain.management.SecurityRealm for authentication of EJB cluster nodes
          in EJB client context-->
         <module name="org.jboss.as.domain-management"/>
@@ -60,7 +61,7 @@
         <module name="org.jboss.as.network"/>
         <module name="org.jboss.as.remoting"/>
         <module name="org.jboss.as.security"/>
-        <module name="org.jboss.as.security-util"/>
+        <module name="org.wildfly.security.manager"/>
         <module name="org.jboss.as.server"/>
         <module name="org.jboss.as.threads"/>
         <module name="org.jboss.as.transactions"/>
@@ -68,7 +69,7 @@
         <module name="org.jboss.threads"/>
         <module name="org.jboss.jboss-transaction-spi"/>
         <module name="org.jboss.common-core"/>
-        <module name="org.jboss.ejb-client"/>
+        <module name="org.jboss.ejb-client" services="import"/>
         <module name="org.jboss.ejb3"/>
         <module name="org.jboss.iiop-client"/>
         <module name="org.jboss.invocation"/>
@@ -76,6 +77,8 @@
         <module name="org.jboss.jandex"/>
         <!-- For SubordinationManager for remote Xid Transaction propagation -->
         <module name="org.jboss.jts"/>
+        <!-- For recovery manager (com.arjuna.ats.jbossatx.jta.RecoveryManagerService) -->
+        <module name="org.jboss.jts.integration"/>
         <module name="org.jboss.logging"/>
         <module name="org.jboss.marshalling"/>
         <module name="org.jboss.marshalling.river" services="import"/>
@@ -85,7 +88,7 @@
         <module name="org.jboss.modules"/>
         <!-- Access to ServiceName -->
         <module name="org.jboss.msc"/>
-        <module name="org.jboss.remoting3"/>
+        <module name="org.jboss.remoting"/>
         <module name="org.jboss.staxmapper"/>
         <!-- For parser DUP -->
         <module name="org.jboss.vfs"/>

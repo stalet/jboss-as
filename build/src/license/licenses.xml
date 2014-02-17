@@ -308,8 +308,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>javax.mail</groupId>
-      <artifactId>mail</artifactId>
+      <groupId>com.sun.mail</groupId>
+      <artifactId>javax.mail</artifactId>
       <licenses>
         <license>
           <name>Common Development and Distribution License</name>
@@ -1106,6 +1106,16 @@
       </licenses>
     </dependency>
     <dependency>
+      <groupId>org.hibernate</groupId>
+      <artifactId>hibernate-validator-cdi</artifactId>
+      <licenses>
+        <license>
+          <name>Apache Software License, Version 2.0</name>
+          <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+        </license>
+      </licenses>
+    </dependency>
+    <dependency>
       <groupId>org.hibernate.common</groupId>
       <artifactId>hibernate-commons-annotations</artifactId>
       <licenses>
@@ -1277,6 +1287,16 @@
       </licenses>
     </dependency>
     <dependency>
+        <groupId>org.jberet</groupId>
+        <artifactId>jberet-core</artifactId>
+        <licenses>
+            <license>
+                <name>Eclipse Public License, Version 1.0</name>
+                <url>http://www.eclipse.org/legal/epl-v10.html</url>
+            </license>
+        </licenses>
+    </dependency>
+    <dependency>
       <groupId>org.jboss</groupId>
       <artifactId>jandex</artifactId>
       <licenses>
@@ -1376,9 +1396,75 @@
         </license>
       </licenses>
     </dependency>
+      <dependency>
+          <groupId>org.jipijapa</groupId>
+          <artifactId>jipijapa-eclipselink</artifactId>
+          <licenses>
+              <license>
+                  <name>Apache Software License, Version 2.0</name>
+                  <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+                  <distribution>repo</distribution>
+              </license>
+          </licenses>
+      </dependency>
+      <dependency>
+          <groupId>org.jipijapa</groupId>
+          <artifactId>jipijapa-hibernate3</artifactId>
+          <licenses>
+              <license>
+                  <name>Apache Software License, Version 2.0</name>
+                  <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+                  <distribution>repo</distribution>
+              </license>
+          </licenses>
+      </dependency>
+      <dependency>
+          <groupId>org.jipijapa</groupId>
+          <artifactId>jipijapa-hibernate4-1</artifactId>
+          <licenses>
+              <license>
+                  <name>Apache Software License, Version 2.0</name>
+                  <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+                  <distribution>repo</distribution>
+              </license>
+          </licenses>
+      </dependency>
+      <dependency>
+          <groupId>org.jipijapa</groupId>
+          <artifactId>jipijapa-hibernate4-3</artifactId>
+          <licenses>
+              <license>
+                  <name>Apache Software License, Version 2.0</name>
+                  <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+                  <distribution>repo</distribution>
+              </license>
+          </licenses>
+      </dependency>
+      <dependency>
+          <groupId>org.jipijapa</groupId>
+          <artifactId>jipijapa-openjpa</artifactId>
+          <licenses>
+              <license>
+                  <name>Apache Software License, Version 2.0</name>
+                  <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+                  <distribution>repo</distribution>
+              </license>
+          </licenses>
+      </dependency>
+      <dependency>
+          <groupId>org.jipijapa</groupId>
+          <artifactId>jipijapa-spi</artifactId>
+          <licenses>
+              <license>
+                  <name>Apache Software License, Version 2.0</name>
+                  <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+                  <distribution>repo</distribution>
+              </license>
+          </licenses>
+      </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-appclient</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-appclient</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1388,8 +1474,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-build-config</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-build-config</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1399,8 +1485,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-cli</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-cli</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1410,8 +1496,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-client-all</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-client-all</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1421,8 +1507,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-api</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-api</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1432,8 +1518,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-common</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-common</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1443,8 +1529,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-ejb3-infinispan</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-ejb3-infinispan</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1454,8 +1540,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-impl</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-impl</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1465,8 +1551,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-infinispan</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-infinispan</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1476,8 +1562,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-jgroups</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-jgroups</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1487,8 +1573,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-registry</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-registry</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1498,8 +1584,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-service</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-service</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1509,8 +1595,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-singleton</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-singleton</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1520,8 +1606,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-web-infinispan</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-web-infinispan</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1531,8 +1617,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-clustering-web-spi</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-clustering-web-spi</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1542,8 +1628,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-config-assembly</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-cmp</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1553,8 +1639,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-configadmin</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-config-assembly</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1564,8 +1650,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-connector</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-connector</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1575,8 +1661,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-console</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-console</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1585,8 +1671,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-controller</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-controller</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1596,8 +1682,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-controller-client</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-controller-client</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1607,8 +1693,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-deployment-repository</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-deployment-repository</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1618,8 +1704,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-deployment-scanner</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-deployment-scanner</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1629,8 +1715,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-domain-http-error-context</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-domain-http-error-context</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1640,8 +1726,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-domain-http-interface</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-domain-http-interface</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1651,8 +1737,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-domain-management</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-domain-management</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1662,8 +1748,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-ee</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-ee</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1673,8 +1759,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-ejb-client-bom</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-ejb-client-bom</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1684,8 +1770,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-ejb3</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-ejb3</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1695,8 +1781,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-embedded</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-embedded</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1706,8 +1792,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-host-controller</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-host-controller</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1717,8 +1803,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jacorb</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jacorb</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1728,8 +1814,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jaxrs</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jaxr</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1739,8 +1825,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jdr</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jaxrs</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1750,8 +1836,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jms-client-bom</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jdr</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1761,8 +1847,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jmx</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jms-client-bom</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1772,8 +1858,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jpa</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jmx</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1783,8 +1869,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jpa-hibernate3</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jpa</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1794,8 +1880,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jpa-hibernate4</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jpa-hibernate3</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1805,8 +1891,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jpa-openjpa</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jpa-hibernate4</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1816,8 +1902,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jpa-spi</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jpa-openjpa</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1827,8 +1913,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jpa-util</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jpa-spi</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1838,8 +1924,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-jsr77</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jpa-util</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1849,8 +1935,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-logging</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-jsr77</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1860,8 +1946,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-mail</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-logging</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1871,8 +1957,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-management-client-content</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-mail</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1882,8 +1968,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-messaging</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-management-client-content</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1893,8 +1979,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-modcluster</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-messaging</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1904,8 +1990,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-naming</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-modcluster</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1915,8 +2001,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-network</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-naming</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1926,8 +2012,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-osgi-configadmin</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-network</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1937,8 +2023,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-osgi-service</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-platform-mbean</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1948,8 +2034,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-platform-mbean</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-pojo</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1959,8 +2045,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-pojo</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-process-controller</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1970,8 +2056,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-process-controller</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-protocol</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1981,8 +2067,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-protocol</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-remoting</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -1992,8 +2078,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-remoting</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-sar</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2003,8 +2089,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-sar</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-security</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2014,8 +2100,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-security</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-server</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2025,8 +2111,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-server</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-sos</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2036,8 +2122,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-sos</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-threads</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2047,8 +2133,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-threads</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-transactions</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2058,8 +2144,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-transactions</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-web</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2069,8 +2155,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-web</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-webservices-server-integration</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2080,8 +2166,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-webservices-server-integration</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-weld</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2091,8 +2177,8 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-weld</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-xts</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -2102,23 +2188,13 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jboss-as-xts</artifactId>
+      <groupId>org.wildfly</groupId>
+      <artifactId>wildfly-rts</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
           <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
           <distribution>repo</distribution>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.as</groupId>
-      <artifactId>jbossweb-native</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
         </license>
       </licenses>
     </dependency>
@@ -2406,16 +2482,6 @@
     </dependency>
     <dependency>
       <groupId>org.jboss.mod_cluster</groupId>
-      <artifactId>mod_cluster-container-jbossweb</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.mod_cluster</groupId>
       <artifactId>mod_cluster-container-spi</artifactId>
       <licenses>
         <license>
@@ -2455,127 +2521,7 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.netty</groupId>
-      <artifactId>netty</artifactId>
-      <licenses>
-        <license>
-          <name>Apache Software License, Version 2.0</name>
-          <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.deployment</groupId>
-      <artifactId>jbosgi-deployment</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.framework</groupId>
-      <artifactId>jbosgi-framework-core</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.logging</groupId>
-      <artifactId>jboss-osgi-logging</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.com/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.metadata</groupId>
-      <artifactId>jbosgi-metadata</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.com/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.repository</groupId>
-      <artifactId>jbosgi-repository-api</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.com/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.repository</groupId>
-      <artifactId>jbosgi-repository-core</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.com/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.resolver</groupId>
-      <artifactId>jbosgi-resolver-api</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.resolver</groupId>
-      <artifactId>jbosgi-resolver-felix</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.spi</groupId>
-      <artifactId>jbosgi-spi</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.vfs</groupId>
-      <artifactId>jbosgi-vfs</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.osgi.vfs</groupId>
-      <artifactId>jbosgi-vfs30</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.jboss.remoting3</groupId>
+      <groupId>org.jboss.remoting</groupId>
       <artifactId>jboss-remoting</artifactId>
       <licenses>
         <license>
@@ -2586,7 +2532,7 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.remoting3</groupId>
+      <groupId>org.jboss.remotejmx</groupId>
       <artifactId>remoting-jmx</artifactId>
       <licenses>
         <license>
@@ -2836,6 +2782,16 @@
       </licenses>
     </dependency>
     <dependency>
+        <groupId>org.jboss.spec.javax.batch</groupId>
+        <artifactId>jboss-batch-api_1.0_spec</artifactId>
+        <licenses>
+            <license>
+                <name>Apache Software License, Version 2.0</name>
+                <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+            </license>
+        </licenses>
+    </dependency>
+    <dependency>
       <groupId>org.jboss.spec.javax.ejb</groupId>
       <artifactId>jboss-ejb-api_3.2_spec</artifactId>
       <licenses>
@@ -2877,7 +2833,7 @@
     </dependency>
     <dependency>
       <groupId>org.jboss.spec.javax.jms</groupId>
-      <artifactId>jboss-jms-api_1.1_spec</artifactId>
+      <artifactId>jboss-jms-api_2.0_spec</artifactId>
       <licenses>
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
@@ -3066,16 +3022,6 @@
       </licenses>
     </dependency>
     <dependency>
-      <groupId>org.jboss.web</groupId>
-      <artifactId>jbossweb</artifactId>
-      <licenses>
-        <license>
-          <name>GNU Lesser General Public License, Version 2.1</name>
-          <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
       <groupId>org.jboss.weld</groupId>
       <artifactId>weld-api</artifactId>
       <licenses>
@@ -3088,7 +3034,18 @@
     </dependency>
     <dependency>
       <groupId>org.jboss.weld</groupId>
-      <artifactId>weld-core</artifactId>
+      <artifactId>weld-core-impl</artifactId>
+      <licenses>
+        <license>
+          <name>Apache Software License, Version 2.0</name>
+          <url>http://repository.jboss.org/licenses/apache-2.0.txt</url>
+          <distribution>repo</distribution>
+        </license>
+      </licenses>
+    </dependency>
+    <dependency>
+      <groupId>org.jboss.weld</groupId>
+      <artifactId>weld-core-jsf</artifactId>
       <licenses>
         <license>
           <name>Apache Software License, Version 2.0</name>
@@ -3266,16 +3223,6 @@
         <license>
           <name>GNU Lesser General Public License, Version 2.1</name>
           <url>http://repository.jboss.org/licenses/lgpl-2.1.txt</url>
-        </license>
-      </licenses>
-    </dependency>
-    <dependency>
-      <groupId>org.osgi</groupId>
-      <artifactId>org.osgi.compendium</artifactId>
-      <licenses>
-        <license>
-          <name>OSGi Specification License, Version 1.0</name>
-          <url>http://repository.jboss.org/licenses/osgi-1.0.txt</url>
         </license>
       </licenses>
     </dependency>

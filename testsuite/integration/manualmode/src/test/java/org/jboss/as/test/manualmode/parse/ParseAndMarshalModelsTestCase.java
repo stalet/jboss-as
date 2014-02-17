@@ -22,7 +22,6 @@
 package org.jboss.as.test.manualmode.parse;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MASTER;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
@@ -65,40 +64,34 @@ import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProcessType;
-import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.ResourceBuilder;
+import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.RunningModeControl;
 import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
+import org.jboss.as.controller.access.management.DelegatingConfigurableAuthorizer;
+import org.jboss.as.controller.audit.AuditLogger;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.NonResolvingResourceDescriptionResolver;
-import org.jboss.as.controller.descriptions.common.CoreManagementDefinition;
 import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.operations.common.NamespaceAddHandler;
 import org.jboss.as.controller.operations.common.SchemaLocationAddHandler;
 import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.controller.operations.common.XmlMarshallingHandler;
-import org.jboss.as.controller.operations.global.WriteAttributeHandlers;
 import org.jboss.as.controller.parsing.Namespace;
-import org.jboss.as.controller.persistence.ExtensibleConfigurationPersister;
 import org.jboss.as.controller.persistence.NullConfigurationPersister;
 import org.jboss.as.controller.persistence.XmlConfigurationPersister;
-import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.resource.InterfaceDefinition;
 import org.jboss.as.controller.services.path.PathManagerService;
 import org.jboss.as.controller.services.path.PathResourceDefinition;
-import org.jboss.as.controller.transform.Transformers;
-import org.jboss.as.domain.controller.DomainController;
 import org.jboss.as.domain.controller.LocalHostControllerInfo;
-import org.jboss.as.domain.controller.SlaveRegistrationException;
 import org.jboss.as.domain.controller.resources.DomainRootDefinition;
-import org.jboss.as.domain.management.connections.ldap.LdapConnectionResourceDefinition;
-import org.jboss.as.domain.management.security.SecurityRealmResourceDefinition;
+import org.jboss.as.domain.management.CoreManagementResourceDefinition;
+import org.jboss.as.domain.management.audit.EnvironmentNameReader;
 import org.jboss.as.host.controller.discovery.DiscoveryOption;
-import org.jboss.as.host.controller.ignored.IgnoredDomainResourceRegistry;
-import org.jboss.as.host.controller.mgmt.DomainControllerRuntimeIgnoreTransformationEntry;
+import org.jboss.as.host.controller.model.host.HostResourceDefinition;
 import org.jboss.as.host.controller.model.jvm.JvmResourceDefinition;
 import org.jboss.as.host.controller.operations.HostSpecifiedInterfaceAddHandler;
 import org.jboss.as.host.controller.operations.HostSpecifiedInterfaceRemoveHandler;
@@ -111,11 +104,9 @@ import org.jboss.as.host.controller.parsing.HostXml;
 import org.jboss.as.host.controller.resources.HttpManagementResourceDefinition;
 import org.jboss.as.host.controller.resources.NativeManagementResourceDefinition;
 import org.jboss.as.host.controller.resources.ServerConfigResourceDefinition;
-import org.jboss.as.protocol.mgmt.ManagementChannelHandler;
 import org.jboss.as.repository.ContentRepository;
 import org.jboss.as.repository.HostFileRepository;
 import org.jboss.as.security.vault.RuntimeVaultReader;
-import org.jboss.as.server.RuntimeExpressionResolver;
 import org.jboss.as.server.controller.resources.ServerRootResourceDefinition;
 import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition;
 import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition.Location;
@@ -242,11 +233,6 @@ public class ParseAndMarshalModelsTestCase {
     }
 
     @Test
-    public void testStandaloneOSGiXml() throws Exception {
-        standaloneXmlTest(getGeneratedExampleConfigFile("standalone-osgi-only.xml"));
-    }
-
-    @Test
     public void testStandaloneXtsXml() throws Exception {
         standaloneXmlTest(getGeneratedExampleConfigFile("standalone-xts.xml"));
     }
@@ -262,46 +248,8 @@ public class ParseAndMarshalModelsTestCase {
     }
 
     @Test
-    public void test700StandaloneXml() throws Exception {
-        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-0.xml"));
-        validateJsfSubsystem(model);
-    }
-
-    @Test
-    public void test701StandaloneXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-1.xml"));
-    }
-
-    @Test
-    public void test702StandaloneXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-2.xml"));
-    }
-
-    @Test
-    public void test700StandaloneHAXml() throws Exception {
-        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-0-ha.xml"));
-        validateJsfSubsystem(model);
-    }
-
-    @Test
-    public void test701StandaloneHAXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-1-ha.xml"));
-    }
-
-    @Test
-    public void test702StandaloneHAXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-2-ha.xml"));
-    }
-
-
-    @Test
-    public void test701StandaloneXtsXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-1-xts.xml"));
-    }
-
-    @Test
-    public void test702StandaloneXtsXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-2-xts.xml"));
+    public void testStandaloneGenericJMSXml() throws Exception {
+        standaloneXmlTest(getGeneratedExampleConfigFile("standalone-genericjms.xml"));
     }
 
     @Test
@@ -332,11 +280,6 @@ public class ParseAndMarshalModelsTestCase {
     @Test
     public void test710StandaloneMinimalisticXml() throws Exception {
         standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-0-minimalistic.xml"));
-    }
-
-    @Test
-    public void test710StandaloneOsgiOnlyXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-0-osgi-only.xml"));
     }
 
     @Test
@@ -372,11 +315,6 @@ public class ParseAndMarshalModelsTestCase {
     @Test
     public void test711StandaloneMinimalisticXml() throws Exception {
         standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-1-minimalistic.xml"));
-    }
-
-    @Test
-    public void test711StandaloneOsgiOnlyXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-1-osgi-only.xml"));
     }
 
     @Test
@@ -418,11 +356,6 @@ public class ParseAndMarshalModelsTestCase {
     }
 
     @Test
-    public void test712StandaloneOsgiOnlyXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-2-osgi-only.xml"));
-    }
-
-    @Test
     public void test712StandaloneXtsXml() throws Exception {
         standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-2-xts.xml"));
     }
@@ -461,13 +394,72 @@ public class ParseAndMarshalModelsTestCase {
     }
 
     @Test
-    public void test713StandaloneOsgiOnlyXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-osgi-only.xml"));
+    public void test713StandaloneXtsXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-xts.xml"));
     }
 
     @Test
-    public void test713StandaloneXtsXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-xts.xml"));
+    public void test720StandaloneFullHaXml() throws Exception {
+        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "7-2-0-full-ha.xml"));
+        validateJsfSubsystem(model);
+    }
+
+    @Test
+    public void test720StandaloneFullXml() throws Exception {
+        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "7-2-0-full.xml"));
+        validateJsfSubsystem(model);
+    }
+
+    @Test
+    public void test720StandaloneHornetQCollocatedXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-2-0-hornetq-colocated.xml"));
+    }
+
+    @Test
+    public void test720StandaloneJtsXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-2-0-jts.xml"));
+    }
+
+    @Test
+    public void test720StandaloneMinimalisticXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-2-0-minimalistic.xml"));
+    }
+
+    @Test
+    public void test720StandaloneXtsXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-2-0-xts.xml"));
+    }
+
+    @Test
+    public void testEAP620StandaloneFullHaXml() throws Exception {
+        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "eap-6-2-0-full-ha.xml"));
+        validateJsfSubsystem(model);
+    }
+
+    @Test
+    public void testEAP620StandaloneFullXml() throws Exception {
+        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "eap-6-2-0-full.xml"));
+        validateJsfSubsystem(model);
+    }
+
+    @Test
+    public void testEAP620StandaloneHornetQCollocatedXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "eap-6-2-0-hornetq-colocated.xml"));
+    }
+
+    @Test
+    public void testEAP620StandaloneJtsXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "eap-6-2-0-jts.xml"));
+    }
+
+    @Test
+    public void testEAP620StandaloneMinimalisticXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "eap-6-2-0-minimalistic.xml"));
+    }
+
+    @Test
+    public void testEAP620StandaloneXtsXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "eap-6-2-0-xts.xml"));
     }
 
     private ModelNode standaloneXmlTest(File original) throws Exception {
@@ -481,9 +473,6 @@ public class ParseAndMarshalModelsTestCase {
 
         ModelNode reparsedModel = loadServerModel(file);
 
-        fixupOSGiStandalone(originalModel);
-        fixupOSGiStandalone(reparsedModel);
-
         compare(originalModel, reparsedModel);
 
         return reparsedModel;
@@ -492,21 +481,6 @@ public class ParseAndMarshalModelsTestCase {
     @Test
     public void testHostXml() throws Exception {
         hostXmlTest(getOriginalHostXml("host.xml"));
-    }
-
-    @Test
-    public void test700HostXml() throws Exception {
-        hostXmlTest(getLegacyConfigFile("host", "7-0-0.xml"));
-    }
-
-    @Test
-    public void test701HostXml() throws Exception {
-        hostXmlTest(getLegacyConfigFile("host", "7-0-1.xml"));
-    }
-
-    @Test
-    public void test702HostXml() throws Exception {
-        hostXmlTest(getLegacyConfigFile("host", "7-0-2.xml"));
     }
 
     @Test
@@ -529,6 +503,16 @@ public class ParseAndMarshalModelsTestCase {
         hostXmlTest(getLegacyConfigFile("host", "7-1-3.xml"));
     }
 
+    @Test
+    public void test720HostXml() throws Exception {
+        hostXmlTest(getLegacyConfigFile("host", "7-2-0.xml"));
+    }
+
+    @Test
+    public void testEAP620HostXml() throws Exception {
+        hostXmlTest(getLegacyConfigFile("host", "eap-6-2-0.xml"));
+    }
+
     private void hostXmlTest(final File original) throws Exception {
         File file = new File("target/host-copy.xml");
         if (file.exists()) {
@@ -541,39 +525,10 @@ public class ParseAndMarshalModelsTestCase {
         compare(originalModel, reparsedModel);
     }
 
-    //TODO Leave commented out until domain-osgi-only.xml and domain-jts.xml are definitely removed from the configuration
-//    @Test @TargetsContainer("class-jbossas")
-//    public void testDomainOSGiOnlyXml() throws Exception {
-//        domainXmlTest(getExampleConfigFile("domain-osgi-only.xml"));
-//    }
-//
-//    @Test @TargetsContainer("class-jbossas")
-//    public void testDomainJtsXml() throws Exception {
-//        domainXmlTest(getExampleConfigFile("domain-jts.xml"));
-//    }
-
     @Test
     @TargetsContainer("class-jbossas")
     public void testDomainXml() throws Exception {
         domainXmlTest(getOriginalDomainXml("domain.xml"));
-    }
-
-    @Test
-    @TargetsContainer("class-jbossas")
-    public void test700DomainXml() throws Exception {
-        domainXmlTest(getLegacyConfigFile("domain", "7-0-0.xml"));
-    }
-
-    @Test
-    @TargetsContainer("class-jbossas")
-    public void test701DomainXml() throws Exception {
-        domainXmlTest(getLegacyConfigFile("domain", "7-0-1.xml"));
-    }
-
-    @Test
-    @TargetsContainer("class-jbossas")
-    public void test702DomainXml() throws Exception {
-        domainXmlTest(getLegacyConfigFile("domain", "7-0-2.xml"));
     }
 
     @Test
@@ -603,6 +558,20 @@ public class ParseAndMarshalModelsTestCase {
         validateJsfProfiles(model);
     }
 
+    @Test
+    @TargetsContainer("class-jbossas")
+    public void test720DomainXml() throws Exception {
+        ModelNode model = domainXmlTest(getLegacyConfigFile("domain", "7-2-0.xml"));
+        validateJsfProfiles(model);
+    }
+
+    @Test
+    @TargetsContainer("class-jbossas")
+    public void testEAP620DomainXml() throws Exception {
+        ModelNode model = domainXmlTest(getLegacyConfigFile("domain", "eap-6-2-0.xml"));
+        validateJsfProfiles(model);
+    }
+
 
     private ModelNode domainXmlTest(File original) throws Exception {
         File file = new File("target/domain-copy.xml");
@@ -613,43 +582,9 @@ public class ParseAndMarshalModelsTestCase {
         ModelNode originalModel = loadDomainModel(file);
         ModelNode reparsedModel = loadDomainModel(file);
 
-        fixupOSGiDomain(originalModel);
-        fixupOSGiDomain(reparsedModel);
         compare(originalModel, reparsedModel);
 
         return reparsedModel;
-    }
-
-    private static void fixupOSGiStandalone(ModelNode node) {
-        //These multiline properties get extra indentation when marshalled. Put them on one line to compare properly
-        node.get("subsystem", "osgi", "property", "org.jboss.osgi.system.modules").set(convertToSingleLine(node.get("subsystem", "osgi", "framework-property", "org.jboss.osgi.system.modules").asString()));
-        node.get("subsystem", "osgi", "property", "org.osgi.framework.system.packages.extra").set(convertToSingleLine(node.get("subsystem", "osgi", "framework-property", "org.osgi.framework.system.packages.extra").asString()));
-    }
-
-    private static void fixupOSGiDomain(ModelNode node) {
-        //These multiline properties get extra indentation when marshalled. Put them on one line to compare properly
-        node.get("profile", "default", "subsystem", "osgi", "property", "org.jboss.osgi.system.modules").set(convertToSingleLine(node.get("profile", "default", "subsystem", "osgi", "framework-property", "org.jboss.osgi.system.modules").asString()));
-        node.get("profile", "default", "subsystem", "osgi", "property", "org.osgi.framework.system.packages.extra").set(convertToSingleLine(node.get("profile", "default", "subsystem", "osgi", "framework-property", "org.osgi.framework.system.packages.extra").asString()));
-
-        node.get("profile", "ha", "subsystem", "osgi", "property", "org.jboss.osgi.system.modules").set(convertToSingleLine(node.get("profile", "ha", "subsystem", "osgi", "framework-property", "org.jboss.osgi.system.modules").asString()));
-        node.get("profile", "ha", "subsystem", "osgi", "property", "org.osgi.framework.system.packages.extra").set(convertToSingleLine(node.get("profile", "ha", "subsystem", "osgi", "framework-property", "org.osgi.framework.system.packages.extra").asString()));
-    }
-
-    private static String convertToSingleLine(String value) {
-        //Reformat the string so it works better in ParseAndMarshalModelsTestCase
-        String[] values = value.split(",");
-        StringBuilder formattedValue = new StringBuilder();
-        boolean first = true;
-        for (String val : values) {
-            val = val.trim();
-            if (!first) {
-                formattedValue.append(", ");
-            } else {
-                first = false;
-            }
-            formattedValue.append(val);
-        }
-        return formattedValue.toString();
     }
 
     private void compare(ModelNode node1, ModelNode node2) {
@@ -699,11 +634,11 @@ public class ParseAndMarshalModelsTestCase {
 
     private static void validateJsfSubsystem(ModelNode model) {
         Assert.assertTrue(model.hasDefined(SUBSYSTEM));
-        Assert.assertTrue(model.get(SUBSYSTEM).hasDefined("jsf"));
+        //Assert.assertTrue(model.get(SUBSYSTEM).hasDefined("jsf")); //we cannot check for it as web subsystem is not present to add jsf one
     }
 
     private ModelNode loadServerModel(final File file) throws Exception {
-        final ExtensionRegistry extensionRegistry = new ExtensionRegistry(ProcessType.STANDALONE_SERVER, new RunningModeControl(RunningMode.ADMIN_ONLY));
+        final ExtensionRegistry extensionRegistry = new ExtensionRegistry(ProcessType.STANDALONE_SERVER, new RunningModeControl(RunningMode.ADMIN_ONLY), null, null);
         final QName rootElement = new QName(Namespace.CURRENT.getUriString(), "server");
         final StandaloneXml parser = new StandaloneXml(Module.getBootModuleLoader(), null, extensionRegistry);
         final XmlConfigurationPersister persister = new XmlConfigurationPersister(file, rootElement, parser, parser);
@@ -717,8 +652,9 @@ public class ParseAndMarshalModelsTestCase {
 
         final ModelNode model = new ModelNode();
         final ModelController controller = createController(ProcessType.STANDALONE_SERVER, model, new Setup() {
-            public void setup(Resource resource, ManagementResourceRegistration rootRegistration) {
-                ServerRootResourceDefinition def = new ServerRootResourceDefinition(new MockContentRepository(), persister, null, null, null, null, extensionRegistry, false, MOCK_PATH_MANAGER, null);
+            @Override
+            public void setup(Resource resource, ManagementResourceRegistration rootRegistration, DelegatingConfigurableAuthorizer authorizer) {
+                ServerRootResourceDefinition def = new ServerRootResourceDefinition(new MockContentRepository(), persister, null, null, null, null, extensionRegistry, false, MOCK_PATH_MANAGER, null, authorizer, AuditLogger.NO_OP_LOGGER);
                 def.registerAttributes(rootRegistration);
                 def.registerOperations(rootRegistration);
                 def.registerChildren(rootRegistration);
@@ -753,7 +689,7 @@ public class ParseAndMarshalModelsTestCase {
         final ModelNode model = new ModelNode();
 
         final ModelController controller = createController(ProcessType.HOST_CONTROLLER, model, new Setup() {
-            public void setup(Resource resource, ManagementResourceRegistration root) {
+            public void setup(Resource resource, ManagementResourceRegistration root, DelegatingConfigurableAuthorizer authorizer) {
 
                 final Resource host = Resource.Factory.create();
                 resource.registerChild(PathElement.pathElement(HOST, "master"), host);
@@ -774,8 +710,7 @@ public class ParseAndMarshalModelsTestCase {
                 hostRegistration.registerOperationHandler(XmlMarshallingHandler.DEFINITION, xmh);
                 hostRegistration.registerOperationHandler(NamespaceAddHandler.DEFINITION, NamespaceAddHandler.INSTANCE);
                 hostRegistration.registerOperationHandler(SchemaLocationAddHandler.DEFINITION, SchemaLocationAddHandler.INSTANCE);
-                hostRegistration.registerReadWriteAttribute(NAME, null, new WriteAttributeHandlers.StringLengthValidatingHandler(1), AttributeAccess.Storage.CONFIGURATION);
-                hostRegistration.registerReadOnlyAttribute(MASTER, IsMasterHandler.INSTANCE, AttributeAccess.Storage.RUNTIME);
+                hostRegistration.registerReadOnlyAttribute(HostResourceDefinition.MASTER, IsMasterHandler.INSTANCE);
 
                 // System Properties
                 ManagementResourceRegistration sysProps = hostRegistration.registerSubModel(SystemPropertyResourceDefinition.createForDomainOrHost(Location.HOST));
@@ -784,11 +719,32 @@ public class ParseAndMarshalModelsTestCase {
                 hostRegistration.registerSubModel(new VaultResourceDefinition(new MockVaultReader()));
 
                 // Central Management
-                ManagementResourceRegistration management = hostRegistration.registerSubModel(CoreManagementDefinition.INSTANCE);
-                management.registerSubModel(SecurityRealmResourceDefinition.INSTANCE);
-                management.registerSubModel(LdapConnectionResourceDefinition.INSTANCE);
-                management.registerSubModel(new NativeManagementResourceDefinition(hostControllerInfo));
-                management.registerSubModel(new HttpManagementResourceDefinition(hostControllerInfo, null));
+                ResourceDefinition nativeDef = new NativeManagementResourceDefinition(hostControllerInfo);
+                ResourceDefinition httpDef = new HttpManagementResourceDefinition(hostControllerInfo, null);
+
+                ResourceDefinition core = CoreManagementResourceDefinition.forHost(authorizer, AuditLogger.NO_OP_LOGGER, MOCK_PATH_MANAGER, new EnvironmentNameReader() {
+
+                    @Override
+                    public boolean isServer() {
+                        return false;
+                    }
+
+                    @Override
+                    public String getServerName() {
+                        return null;
+                    }
+
+                    @Override
+                    public String getProductName() {
+                        return null;
+                    }
+
+                    @Override
+                    public String getHostName() {
+                        return null;
+                    }
+                }, nativeDef, httpDef);
+                hostRegistration.registerSubModel(core);
 
                 // Domain controller
                 LocalDomainControllerAddHandler localDcAddHandler = new MockLocalDomainControllerAddHandler();
@@ -831,7 +787,7 @@ public class ParseAndMarshalModelsTestCase {
     }
 
     private ModelNode loadDomainModel(File file) throws Exception {
-        final ExtensionRegistry extensionRegistry = new ExtensionRegistry(ProcessType.HOST_CONTROLLER, new RunningModeControl(RunningMode.NORMAL));
+        final ExtensionRegistry extensionRegistry = new ExtensionRegistry(ProcessType.HOST_CONTROLLER, new RunningModeControl(RunningMode.NORMAL), null, null);
         final QName rootElement = new QName(Namespace.CURRENT.getUriString(), "domain");
         final DomainXml parser = new DomainXml(Module.getBootModuleLoader(), null, extensionRegistry);
         final XmlConfigurationPersister persister = new XmlConfigurationPersister(file, rootElement, parser, parser);
@@ -846,8 +802,8 @@ public class ParseAndMarshalModelsTestCase {
 
         final ModelNode model = new ModelNode();
         final ModelController controller = createController(ProcessType.HOST_CONTROLLER, model, new Setup() {
-            public void setup(Resource resource, ManagementResourceRegistration rootRegistration) {
-                DomainRootDefinition def = new DomainRootDefinition(null, null, persister, new MockContentRepository(), new MockFileRepository(), true, null, extensionRegistry, null, MOCK_PATH_MANAGER, null);
+            public void setup(Resource resource, ManagementResourceRegistration rootRegistration, DelegatingConfigurableAuthorizer authorizer) {
+                DomainRootDefinition def = new DomainRootDefinition(null, null, persister, new MockContentRepository(), new MockFileRepository(), true, null, extensionRegistry, null, MOCK_PATH_MANAGER, null, authorizer);
                 def.initialize(rootRegistration);
             }
         });
@@ -974,7 +930,7 @@ public class ParseAndMarshalModelsTestCase {
     }
 
     interface Setup {
-        void setup(Resource resource, ManagementResourceRegistration rootRegistration);
+        void setup(Resource resource, ManagementResourceRegistration rootRegistration, DelegatingConfigurableAuthorizer authorizer);
     }
 
     class ModelControllerService extends AbstractControllerService {
@@ -985,7 +941,7 @@ public class ParseAndMarshalModelsTestCase {
 
         ModelControllerService(final ProcessType processType, final Setup registration, final ModelNode model) {
             super(processType, new RunningModeControl(RunningMode.ADMIN_ONLY), new NullConfigurationPersister(), new ControlledProcessState(true),
-                    ResourceBuilder.Factory.create(PathElement.pathElement("root"), new NonResolvingResourceDescriptionResolver()).build(), null, ExpressionResolver.TEST_RESOLVER);
+                    ResourceBuilder.Factory.create(PathElement.pathElement("root"), new NonResolvingResourceDescriptionResolver()).build(), null, ExpressionResolver.TEST_RESOLVER, AuditLogger.NO_OP_LOGGER, new DelegatingConfigurableAuthorizer());
             this.model = model;
             this.registration = registration;
         }
@@ -1003,7 +959,7 @@ public class ParseAndMarshalModelsTestCase {
         }
 
         protected void initModel(Resource rootResource, ManagementResourceRegistration rootRegistration) {
-            registration.setup(rootResource, rootRegistration);
+            registration.setup(rootResource, rootRegistration, authorizer);
 
             rootRegistration.registerOperationHandler(new SimpleOperationDefinitionBuilder("capture-model", new NonResolvingResourceDescriptionResolver()).build()
                     , new OperationStepHandler() {
@@ -1075,82 +1031,6 @@ public class ParseAndMarshalModelsTestCase {
 
         @Override
         public void deleteDeployment(byte[] deploymentHash) {
-        }
-    }
-
-    private static class MockDomainController implements DomainController {
-
-        @Override
-        public RunningMode getCurrentRunningMode() {
-            return RunningMode.ADMIN_ONLY;
-        }
-
-        public LocalHostControllerInfo getLocalHostInfo() {
-            return null;
-        }
-
-        public void registerRemoteHost(final String hostName, final ManagementChannelHandler handler, final Transformers transformers, Long remoteConnectionId, DomainControllerRuntimeIgnoreTransformationEntry runtimeIgnoreTransformation) throws SlaveRegistrationException {
-        }
-
-        public boolean isHostRegistered(String id) {
-            return false;
-        }
-
-        public void unregisterRemoteHost(String id, Long remoteConnectionId) {
-        }
-
-        @Override
-        public void pingRemoteHost(String hostName) {
-        }
-
-        public void registerRunningServer(ProxyController serverControllerClient) {
-        }
-
-        public void unregisterRunningServer(String serverName) {
-        }
-
-        public ModelNode getProfileOperations(String profileName) {
-            return null;
-        }
-
-        public HostFileRepository getLocalFileRepository() {
-            return null;
-        }
-
-        public HostFileRepository getRemoteFileRepository() {
-            return null;
-        }
-
-        public void stopLocalHost() {
-        }
-
-        @Override
-        public void stopLocalHost(int exitCode) {
-            //
-        }
-
-        @Override
-        public ExtensionRegistry getExtensionRegistry() {
-            return null;
-        }
-
-        @Override
-        public ExpressionResolver getExpressionResolver() {
-            return new RuntimeExpressionResolver(new MockVaultReader());
-        }
-
-        @Override
-        public void initializeMasterDomainRegistry(ManagementResourceRegistration root,
-                                                   ExtensibleConfigurationPersister configurationPersister, ContentRepository contentRepository,
-                                                   HostFileRepository fileRepository, ExtensionRegistry extensionRegistry, PathManagerService pathManager) {
-        }
-
-        @Override
-        public void initializeSlaveDomainRegistry(ManagementResourceRegistration root,
-                                                  ExtensibleConfigurationPersister configurationPersister, ContentRepository contentRepository,
-                                                  HostFileRepository fileRepository, LocalHostControllerInfo hostControllerInfo,
-                                                  ExtensionRegistry extensionRegistry, IgnoredDomainResourceRegistry ignoredDomainResourceRegistry,
-                                                  PathManagerService pathManager) {
         }
     }
 

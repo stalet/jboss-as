@@ -29,15 +29,12 @@ import java.util.Set;
 
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.arquillian.api.ServerSetup;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.connector.util.ConnectorServices;
-import org.jboss.as.test.integration.jca.JcaMgmtBase;
-import org.jboss.as.test.integration.jca.JcaMgmtServerSetupTask;
 import org.jboss.as.test.integration.jca.beanvalidation.NegativeValidationTestCase;
 import org.jboss.as.test.integration.jca.beanvalidation.ra.ValidConnectionFactory;
-import org.jboss.as.test.integration.management.base.AbstractMgmtTestBase;
-import org.jboss.as.test.integration.management.util.MgmtOperationException;
 import org.jboss.dmr.ModelNode;
 import org.jboss.jca.core.spi.mdr.MetadataRepository;
 import org.jboss.jca.core.spi.rar.Endpoint;
@@ -50,12 +47,10 @@ import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.jboss.shrinkwrap.api.spec.ResourceAdapterArchive;
-import org.jboss.staxmapper.XMLElementReader;
-import org.jboss.staxmapper.XMLElementWriter;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import javax.inject.Inject;
 import javax.resource.spi.ActivationSpec;
 
 /**
@@ -65,13 +60,13 @@ import javax.resource.spi.ActivationSpec;
  *
  *         Tests for module deployment of resource adapter archive in
  *         uncompressed form with classes in flat form (under package structure)
- * 
- *         Structure of module is: 
- *         modulename 
+ *
+ *         Structure of module is:
+ *         modulename
  *         modulename/main
- *         modulename/main/module.xml 
+ *         modulename/main/module.xml
  *         modulename/main/META-INF
- *         modulename/main/META-INF/ra.xml 
+ *         modulename/main/META-INF/ra.xml
  *         modulename/main/module.jar
  */
 @RunWith(Arquillian.class)
@@ -79,7 +74,7 @@ import javax.resource.spi.ActivationSpec;
 public class InflowJarTestCase extends AbstractModuleDeploymentTestCase {
 
 	static class ModuleAcDeploymentTestCaseSetup extends
-			ModuleDeploymentTestCaseSetup {
+			AbstractModuleDeploymentTestCaseSetup {
 
 		@Override
 		public void doSetup(ManagementClient managementClient) throws Exception {
@@ -89,6 +84,11 @@ public class InflowJarTestCase extends AbstractModuleDeploymentTestCase {
 			setConfiguration("inflow.xml");
 
 		}
+
+        @Override
+        protected String getSlot() {
+            return InflowJarTestCase.class.getSimpleName().toLowerCase();
+        }
 	}
 
 	/**
@@ -97,18 +97,11 @@ public class InflowJarTestCase extends AbstractModuleDeploymentTestCase {
 	 * @return The deployment archive
 	 */
 	@Deployment
-	public static Archive<?> createDeployment() throws Exception {
-		JavaArchive ja = ShrinkWrap.create(JavaArchive.class, "multiple.jar");
-		ja.addClasses(MgmtOperationException.class,
-				XMLElementReader.class, XMLElementWriter.class,
-				AbstractModuleDeploymentTestCase.class,
-				ModuleDeploymentTestCaseSetup.class,JcaMgmtServerSetupTask.class, JcaMgmtBase.class);
-
-		ja.addPackages(false, AbstractMgmtTestBase.class.getPackage(), InflowFlatTestCase.class.getPackage());
-		String deploymentName = "inflow.rar";
+	public static Archive<?> createRarDeployment() throws Exception {
+		JavaArchive ja = createDeployment(false);
 
 		ResourceAdapterArchive raa = ShrinkWrap.create(
-				ResourceAdapterArchive.class, deploymentName);
+				ResourceAdapterArchive.class, "inflow.rar");
 		ja.addPackage(ValidConnectionFactory.class.getPackage());
 		raa.addAsLibrary(ja);
 		raa.addAsManifestResource(
@@ -122,8 +115,8 @@ public class InflowJarTestCase extends AbstractModuleDeploymentTestCase {
 		return raa;
 	}
 
-	@Inject
-	public ServiceContainer serviceContainer;
+    @ArquillianResource
+    ServiceContainer serviceContainer;
 
 	/**
 	 * Test configuration
@@ -182,7 +175,6 @@ public class InflowJarTestCase extends AbstractModuleDeploymentTestCase {
 		assertNotNull(piId);
 		assertNotNull(repository.getResourceAdapter(piId));
 	}
-
 
 	@Override
 	protected ModelNode getAddress() {

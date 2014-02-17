@@ -23,7 +23,7 @@ package org.jboss.as.cli.parsing.operation;
 
 import org.jboss.as.cli.CommandFormatException;
 import org.jboss.as.cli.parsing.CharacterHandler;
-import org.jboss.as.cli.parsing.DefaultParsingState;
+import org.jboss.as.cli.parsing.ExpressionBaseState;
 import org.jboss.as.cli.parsing.GlobalCharacterHandlers;
 import org.jboss.as.cli.parsing.ParsingContext;
 import org.jboss.as.cli.parsing.QuotesState;
@@ -33,7 +33,7 @@ import org.jboss.as.cli.parsing.WordCharacterHandler;
  *
  * @author Alexey Loubyansky
  */
-public class NodeState extends DefaultParsingState {
+public class NodeState extends ExpressionBaseState {
 
     public static final String ID = "NODE";
     public static final NodeState INSTANCE = new NodeState();

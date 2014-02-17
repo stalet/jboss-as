@@ -21,8 +21,19 @@
  */
 package org.jboss.as.test.integration.security.loginmodules;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.*;
-import static org.junit.Assert.*;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ALLOW_RESOURCE_SERVICE_RESTART;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.COMPOSITE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PORT;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ROLLBACK_ON_RUNTIME_FAILURE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING_GROUP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.STEPS;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -83,14 +94,14 @@ import org.picketbox.util.KeyStoreUtil;
 /**
  * A testcase for {@link org.jboss.as.security.remoting.RemotingLoginModule}. This test covers scenario, when an EJB clients use
  * certificate for authentication.
- * 
+ *
  * @author Josef Cacek
  */
 @RunWith(Arquillian.class)
 @ServerSetup({ RemotingLoginModuleTestCase.FilesSetup.class, //
-        RemotingLoginModuleTestCase.SecurityRealmsSetup.class, // 
-        RemotingLoginModuleTestCase.RemotingSetup.class, // 
-        RemotingLoginModuleTestCase.SecurityDomainsSetup.class // 
+        RemotingLoginModuleTestCase.SecurityRealmsSetup.class, //
+        RemotingLoginModuleTestCase.RemotingSetup.class, //
+        RemotingLoginModuleTestCase.SecurityDomainsSetup.class //
 })
 @RunAsClient
 public class RemotingLoginModuleTestCase {
@@ -130,7 +141,7 @@ public class RemotingLoginModuleTestCase {
 
     /**
      * Creates a deployment application for this test.
-     * 
+     *
      * @return
      * @throws IOException
      */
@@ -144,7 +155,7 @@ public class RemotingLoginModuleTestCase {
 
     /**
      * Tests that an authorized user has access to an EJB method.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -158,7 +169,7 @@ public class RemotingLoginModuleTestCase {
 
     /**
      * Tests if role check is done correctly for authenticated user.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -177,7 +188,7 @@ public class RemotingLoginModuleTestCase {
 
     /**
      * Tests if client access is denied for untrusted clients.
-     * 
+     *
      * @throws Exception
      */
     @Test
@@ -197,13 +208,13 @@ public class RemotingLoginModuleTestCase {
 
     /**
      * Configure {@link SSLContext} and create EJB client properties.
-     * 
+     *
      * @param clientName
      * @return
      * @throws Exception
      */
     private Properties configureEjbClient(String clientName) throws Exception {
-        // create new SSLContext based on client keystore and truststore and use this SSLContext instance as a default for this test            
+        // create new SSLContext based on client keystore and truststore and use this SSLContext instance as a default for this test
         KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
         keyManagerFactory.init(KeyStoreUtil.getKeyStore(getClientKeystoreFile(clientName), KEYSTORE_PASSWORD.toCharArray()),
                 KEYSTORE_PASSWORD.toCharArray());
@@ -231,7 +242,7 @@ public class RemotingLoginModuleTestCase {
 
     /**
      * Returns {@link File} instance representing keystore of client with given name.
-     * 
+     *
      * @param clientName
      * @return
      */
@@ -243,14 +254,14 @@ public class RemotingLoginModuleTestCase {
 
     /**
      * A {@link ServerSetupTask} instance which creates security domains for this test case.
-     * 
+     *
      * @author Josef Cacek
      */
     static class SecurityDomainsSetup extends AbstractSecurityDomainsServerSetupTask {
 
         /**
          * Returns SecurityDomains configuration for this testcase.
-         * 
+         *
          * @see org.jboss.as.test.integration.security.common.AbstractSecurityDomainsServerSetupTask#getSecurityDomains()
          */
         @Override
@@ -266,7 +277,7 @@ public class RemotingLoginModuleTestCase {
             //            <module-option name="rolesProperties" value="file:///${jboss.server.config.dir}/roles.properties"/>
             //        </login-module>
             //    </authentication>
-            //</security-domain>            
+            //</security-domain>
             final SecurityModule.Builder loginModuleBuilder = new SecurityModule.Builder().putOption("password-stacking",
                     "useFirstPass");
             final SecurityDomain sd = new SecurityDomain.Builder()
@@ -283,7 +294,7 @@ public class RemotingLoginModuleTestCase {
 
     /**
      * A {@link ServerSetupTask} instance which creates security realms for this test case.
-     * 
+     *
      * @author Josef Cacek
      */
     static class SecurityRealmsSetup extends AbstractSecurityRealmsServerSetupTask {

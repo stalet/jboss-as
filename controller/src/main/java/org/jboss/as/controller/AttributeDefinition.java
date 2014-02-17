@@ -22,6 +22,7 @@
 
 package org.jboss.as.controller;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
@@ -32,6 +33,8 @@ import java.util.Set;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.AccessConstraintDescriptionProviderUtil;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
@@ -70,6 +73,8 @@ public abstract class AttributeDefinition {
     protected final AttributeMarshaller attributeMarshaller;
     private final boolean resourceOnly;
     private final DeprecationData deprecationData;
+    private final List<AccessConstraintDefinition> accessConstraints;
+    private final Boolean nilSignificant;
 
 
     protected AttributeDefinition(String name, String xmlName, final ModelNode defaultValue, final ModelType type,
@@ -77,14 +82,36 @@ public abstract class AttributeDefinition {
                                final ParameterValidator validator, final String[] alternatives, final String[] requires,
                                final AttributeAccess.Flag... flags) {
         this(name, xmlName, defaultValue, type, allowNull, allowExpression, measurementUnit,
-                null, validator, true, alternatives, requires, null, false, null, flags);
+                null, validator, true, alternatives, requires, null, false, null, null, null, flags);
+    }
+
+    protected AttributeDefinition(String name, String xmlName, final ModelNode defaultValue, final ModelType type,
+            final boolean allowNull, final boolean allowExpression, final MeasurementUnit measurementUnit,
+            final ParameterCorrector valueCorrector, final ParameterValidator validator,
+            boolean validateNull, final String[] alternatives, final String[] requires, AttributeMarshaller attributeMarshaller,
+            boolean resourceOnly, DeprecationData deprecationData, final AttributeAccess.Flag... flags) {
+        this(name, xmlName, defaultValue, type, allowNull, allowExpression, measurementUnit, valueCorrector, validator,
+                validateNull, alternatives, requires, attributeMarshaller, resourceOnly, deprecationData,
+                null, null, flags);
     }
 
     protected AttributeDefinition(String name, String xmlName, final ModelNode defaultValue, final ModelType type,
                                   final boolean allowNull, final boolean allowExpression, final MeasurementUnit measurementUnit,
                                   final ParameterCorrector valueCorrector, final ParameterValidator validator,
                                   boolean validateNull, final String[] alternatives, final String[] requires, AttributeMarshaller attributeMarshaller,
-                                  boolean resourceOnly, DeprecationData deprecationData, final AttributeAccess.Flag... flags) {
+                                  boolean resourceOnly, DeprecationData deprecationData, final AccessConstraintDefinition[] accessConstraints,
+                                  final AttributeAccess.Flag... flags) {
+        this(name, xmlName, defaultValue, type, allowNull, allowExpression, measurementUnit, valueCorrector, validator,
+                validateNull, alternatives, requires, attributeMarshaller, resourceOnly, deprecationData,
+                accessConstraints, null, flags);
+    }
+
+    protected AttributeDefinition(String name, String xmlName, final ModelNode defaultValue, final ModelType type,
+                                  final boolean allowNull, final boolean allowExpression, final MeasurementUnit measurementUnit,
+                                  final ParameterCorrector valueCorrector, final ParameterValidator validator,
+                                  boolean validateNull, final String[] alternatives, final String[] requires, AttributeMarshaller attributeMarshaller,
+                                  boolean resourceOnly, DeprecationData deprecationData, final AccessConstraintDefinition[] accessConstraints,
+                                  Boolean nilSignificant, final AttributeAccess.Flag... flags) {
 
         this.name = name;
         this.xmlName = xmlName;
@@ -119,7 +146,13 @@ public abstract class AttributeDefinition {
             this.attributeMarshaller = new DefaultAttributeMarshaller();
         }
         this.resourceOnly = resourceOnly;
+        if (accessConstraints == null) {
+            this.accessConstraints = Collections.<AccessConstraintDefinition>emptyList();
+        } else {
+            this.accessConstraints = Collections.unmodifiableList(Arrays.asList(accessConstraints));
+        }
         this.deprecationData = deprecationData;
+        this.nilSignificant = nilSignificant;
     }
 
     public String getName() {
@@ -136,6 +169,13 @@ public abstract class AttributeDefinition {
 
     public boolean isAllowNull() {
         return allowNull;
+    }
+
+    public boolean isNullSignificant() {
+        if (nilSignificant != null) {
+            return nilSignificant;
+        }
+        return allowNull && defaultValue != null && defaultValue.isDefined();
     }
 
     public boolean isAllowExpression() {
@@ -231,7 +271,8 @@ public abstract class AttributeDefinition {
 
     /**
      * Finds a value in the given {@code model} whose key matches this attribute's {@link #getName() name},
-     * resolves it and validates it using this attribute's {@link #getValidator() validator}. If the value is
+     * uses the given {@code context} to {@link OperationContext#resolveExpressions(org.jboss.dmr.ModelNode) resolve}
+     * it and validates it using this attribute's {@link #getValidator() validator}. If the value is
      * undefined and a {@link #getDefaultValue() default value} is available, the default value is used.
      *
      * @param context the operation context
@@ -250,11 +291,62 @@ public abstract class AttributeDefinition {
         }, model);
     }
 
+    /**
+     * Finds a value in the given {@code model} whose key matches this attribute's {@link #getName() name},
+     * uses the given {@code resolver} to {@link ExpressionResolver#resolveExpressions(org.jboss.dmr.ModelNode)} resolve}
+     * it and validates it using this attribute's {@link #getValidator() validator}. If the value is
+     * undefined and a {@link #getDefaultValue() default value} is available, the default value is used.
+     *
+     * @param resolver the expression resolver
+     * @param model model node of type {@link ModelType#OBJECT}, typically representing a model resource
+     *
+     * @return the resolved value, possibly the default value if the model does not have a defined value matching
+     *              this attribute's name
+     * @throws OperationFailedException if the value is not valid
+     */
     public ModelNode resolveModelAttribute(final ExpressionResolver resolver, final ModelNode model) throws OperationFailedException {
         final ModelNode node = new ModelNode();
         if(model.has(name)) {
             node.set(model.get(name));
         }
+        return resolveValue(resolver, node);
+    }
+
+    /**
+     * Takes the given {@code value}, resolves it using the given {@code context}
+     * and validates it using this attribute's {@link #getValidator() validator}. If the value is
+     * undefined and a {@link #getDefaultValue() default value} is available, the default value is used.
+     *
+     * @param context the context to use to {@link OperationContext#resolveExpressions(org.jboss.dmr.ModelNode) resolve} the value
+     * @param value a node that is expected to be a valid value for an attribute defined by this definition
+     *
+     * @return the resolved value, possibly the default value if {@code value} is not defined
+     *
+     * @throws OperationFailedException if the value is not valid
+     */
+    public ModelNode resolveValue(final OperationContext context, final ModelNode value) throws OperationFailedException {
+        return resolveValue(new ExpressionResolver() {
+            @Override
+            public ModelNode resolveExpressions(ModelNode node) throws OperationFailedException {
+                return context.resolveExpressions(node);
+            }
+        }, value);
+    }
+
+    /**
+     * Takes the given {@code value}, resolves it using the given {@code resolver}
+     * and validates it using this attribute's {@link #getValidator() validator}. If the value is
+     * undefined and a {@link #getDefaultValue() default value} is available, the default value is used.
+     *
+     * @param resolver the expression resolver
+     * @param value a node that is expected to be a valid value for an attribute defined by this definition
+     *
+     * @return the resolved value, possibly the default value if {@code value} is not defined
+     *
+     * @throws OperationFailedException if the value is not valid
+     */
+    public ModelNode resolveValue(final ExpressionResolver resolver, final ModelNode value) throws OperationFailedException {
+        final ModelNode node = value.clone();
         if (!node.isDefined() && defaultValue.isDefined()) {
             node.set(defaultValue);
         }
@@ -333,6 +425,7 @@ public abstract class AttributeDefinition {
         if (deprecated != null) {
             deprecated.get(ModelDescriptionConstants.REASON).set(getAttributeDeprecatedDescription(bundle, prefix));
         }
+        addAccessConstraints(result, bundle.getLocale());
         return result;
     }
 
@@ -357,6 +450,7 @@ public abstract class AttributeDefinition {
         if (deprecated != null) {
             deprecated.get(ModelDescriptionConstants.REASON).set(resolver.getResourceAttributeDeprecatedDescription(getName(), locale, bundle));
         }
+        addAccessConstraints(result, locale);
         return result;
     }
 
@@ -438,6 +532,9 @@ public abstract class AttributeDefinition {
             result.get(ModelDescriptionConstants.REQUIRED).set(!isAllowNull());
         }
         result.get(ModelDescriptionConstants.NILLABLE).set(isAllowNull());
+        if (!forOperation && nilSignificant != null) {
+            result.get(ModelDescriptionConstants.NIL_SIGNIFICANT).set(nilSignificant);
+        }
         if (defaultValue != null && defaultValue.isDefined()) {
             result.get(ModelDescriptionConstants.DEFAULT).set(defaultValue);
         }
@@ -484,6 +581,7 @@ public abstract class AttributeDefinition {
             }
         }
         addAllowedValuesToDescription(result, validator);
+
         return result;
     }
 
@@ -614,5 +712,13 @@ public abstract class AttributeDefinition {
      */
     public DeprecationData getDeprecationData() {
         return deprecationData;
+    }
+
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return accessConstraints;
+    }
+
+    protected void addAccessConstraints(ModelNode result, Locale locale) {
+        AccessConstraintDescriptionProviderUtil.addAccessConstraints(result, accessConstraints, locale);
     }
 }

@@ -39,7 +39,6 @@ import javax.management.MBeanServer;
 import org.jboss.as.clustering.concurrent.ManagedExecutorService;
 import org.jboss.as.clustering.concurrent.ManagedScheduledExecutorService;
 import org.jboss.as.network.SocketBinding;
-import org.jboss.as.server.ServerEnvironment;
 import org.jgroups.Channel;
 import org.jgroups.ChannelListener;
 import org.jgroups.Global;
@@ -47,6 +46,9 @@ import org.jgroups.JChannel;
 import org.jgroups.conf.ProtocolStackConfigurator;
 import org.jgroups.jmx.JmxConfigurator;
 import org.jgroups.protocols.TP;
+import org.jgroups.protocols.relay.RELAY2;
+import org.jgroups.protocols.relay.config.RelayConfig;
+import org.jgroups.stack.Configurator;
 import org.jgroups.stack.Protocol;
 import org.jgroups.util.SocketFactory;
 
@@ -64,17 +66,12 @@ public class JChannelFactory implements ChannelFactory, ChannelListener, Protoco
     }
 
     @Override
-    public ServerEnvironment getServerEnvironment() {
-        return this.configuration.getEnvironment();
-    }
-
-    @Override
     public ProtocolStackConfiguration getProtocolStackConfiguration() {
         return this.configuration;
     }
 
     @Override
-    public Channel createChannel(String id) throws Exception {
+    public Channel createChannel(final String id) throws Exception {
         JChannel channel = new MuxChannel(this);
 
         // We need to synchronize on shared transport,
@@ -86,6 +83,44 @@ public class JChannelFactory implements ChannelFactory, ChannelListener, Protoco
             }
         } else {
             this.init(transport);
+        }
+
+        // Relay protocol is added to stack programmatically, not via ProtocolStackConfigurator
+        final RelayConfiguration relayConfig = this.configuration.getRelay();
+        if (relayConfig != null) {
+            final String localSite = relayConfig.getSiteName();
+            final List<RemoteSiteConfiguration> remoteSites = this.configuration.getRelay().getRemoteSites();
+            final List<String> sites = new ArrayList<String>(remoteSites.size() + 1);
+            sites.add(localSite);
+            // Collect bridges, eliminating duplicates
+            final Map<String, RelayConfig.BridgeConfig> bridges = new HashMap<String, RelayConfig.BridgeConfig>();
+            for (final RemoteSiteConfiguration remoteSite: remoteSites) {
+                final String siteName = remoteSite.getName();
+                sites.add(siteName);
+                final String cluster = remoteSite.getClusterName();
+                final String clusterName = (cluster != null) ? cluster : siteName;
+                final RelayConfig.BridgeConfig bridge = new RelayConfig.BridgeConfig(clusterName) {
+                    @Override
+                    public JChannel createChannel() throws Exception {
+                        return (JChannel) remoteSite.getChannelFactory().createChannel(id + "/" + clusterName);
+                    }
+                };
+                bridges.put(clusterName, bridge);
+            }
+            final RELAY2 relay = new RELAY2().site(localSite);
+            for (String site: sites) {
+                RelayConfig.SiteConfig siteConfig = new RelayConfig.SiteConfig(site);
+                relay.addSite(site, siteConfig);
+                if (site.equals(localSite)) {
+                    for (RelayConfig.BridgeConfig bridge: bridges.values()) {
+                        siteConfig.addBridge(bridge);
+                    }
+                }
+            }
+            Configurator.resolveAndAssignFields(relay, relayConfig.getProperties());
+            Configurator.resolveAndInvokePropertyMethods(relay, relayConfig.getProperties());
+            channel.getProtocolStack().addProtocol(relay);
+            relay.init();
         }
 
         channel.setName(this.configuration.getEnvironment().getNodeName() + "/" + id);
@@ -139,7 +174,7 @@ public class JChannelFactory implements ChannelFactory, ChannelListener, Protoco
         ScheduledExecutorService timerExecutor = transportConfig.getTimerExecutor();
         if (timerExecutor != null) {
             if (!(transport.getTimer() instanceof TimerSchedulerAdapter)) {
-                this.setValue(transport, "timer", new TimerSchedulerAdapter(new ManagedScheduledExecutorService(timerExecutor)));
+                setValue(transport, "timer", new TimerSchedulerAdapter(new ManagedScheduledExecutorService(timerExecutor)));
             }
         }
     }
@@ -170,16 +205,16 @@ public class JChannelFactory implements ChannelFactory, ChannelListener, Protoco
 
         SocketBinding binding = transport.getSocketBinding();
         if (binding != null) {
-            this.configureBindAddress(transport, config, binding);
-            this.configureServerSocket(transport, config, "bind_port", binding);
-            this.configureMulticastSocket(transport, config, "mcast_addr", "mcast_port", binding);
+            configureBindAddress(transport, config, binding);
+            configureServerSocket(transport, config, "bind_port", binding);
+            configureMulticastSocket(transport, config, "mcast_addr", "mcast_port", binding);
         }
 
         SocketBinding diagnosticsSocketBinding = transport.getDiagnosticsSocketBinding();
         boolean diagnostics = (diagnosticsSocketBinding != null);
         properties.put("enable_diagnostics", String.valueOf(diagnostics));
         if (diagnostics) {
-            this.configureMulticastSocket(transport, config, "diagnostics_addr", "diagnostics_port", diagnosticsSocketBinding);
+            configureMulticastSocket(transport, config, "diagnostics_addr", "diagnostics_port", diagnosticsSocketBinding);
         }
 
         configs.add(config);
@@ -190,60 +225,61 @@ public class JChannelFactory implements ChannelFactory, ChannelListener, Protoco
             config = this.createProtocol(protocol);
             binding = protocol.getSocketBinding();
             if (binding != null) {
-                this.configureBindAddress(protocol, config, binding);
-                this.configureServerSocket(protocol, config, "bind_port", binding);
-                this.configureServerSocket(protocol, config, "start_port", binding);
-                this.configureMulticastSocket(protocol, config, "mcast_addr", "mcast_port", binding);
+                configureBindAddress(protocol, config, binding);
+                configureServerSocket(protocol, config, "bind_port", binding);
+                configureServerSocket(protocol, config, "start_port", binding);
+                configureMulticastSocket(protocol, config, "mcast_addr", "mcast_port", binding);
             } else if (transport.getSocketBinding() != null) {
                 // If no socket-binding was specified, use bind address of transport
-                this.configureBindAddress(protocol, config, transport.getSocketBinding());
+                configureBindAddress(protocol, config, transport.getSocketBinding());
             }
             if (!supportsMulticast) {
-                this.setProperty(protocol, config, "use_mcast_xmit", String.valueOf(false));
+                setProperty(protocol, config, "use_mcast_xmit", String.valueOf(false));
             }
             configs.add(config);
         }
+/*
+        RelayConfiguration relay = this.configuration.getRelay();
+        if (relay != null) {
+            config = this.createProtocol(relay);
+            this.setProperty(relay, config, "site", relay.getSiteName());
+            configs.add(config);
+        }
+*/
         return configs;
     }
 
-    private void configureBindAddress(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, SocketBinding binding) {
-        this.setPropertyNoOverride(protocol, config, "bind_addr", binding.getSocketAddress().getAddress().getHostAddress());
+    private static void configureBindAddress(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, SocketBinding binding) {
+        setPropertyNoOverride(protocol, config, "bind_addr", binding.getSocketAddress().getAddress().getHostAddress());
     }
 
-    private void configureServerSocket(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, String property, SocketBinding binding) {
-        this.setPropertyNoOverride(protocol, config, property, String.valueOf(binding.getSocketAddress().getPort()));
+    private static void configureServerSocket(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, String property, SocketBinding binding) {
+        setPropertyNoOverride(protocol, config, property, String.valueOf(binding.getSocketAddress().getPort()));
     }
 
-    private void configureMulticastSocket(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, String addressProperty, String portProperty, SocketBinding binding) {
+    private static void configureMulticastSocket(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, String addressProperty, String portProperty, SocketBinding binding) {
         try {
             InetSocketAddress mcastSocketAddress = binding.getMulticastSocketAddress();
-            this.setPropertyNoOverride(protocol, config, addressProperty, mcastSocketAddress.getAddress().getHostAddress());
-            this.setPropertyNoOverride(protocol, config, portProperty, String.valueOf(mcastSocketAddress.getPort()));
+            setPropertyNoOverride(protocol, config, addressProperty, mcastSocketAddress.getAddress().getHostAddress());
+            setPropertyNoOverride(protocol, config, portProperty, String.valueOf(mcastSocketAddress.getPort()));
         } catch (IllegalStateException e) {
             ROOT_LOGGER.couldNotSetAddressAndPortNoMulticastSocket(e, config.getProtocolName(), addressProperty, config.getProtocolName(), portProperty, binding.getName());
         }
     }
 
-    private void setPropertyNoOverride(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, String name, String value) {
-        boolean overridden = false ;
-        String propertyValue = null ;
-        // check if the property has been overridden by the user and log a message
+    private static void setPropertyNoOverride(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, String name, String value) {
         try {
-            if (overridden = config.getOriginalProperties().containsKey(name))
-               propertyValue = config.getOriginalProperties().get(name);
-        }
-        catch(Exception e) {
+            Map<String, String> originalProperties = config.getOriginalProperties();
+            if (originalProperties.containsKey(name)) {
+                ROOT_LOGGER.unableToOverrideSocketBindingValue(name, protocol.getName(), value, originalProperties.get(name));
+            }
+        } catch (Exception e) {
             ROOT_LOGGER.unableToAccessProtocolPropertyValue(e, name, protocol.getName());
-        }
-
-        // log a warning if property tries to override
-        if (overridden) {
-            ROOT_LOGGER.unableToOverrideSocketBindingValue(name, protocol.getName(), value, propertyValue);
         }
         setProperty(protocol, config, name, value);
     }
 
-    private void setProperty(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, String name, String value) {
+    private static void setProperty(ProtocolConfiguration protocol, org.jgroups.conf.ProtocolConfiguration config, String name, String value) {
         if (protocol.hasProperty(name)) {
             config.getProperties().put(name, value);
         }
@@ -261,7 +297,7 @@ public class JChannelFactory implements ChannelFactory, ChannelListener, Protoco
         };
     }
 
-    private void setValue(Protocol protocol, String property, Object value) {
+    private static void setValue(Protocol protocol, String property, Object value) {
         ROOT_LOGGER.setProtocolPropertyValue(protocol.getName(), property, value);
         try {
             protocol.setValue(property, value);

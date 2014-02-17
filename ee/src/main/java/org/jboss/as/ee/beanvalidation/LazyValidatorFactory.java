@@ -21,50 +21,31 @@
  */
 package org.jboss.as.ee.beanvalidation;
 
-import java.util.Collections;
-import java.util.List;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
-import javax.validation.Configuration;
 import javax.validation.ConstraintValidatorFactory;
 import javax.validation.MessageInterpolator;
+import javax.validation.ParameterNameProvider;
 import javax.validation.TraversableResolver;
 import javax.validation.Validation;
-import javax.validation.ValidationProviderResolver;
 import javax.validation.Validator;
 import javax.validation.ValidatorContext;
 import javax.validation.ValidatorFactory;
-import javax.validation.spi.ValidationProvider;
-
-import org.hibernate.validator.HibernateValidator;
-import org.hibernate.validator.HibernateValidatorConfiguration;
-import org.hibernate.validator.cfg.ConstraintMapping;
 
 /**
- * This class lazily initialize the ValidatorFactory on the first usage
- * One benefit is that no domain class is loaded until the
- * ValidatorFactory is really needed.
- * Useful to avoid loading classes before JPA is initialized
- * and has enhanced its classes.
+ * This class lazily initialize the ValidatorFactory on the first usage One benefit is that no domain class is loaded until the
+ * ValidatorFactory is really needed. Useful to avoid loading classes before JPA is initialized and has enhanced its classes.
  *
  * @author Emmanuel Bernard
  * @author Stuart Douglas
  */
 public class LazyValidatorFactory implements ValidatorFactory {
 
-    private final Configuration<?> configuration;
     private final ClassLoader classLoader;
 
-    private volatile ValidatorFactory delegate; //use as a barrier
+    private volatile ValidatorFactory delegate; // use as a barrier
 
-    /**
-     * Use the default ValidatorFactory creation routine
-     */
     public LazyValidatorFactory(ClassLoader classLoader) {
-        this(null, classLoader);
-    }
-
-    public LazyValidatorFactory(Configuration<?> configuration, ClassLoader classLoader) {
-        this.configuration = configuration;
         this.classLoader = classLoader;
     }
 
@@ -81,54 +62,67 @@ public class LazyValidatorFactory implements ValidatorFactory {
         return result;
     }
 
+    public void replaceDelegate(ValidatorFactory validatorFactory) {
+        synchronized (this) {
+            delegate = validatorFactory;
+        }
+    }
+
+    @Override
     public Validator getValidator() {
         return getDelegate().getValidator();
     }
 
     private ValidatorFactory initFactory() {
-        final ClassLoader oldTCCL = SecurityActions.getContextClassLoader();
+        final ClassLoader oldTCCL = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         try {
-            SecurityActions.setContextClassLoader(classLoader);
-            if (configuration == null) {
-                ConstraintMapping mapping = new ConstraintMapping();
-                HibernateValidatorConfiguration config = Validation.byProvider(HibernateValidator.class).providerResolver(new JbossProviderResolver()).configure();
-                config.addMapping(mapping);
-                ValidatorFactory factory = config.buildValidatorFactory();
-                return factory;
-
-            } else {
-                return configuration.buildValidatorFactory();
-            }
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
+            return Validation.byDefaultProvider().providerResolver(new WildFlyProviderResolver()).configure()
+                    .buildValidatorFactory();
         } finally {
-            SecurityActions.setContextClassLoader(oldTCCL);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTCCL);
         }
     }
 
+    @Override
     public ValidatorContext usingContext() {
-        return getDelegate().usingContext();
+        final ClassLoader oldTCCL = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+        try {
+            // Make sure the deployment's CL is set
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
+            return getDelegate().usingContext();
+        } finally {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTCCL);
+        }
     }
 
+    @Override
     public MessageInterpolator getMessageInterpolator() {
         return getDelegate().getMessageInterpolator();
     }
 
+    @Override
     public TraversableResolver getTraversableResolver() {
         return getDelegate().getTraversableResolver();
     }
 
+    @Override
     public ConstraintValidatorFactory getConstraintValidatorFactory() {
         return getDelegate().getConstraintValidatorFactory();
     }
 
+    @Override
+    public ParameterNameProvider getParameterNameProvider() {
+        return getDelegate().getParameterNameProvider();
+    }
+
+    @Override
     public <T> T unwrap(Class<T> clazz) {
         return getDelegate().unwrap(clazz);
     }
 
-    private static final class JbossProviderResolver implements ValidationProviderResolver {
-
-        @Override
-        public List<ValidationProvider<?>> getValidationProviders() {
-            return Collections.<ValidationProvider<?>>singletonList(new HibernateValidator());
-        }
+    @Override
+    public void close() {
+        getDelegate().close();
     }
 }

@@ -29,6 +29,7 @@ import javax.naming.NamingException;
 
 import org.jboss.as.ee.component.ComponentRegistry;
 import org.jboss.as.naming.ManagedReference;
+import org.jboss.as.naming.ManagedReferenceFactory;
 
 /**
  * The web injection container.
@@ -47,7 +48,7 @@ public class WebInjectionContainer {
         this.instanceMap = new ConcurrentReferenceHashMap<Object, ManagedReference>
                 (256, ConcurrentReferenceHashMap.DEFAULT_LOAD_FACTOR,
                         Runtime.getRuntime().availableProcessors(), ConcurrentReferenceHashMap.ReferenceType.STRONG,
-                        ConcurrentReferenceHashMap.ReferenceType.STRONG, EnumSet.of(ConcurrentReferenceHashMap.Option.IDENTITY_COMPARISONS));
+                        ConcurrentReferenceHashMap.ReferenceType.WEAK, EnumSet.of(ConcurrentReferenceHashMap.Option.IDENTITY_COMPARISONS));
     }
 
 
@@ -63,7 +64,8 @@ public class WebInjectionContainer {
     }
 
     public Object newInstance(Class<?> clazz) throws IllegalAccessException, InvocationTargetException, NamingException, InstantiationException {
-        final ManagedReference reference = componentRegistry.createInstance(clazz);
+        final ManagedReferenceFactory factory = componentRegistry.createInstanceFactory(clazz);
+        ManagedReference reference = factory.getReference();
         if (reference != null) {
             instanceMap.put(reference.getInstance(), reference);
             return reference.getInstance();

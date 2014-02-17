@@ -30,6 +30,7 @@ import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.services.path.ResolvePathHandler;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker.DiscardAttributeValueChecker;
 import org.jboss.as.controller.transform.description.RejectAttributeChecker;
 import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.as.logging.resolvers.SizeResolver;
@@ -55,6 +56,12 @@ class SizeRotatingHandlerResourceDefinition extends AbstractFileHandlerDefinitio
             .setValidator(new IntRangeValidator(1, true))
             .build();
 
+    public static final PropertyAttributeDefinition ROTATE_ON_BOOT = PropertyAttributeDefinition.Builder.of("rotate-on-boot", ModelType.BOOLEAN, true)
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(false))
+            .setPropertyName("rotateOnBoot")
+            .build();
+
     public static final PropertyAttributeDefinition ROTATE_SIZE = PropertyAttributeDefinition.Builder.of("rotate-size", ModelType.STRING)
             .setAllowExpression(true)
             .setAttributeMarshaller(ElementAttributeMarshaller.VALUE_ATTRIBUTE_MARSHALLER)
@@ -64,33 +71,38 @@ class SizeRotatingHandlerResourceDefinition extends AbstractFileHandlerDefinitio
             .setValidator(new SizeValidator())
             .build();
 
-    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, APPEND, FILE, MAX_BACKUP_INDEX, ROTATE_SIZE);
+    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, APPEND, MAX_BACKUP_INDEX, ROTATE_SIZE, ROTATE_ON_BOOT, NAMED_FORMATTER, FILE);
 
     public SizeRotatingHandlerResourceDefinition(final ResolvePathHandler resolvePathHandler, final boolean includeLegacyAttributes) {
         super(SIZE_ROTATING_HANDLER_PATH, SizeRotatingFileHandler.class, resolvePathHandler,
                 (includeLegacyAttributes ? Logging.join(ATTRIBUTES, LEGACY_ATTRIBUTES) : ATTRIBUTES));
     }
 
-    /**
-     * Add the transformers for the size rotating file handler.
-     *
-     * @param subsystemBuilder      the default subsystem builder
-     * @param loggingProfileBuilder the logging profile builder
-     *
-     * @return the builder created for the resource
-     */
-    static ResourceTransformationDescriptionBuilder addTransformers(final ResourceTransformationDescriptionBuilder subsystemBuilder,
-                                                                    final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
-        // Register the logger resource
-        final ResourceTransformationDescriptionBuilder child = subsystemBuilder.addChildResource(SIZE_ROTATING_HANDLER_PATH)
-                .getAttributeBuilder()
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, APPEND, FILE, MAX_BACKUP_INDEX, ROTATE_SIZE)
-                .end();
+    @Override
+    protected void registerResourceTransformers(final KnownModelVersion modelVersion, final ResourceTransformationDescriptionBuilder resourceBuilder, final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
+        switch (modelVersion) {
+            case VERSION_1_1_0: {
+                resourceBuilder
+                        .getAttributeBuilder()
+                        .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, APPEND, FILE, MAX_BACKUP_INDEX, ROTATE_SIZE)
+                        .end();
+            }
+            case VERSION_1_2_0: {
+                resourceBuilder
+                        .getAttributeBuilder()
+                        .setDiscard(new DiscardAttributeValueChecker(new ModelNode(false)), ROTATE_ON_BOOT)
+                        .addRejectCheck(RejectAttributeChecker.DEFINED, ROTATE_ON_BOOT)
+                        .end();
+                if (loggingProfileBuilder != null) {
+                    loggingProfileBuilder
+                            .getAttributeBuilder()
+                            .setDiscard(new DiscardAttributeValueChecker(new ModelNode(false)), ROTATE_ON_BOOT)
+                            .addRejectCheck(RejectAttributeChecker.DEFINED, ROTATE_ON_BOOT)
+                            .end();
+                }
+            }
+        }
 
-        // Reject logging profile resources
-        loggingProfileBuilder.rejectChildResource(SIZE_ROTATING_HANDLER_PATH);
-
-        return registerTransformers(child);
     }
 
 }

@@ -84,12 +84,12 @@ class AppClientSubsystemAdd extends AbstractBoottimeAddStepHandler {
                 if (deployment != null && !deployment.isEmpty()) {
                     processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_APP_CLIENT, new ApplicationClientStructureProcessor(deployment));
                 }
-                processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_REGISTER_JBOSS_ALL_XML_PARSER, new JBossAllXmlParserRegisteringProcessor<JBossClientMetaData>(AppClientJBossAllParser.ROOT_ELEMENT, AppClientJBossAllParser.ATTACHMENT_KEY, new AppClientJBossAllParser()));
+                processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_REGISTER_JBOSS_ALL_APPCLIENT, new JBossAllXmlParserRegisteringProcessor<JBossClientMetaData>(AppClientJBossAllParser.ROOT_ELEMENT, AppClientJBossAllParser.ATTACHMENT_KEY, new AppClientJBossAllParser()));
                 processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_APP_CLIENT_XML, new ApplicationClientParsingDeploymentProcessor());
                 processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_APPLICATION_CLIENT_MANIFEST, new ApplicationClientManifestProcessor());
                 processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_APPLICATION_CLIENT_ACTIVE, new ActiveApplicationClientProcessor(deployment));
                 processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_APPLICATION_CLIENT, new ApplicationClientDependencyProcessor());
-                processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_APPLICATION_CLIENT, new ApplicationClientStartProcessor(hostUrl, connectionPropertiesUrl, parameters.toArray(EMPTY_STRING)));
+                processorTarget.addDeploymentProcessor(Constants.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_APPLICATION_CLIENT, new ApplicationClientStartProcessor(hostUrl, connectionPropertiesUrl, parameters == null ? new String[0] : parameters.toArray(EMPTY_STRING)));
 
             }
         }, OperationContext.Stage.RUNTIME);

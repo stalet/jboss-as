@@ -40,6 +40,7 @@ import java.util.Enumeration;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import org.jboss.as.test.integration.domain.mixed.Version;
 import org.xnio.IoUtils;
 
 /**
@@ -58,14 +59,14 @@ public class OldVersionCopier {
         this.oldVersionsBaseDir = oldVersionsBaseDir;
     }
 
-    static OldVersionCopier expandOldVersions() {
+    static OldVersionCopier expandOldVersion(Version.AsVersion version) {
         OldVersionCopier copier = new OldVersionCopier(obtainOldVersionsDir());
-        copier.expandAsInstances();
+        copier.expandAsInstance(version);
         return copier;
     }
 
-    File getVersionDir(String version) {
-        File file = new File(targetOldVersions, "jboss-as-" + version);
+    File getVersionDir(Version.AsVersion version) {
+        File file = new File(targetOldVersions, version.getExpandedDirectoryName());
         if (!file.exists() || !file.isDirectory()) {
             throw new IllegalStateException("Could not find " + file.getAbsolutePath());
         }
@@ -85,28 +86,26 @@ public class OldVersionCopier {
         return file;
     }
 
-    private void expandAsInstances() {
-        if (targetOldVersions.exists()) {
-            return;
+    private void expandAsInstance(Version.AsVersion version) {
+        if (!targetOldVersions.exists()) {
+            if (!targetOldVersions.mkdirs() && targetOldVersions.exists()) {
+                throw new RuntimeException("Could not create " + targetOldVersions);
+            }
         }
-        if (!targetOldVersions.mkdirs() && targetOldVersions.exists()) {
-            throw new RuntimeException("Could not create " + targetOldVersions);
+        File file = new File(oldVersionsBaseDir, version.getZipFileName());
+        if (!file.exists()) {
+            throw new RuntimeException("Old version not found in " + file.getAbsolutePath());
         }
-
-        for (File file : oldVersionsBaseDir.listFiles()) {
-            if (file.getName().endsWith(".zip")) {
-                try {
-                    expandAsInstance(file);
+        try {
+            expandAsInstance(file);
 
 //                    if (file.getName().equals("jboss-as-7.1.2.Final.zip")) {
 //                        patchBadRemoting("jboss-as-7.1.2.Final");
 //                    } else if (file.getName().equals("jboss-as-7.1.3.Final.zip")) {
 //                        patchBadRemoting("jboss-as-7.1.3.Final");
 //                    }
-                } catch(Exception e) {
-                    throw new RuntimeException(e);
-                }
-            }
+        } catch(Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -141,9 +140,6 @@ public class OldVersionCopier {
     private void patchModule(File moduleMainDir, URL patchedJar) throws Exception {
         assertTrue(moduleMainDir.exists());
         assertNotNull(patchedJar);
-        if (patchedJar == null) {
-            throw new RuntimeException("Null url");
-        }
         String oldJarName = null;
         for (String fileName : moduleMainDir.list()) {
             if (fileName.endsWith(".jar")) {
@@ -230,10 +226,5 @@ public class OldVersionCopier {
         } finally {
             IoUtils.safeClose(in);
         }
-    }
-
-    public static void main(String[] args) {
-        System.setProperty(OLD_VERSIONS_DIR, "/Users/kabir/old-as7-releases/");
-        OldVersionCopier.expandOldVersions();
     }
 }

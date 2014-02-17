@@ -24,7 +24,7 @@ package org.jboss.as.cli.handlers;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.util.List;
+import java.util.Collection;
 
 import org.jboss.as.cli.CommandContext;
 import org.jboss.as.cli.CommandFormatException;
@@ -32,6 +32,7 @@ import org.jboss.as.cli.CommandLineException;
 import org.jboss.as.cli.impl.ArgumentWithoutValue;
 import org.jboss.as.cli.util.HelpFormatter;
 import org.jboss.as.protocol.StreamUtils;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Abstract handler that checks whether the argument is '--help', in which case it
@@ -88,7 +89,7 @@ public abstract class CommandHandlerWithHelp extends CommandHandlerWithArguments
     }
 
     protected void printHelp(CommandContext ctx) throws CommandLineException {
-        InputStream helpInput = SecurityActions.getClassLoader(CommandHandlerWithHelp.class).getResourceAsStream(filename);
+        InputStream helpInput = WildFlySecurityManager.getClassLoaderPrivileged(CommandHandlerWithHelp.class).getResourceAsStream(filename);
         if(helpInput != null) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(helpInput));
             try {
@@ -122,7 +123,7 @@ public abstract class CommandHandlerWithHelp extends CommandHandlerWithArguments
      * @param ctx  the context
      * @param list  the list to print
      */
-    protected void printList(CommandContext ctx, List<String> list, boolean l) {
+    protected void printList(CommandContext ctx, Collection<String> list, boolean l) {
         if(l) {
             for(String item : list) {
                 ctx.printLine(item);

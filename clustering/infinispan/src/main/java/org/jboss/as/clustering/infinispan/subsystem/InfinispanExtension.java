@@ -44,18 +44,18 @@ public class InfinispanExtension implements Extension {
 
     public static final String SUBSYSTEM_NAME = "infinispan";
     static final PathElement SUBSYSTEM_PATH = PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, SUBSYSTEM_NAME);
-    public static final String RESOURCE_NAME = InfinispanExtension.class.getPackage().getName() + "." +"LocalDescriptions";
+    public static final String RESOURCE_NAME = InfinispanExtension.class.getPackage().getName() + ".LocalDescriptions";
 
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 4;
-    private static final int MANAGEMENT_API_MICRO_VERSION = 1;
+    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
+    private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
     static ResourceDescriptionResolver getResourceDescriptionResolver(final String... keyPrefix) {
-           StringBuilder prefix = new StringBuilder(SUBSYSTEM_NAME);
-           for (String kp : keyPrefix) {
-               prefix.append('.').append(kp);
-           }
-            return new InfinispanResourceDescriptionResolver(prefix.toString(), RESOURCE_NAME, InfinispanExtension.class.getClassLoader());
+        StringBuilder prefix = new StringBuilder(SUBSYSTEM_NAME);
+        for (String kp : keyPrefix) {
+            prefix.append('.').append(kp);
+        }
+        return new InfinispanResourceDescriptionResolver(prefix.toString(), RESOURCE_NAME, InfinispanExtension.class.getClassLoader());
     }
 
     /**
@@ -71,14 +71,14 @@ public class InfinispanExtension implements Extension {
         final ResolvePathHandler resolvePathHandler;
         if (context.getProcessType().isServer()) {
             resolvePathHandler = ResolvePathHandler.Builder.of(context.getPathManager())
-                    .setPathAttribute(FileStoreResource.PATH)
-                    .setRelativeToAttribute(FileStoreResource.RELATIVE_TO)
+                    .setPathAttribute(FileStoreResourceDefinition.PATH)
+                    .setRelativeToAttribute(FileStoreResourceDefinition.RELATIVE_TO)
                     .build();
         } else {
             resolvePathHandler = null;
         }
 
-        subsystem.registerSubsystemModel(new InfinispanSubsystemRootResource(resolvePathHandler));
+        subsystem.registerSubsystemModel(new InfinispanSubsystemRootResourceDefinition(resolvePathHandler, context.isRuntimeOnlyRegistrationValid()));
         subsystem.registerXMLElementWriter(new InfinispanSubsystemXMLWriter());
         if (context.isRegisterTransformers()) {
             // TODO move transformation out of this utility class and into the ResourceDefinition impls

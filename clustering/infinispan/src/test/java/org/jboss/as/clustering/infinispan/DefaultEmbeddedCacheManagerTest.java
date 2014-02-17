@@ -43,7 +43,6 @@ import org.infinispan.configuration.cache.ConfigurationBuilder;
 import org.infinispan.configuration.global.GlobalConfiguration;
 import org.infinispan.configuration.global.GlobalConfigurationBuilder;
 import org.infinispan.lifecycle.ComponentStatus;
-import org.infinispan.manager.CacheContainer;
 import org.infinispan.manager.EmbeddedCacheManager;
 import org.infinispan.remoting.transport.Address;
 import org.junit.After;
@@ -54,16 +53,20 @@ import org.junit.Test;
  */
 public class DefaultEmbeddedCacheManagerTest {
     private final EmbeddedCacheManager manager = mock(EmbeddedCacheManager.class);
-    private final EmbeddedCacheManager subject = new DefaultEmbeddedCacheManager(this.manager, "default");
+    private final CacheContainer subject = new DefaultCacheContainer(this.manager, "default");
     
     @After
     public void cleanup() {
-        reset(manager);
+        reset(this.manager);
     }
-    
+
+    @Test
+    public void getDefaultCacheName() {
+        assertEquals("default", this.subject.getDefaultCacheName());
+    }
+
     @Test
     public void getDefaultCache() {
-        @SuppressWarnings("unchecked")
         AdvancedCache<Object, Object> cache = mock(AdvancedCache.class);
 
         when(this.manager.<Object, Object>getCache("default", true)).thenReturn(cache);
@@ -78,9 +81,7 @@ public class DefaultEmbeddedCacheManagerTest {
 
     @Test
     public void getCache() {
-        @SuppressWarnings("unchecked")
         AdvancedCache<Object, Object> defaultCache = mock(AdvancedCache.class);
-        @SuppressWarnings("unchecked")
         AdvancedCache<Object, Object> otherCache = mock(AdvancedCache.class);
         
         when(this.manager.<Object, Object>getCache("default", true)).thenReturn(defaultCache);
@@ -100,7 +101,7 @@ public class DefaultEmbeddedCacheManagerTest {
         assertEquals(result, otherCache);
         assertSame(this.subject, result.getCacheManager());
 
-        result = this.subject.getCache(CacheContainer.DEFAULT_CACHE_NAME);
+        result = this.subject.getCache(CacheContainer.DEFAULT_CACHE_ALIAS);
 
         assertNotSame(defaultCache, result);
         assertEquals(result, defaultCache);
@@ -171,112 +172,6 @@ public class DefaultEmbeddedCacheManagerTest {
         assertSame(otherConfig, result);
     }
 
-    @SuppressWarnings("deprecation")
-    @Test
-    public void legacyDefineConfiguration() {
-        org.infinispan.config.Configuration defaultConfig = new org.infinispan.config.Configuration();
-        org.infinispan.config.Configuration defaultConfigOverride = new org.infinispan.config.Configuration();
-        org.infinispan.config.Configuration otherConfig = new org.infinispan.config.Configuration();
-        org.infinispan.config.Configuration otherConfigOverride = new org.infinispan.config.Configuration();
-
-        when(this.manager.defineConfiguration("default", defaultConfigOverride)).thenReturn(defaultConfig);
-        when(this.manager.defineConfiguration("other", otherConfigOverride)).thenReturn(otherConfig);
-
-        org.infinispan.config.Configuration result = this.subject.defineConfiguration("default", defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration("other", otherConfigOverride);
-
-        assertSame(otherConfig, result);
-
-        result = this.subject.defineConfiguration(CacheContainer.DEFAULT_CACHE_NAME, defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration(null, defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-    }
-
-    @SuppressWarnings("deprecation")
-    @Test
-    public void defineConfigurationWithTemplate() {
-        org.infinispan.config.Configuration defaultConfig = new org.infinispan.config.Configuration();
-        org.infinispan.config.Configuration defaultConfigOverride = new org.infinispan.config.Configuration();
-        org.infinispan.config.Configuration otherConfig = new org.infinispan.config.Configuration();
-        org.infinispan.config.Configuration otherConfigOverride = new org.infinispan.config.Configuration();
-
-        when(this.manager.defineConfiguration("default", "template", defaultConfigOverride)).thenReturn(defaultConfigOverride);
-        when(this.manager.defineConfiguration("default", "default", defaultConfigOverride)).thenReturn(defaultConfig);
-        when(this.manager.defineConfiguration("other", "template", otherConfigOverride)).thenReturn(otherConfigOverride);
-        when(this.manager.defineConfiguration("other", "default", otherConfigOverride)).thenReturn(otherConfig);
-
-        org.infinispan.config.Configuration result = this.subject.defineConfiguration("default", "template", defaultConfigOverride);
-
-        assertSame(defaultConfigOverride, result);
-
-        result = this.subject.defineConfiguration("default", "default", defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration("default", CacheContainer.DEFAULT_CACHE_NAME, defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration("default", null, defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration("other", "template", otherConfigOverride);
-
-        assertSame(otherConfigOverride, result);
-
-        result = this.subject.defineConfiguration("other", "default", otherConfigOverride);
-
-        assertSame(otherConfig, result);
-
-        result = this.subject.defineConfiguration("other", CacheContainer.DEFAULT_CACHE_NAME, otherConfigOverride);
-
-        assertSame(otherConfig, result);
-
-        result = this.subject.defineConfiguration("other", null, otherConfigOverride);
-
-        assertSame(otherConfig, result);
-
-        result = this.subject.defineConfiguration(CacheContainer.DEFAULT_CACHE_NAME, "template", defaultConfigOverride);
-
-        assertSame(defaultConfigOverride, result);
-
-        result = this.subject.defineConfiguration(CacheContainer.DEFAULT_CACHE_NAME, "default", defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration(CacheContainer.DEFAULT_CACHE_NAME, CacheContainer.DEFAULT_CACHE_NAME, defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration(CacheContainer.DEFAULT_CACHE_NAME, null, defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration(null, "template", defaultConfigOverride);
-
-        assertSame(defaultConfigOverride, result);
-
-        result = this.subject.defineConfiguration(null, "default", defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration(null, CacheContainer.DEFAULT_CACHE_NAME, defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-
-        result = this.subject.defineConfiguration(null, null, defaultConfigOverride);
-
-        assertSame(defaultConfig, result);
-    }
-
     @Test
     public void getClusterName() {
         String expected = "cluster";
@@ -338,17 +233,6 @@ public class DefaultEmbeddedCacheManagerTest {
         assertSame(global, result);
     }
 
-    @SuppressWarnings("deprecation")
-    @Test
-    public void getGlobalConfiguration() {
-        org.infinispan.config.GlobalConfiguration expected = new org.infinispan.config.GlobalConfiguration();
-        when(this.manager.getGlobalConfiguration()).thenReturn(expected);
-
-        org.infinispan.config.GlobalConfiguration result = this.subject.getGlobalConfiguration();
-
-        assertSame(expected, result);
-    }
-
     @Test
     public void getDefaultCacheConfiguration() {
         Configuration config = new ConfigurationBuilder().build();
@@ -371,17 +255,6 @@ public class DefaultEmbeddedCacheManagerTest {
         assertSame(config, result);
     }
 
-    @SuppressWarnings("deprecation")
-    @Test
-    public void getDefaultConfiguration() {
-        org.infinispan.config.Configuration expected = new org.infinispan.config.Configuration();
-        when(this.manager.getDefaultConfiguration()).thenReturn(expected);
-
-        org.infinispan.config.Configuration result = this.subject.getDefaultConfiguration();
-
-        assertSame(expected, result);
-    }
-
     @Test
     public void getCacheNames() {
         Set<String> caches = Collections.singleton("other");
@@ -389,9 +262,8 @@ public class DefaultEmbeddedCacheManagerTest {
 
         Set<String> result = this.subject.getCacheNames();
 
-        assertEquals(2, result.size());
+        assertEquals(1, result.size());
         assertTrue(result.contains("other"));
-        assertTrue(result.contains("default"));
     }
 
     @Test
@@ -407,7 +279,7 @@ public class DefaultEmbeddedCacheManagerTest {
 
         assertTrue(result);
 
-        result = this.subject.isRunning(CacheContainer.DEFAULT_CACHE_NAME);
+        result = this.subject.isRunning(CacheContainer.DEFAULT_CACHE_ALIAS);
 
         assertTrue(result);
 
@@ -429,7 +301,7 @@ public class DefaultEmbeddedCacheManagerTest {
     public void startCaches() {
         when(this.manager.startCaches("other", "default")).thenReturn(this.manager);
         
-        EmbeddedCacheManager result = this.subject.startCaches("other", CacheContainer.DEFAULT_CACHE_NAME);
+        EmbeddedCacheManager result = this.subject.startCaches("other", CacheContainer.DEFAULT_CACHE_ALIAS);
         
         assertSame(this.subject, result);
     }

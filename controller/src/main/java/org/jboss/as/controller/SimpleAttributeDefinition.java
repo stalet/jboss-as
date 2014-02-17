@@ -26,6 +26,7 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
 
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.operations.validation.ModelTypeValidator;
 import org.jboss.as.controller.operations.validation.ParameterValidator;
@@ -34,6 +35,7 @@ import org.jboss.as.controller.parsing.ParseUtils;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
+
 
 /**
  * Defining characteristics of an attribute in a {@link org.jboss.as.controller.registry.Resource}, with utility
@@ -108,22 +110,49 @@ public class SimpleAttributeDefinition extends AttributeDefinition {
                                      final ParameterCorrector corrector, final ParameterValidator validator,
                                      boolean validateNull, String[] alternatives, String[] requires, AttributeAccess.Flag... flags) {
         super(name, xmlName, defaultValue, type, allowNull, allowExpression, measurementUnit,
-                corrector, createParameterValidator(validator, type, allowNull, allowExpression), validateNull, alternatives, requires, null, false, null, flags);
+                corrector, createParameterValidator(validator, type, allowNull, allowExpression), validateNull, alternatives, requires, null, false, null, null, flags);
     }
+
     public SimpleAttributeDefinition(String name, String xmlName, final ModelNode defaultValue, final ModelType type,
                                      final boolean allowNull, final boolean allowExpression, final MeasurementUnit measurementUnit,
                                      final ParameterCorrector corrector, final ParameterValidator validator,
                                      boolean validateNull, String[] alternatives, String[] requires, AttributeMarshaller attributeMarshaller, final boolean resourceOnly, final DeprecationData deprecated, AttributeAccess.Flag... flags) {
         super(name, xmlName, defaultValue, type, allowNull, allowExpression, measurementUnit,
-                corrector, createParameterValidator(validator, type, allowNull, allowExpression), validateNull, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+                corrector, createParameterValidator(validator, type, allowNull, allowExpression), validateNull, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, null, flags);
     }
 
-    public SimpleAttributeDefinition(final String name, final ModelNode defaultValue, final ModelType type, final boolean allowNull, final String[] alternatives) {
+    public SimpleAttributeDefinition(String name, String xmlName, final ModelNode defaultValue, final ModelType type,
+            final boolean allowNull, final boolean allowExpression, final MeasurementUnit measurementUnit,
+            final ParameterCorrector corrector, final ParameterValidator validator,
+            boolean validateNull, String[] alternatives, String[] requires, AttributeMarshaller attributeMarshaller,
+            final boolean resourceOnly, final DeprecationData deprecated,
+            final AccessConstraintDefinition[] accessConstraints, final AttributeAccess.Flag... flags) {
+        this(name, xmlName, defaultValue, type, allowNull, allowExpression, measurementUnit,
+                corrector, createParameterValidator(validator, type, allowNull, allowExpression), validateNull, alternatives, requires,
+                attributeMarshaller, resourceOnly, deprecated, accessConstraints, null, flags);
+    }
+
+    @Deprecated
+    public SimpleAttributeDefinition(final String name, final ModelNode defaultValue, final ModelType type,
+                                     final boolean allowNull, final String[] alternatives) {
         this(name, name, defaultValue, type, allowNull, false, MeasurementUnit.NONE, null, alternatives, null);
     }
 
+    @Deprecated
     public SimpleAttributeDefinition(final String name, final ModelType type, final boolean allowNull, ParameterCorrector corrector, ParameterValidator validator) {
         this(name, name, null, type, allowNull, false, MeasurementUnit.NONE, corrector, validator, true, null, null);
+    }
+
+    public SimpleAttributeDefinition(String name, String xmlName, final ModelNode defaultValue, final ModelType type,
+                                     final boolean allowNull, final boolean allowExpression, final MeasurementUnit measurementUnit,
+                                     final ParameterCorrector corrector, final ParameterValidator validator,
+                                     boolean validateNull, String[] alternatives, String[] requires, AttributeMarshaller attributeMarshaller,
+                                     final boolean resourceOnly, final DeprecationData deprecated,
+                                     final AccessConstraintDefinition[] accessConstraints, final Boolean nullSignificant,
+                                     final AttributeAccess.Flag... flags) {
+        super(name, xmlName, defaultValue, type, allowNull, allowExpression, measurementUnit,
+                corrector, createParameterValidator(validator, type, allowNull, allowExpression), validateNull, alternatives, requires,
+                attributeMarshaller, resourceOnly, deprecated, accessConstraints, nullSignificant, flags);
     }
 
     private static ParameterValidator createParameterValidator(final ParameterValidator existing, final ModelType type,final boolean allowNull, final boolean allowExpression) {

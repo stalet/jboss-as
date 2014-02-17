@@ -70,11 +70,9 @@ public class SimpleApplicationClientTestCase {
         final JavaArchive lib = ShrinkWrap.create(JavaArchive.class, "lib.jar");
         lib.addClasses(AppClientSingletonRemote.class, AppClientWrapper.class, CallbackHandler.class);
         ear.addAsLibrary(lib);
-
         final JavaArchive ejb = ShrinkWrap.create(JavaArchive.class, MODULE_NAME + ".jar");
         ejb.addClasses(SimpleApplicationClientTestCase.class, AppClientStateSingleton.class);
         ear.addAsModule(ejb);
-
 
         final JavaArchive appClient = ShrinkWrap.create(JavaArchive.class, "client-annotation.jar");
         appClient.addClasses(AppClientMain.class);

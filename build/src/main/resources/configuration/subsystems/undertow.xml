@@ -25,29 +25,38 @@
 
 <!--  See src/resources/configuration/ReadMe.txt for how the configuration assembly works -->
 <config>
-    <extension-module>org.jboss.as.undertow</extension-module>
+    <extension-module>org.wildfly.extension.undertow</extension-module>
     <subsystem xmlns="urn:jboss:domain:undertow:1.0">
-
-        <server name="default-server" >
-            <http-listener name="default" socket-binding="http"/>
+        <buffer-caches>
+            <buffer-cache name="default" buffer-size="1024" buffers-per-region="1024" max-regions="10"/>
+        </buffer-caches>
+        <server name="default-server">
+            <http-listener name="default" socket-binding="http" />
             <?AJP?>
             <host name="default-host" alias="localhost">
-                <location name="/">
-                    <file path="${jboss.home.dir}/welcome-content" cache-buffer-size="1024" cache-buffers="1024"/>
-                </location>
+                <location name="/" handler="welcome-content" />
+                <filter-ref name="server-header"/>
+                <filter-ref name="x-powered-by-header"/>
             </host>
         </server>
-        <servlet-container name="default">
+        <servlet-container name="default" default-buffer-cache="default" stack-trace-on-error="local-only" >
             <jsp-config/>
         </servlet-container>
+        <handlers>
+            <file name="welcome-content" path="${jboss.home.dir}/welcome-content" directory-listing="true"/>
+        </handlers>
+        <filters>
+            <response-header name="server-header" header-name="Server" header-value="Wildfly 8"/>
+            <response-header name="x-powered-by-header" header-name="X-Powered-By" header-value="Undertow 1"/>
+        </filters>
     </subsystem>
     <supplement name="ha">
         <replacement placeholder="AJP">
-            <ajp-listener name="ajp-connector" socket-binding="ajp"/>
+            <ajp-listener name="ajp" socket-binding="ajp" />
         </replacement>
     </supplement>
-    <socket-binding name="http" port="8080"/>
-    <socket-binding name="https" port="8443"/>
-    <socket-binding name="ajp" port="8009"/>
+    <socket-binding name="http" port="${jboss.http.port:8080}"/>
+    <socket-binding name="https" port="${jboss.https.port:8443}"/>
+    <socket-binding name="ajp" port="${jboss.ajp.port:8009}"/>
 </config>
 

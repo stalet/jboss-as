@@ -52,59 +52,6 @@
     </macrodef>
 
 
-    <macrodef name="ts.config-as.enable.osgi" description="Enable Eager OSGi">
-        <attribute name="name" default="jbossas"/>
-        <attribute name="output.dir"      default="${project.build.directory}"/>
-        <attribute name="config.dir.name" default="standalone/configuration"/>
-
-        <sequential>
-            <echo message="    ===  Enable Eager OSGi Mode ===  "/>
-            <property name="cur-as.config.dir" value="@{output.dir}/@{name}/@{config.dir.name}"/>
-
-            <!-- Process *.xml to *.xml.mod. -->
-            <xslt destdir="@{output.dir}/@{name}/@{config.dir.name}"
-                  style="${jbossas.ts.integ.dir}/src/test/xslt/enableOSGi.xsl"
-                  extension=".xml.mod"
-                  useImplicitFileset="false">
-                <!-- Can't get this to work. -->
-                <!-- classpath path="${net.sf.saxon:saxon:jar}"/ -->
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-osgi.xml"/>
-                </fileset>
-            </xslt>
-
-            <!-- Move processed files back. -->
-            <move todir="@{output.dir}/@{name}/@{config.dir.name}">
-               <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                   <include name="**/standalone-osgi.xml.mod"/>
-               </fileset>
-               <mapper type="glob" from="*.mod" to="*"/>
-             </move>
-            <!-- Process *.xml to *.xml.mod. -->
-            <xslt destdir="@{output.dir}/@{name}/@{config.dir.name}"
-                  style="${jbossas.ts.integ.dir}/src/test/xslt/configAdminPopulate.xsl"
-                  extension=".xml.mod"
-                  useImplicitFileset="false">
-                <!-- Can't get this to work. -->
-                <!-- classpath path="${net.sf.saxon:saxon:jar}"/ -->
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-osgi.xml"/>
-                </fileset>
-            </xslt>
-
-            <!-- Move processed files back. -->
-            <move todir="@{output.dir}/@{name}/@{config.dir.name}">
-               <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                   <include name="**/standalone-osgi.xml.mod"/>
-               </fileset>
-               <mapper type="glob" from="*.mod" to="*"/>
-             </move>
-
-            <!-- Make osgi config the default -->
-            <copy overwrite="true" tofile="@{output.dir}/@{name}/@{config.dir.name}/standalone.xml" file="@{output.dir}/@{name}/@{config.dir.name}/standalone-osgi.xml"/>
-        </sequential>
-    </macrodef>
-
     <!--
         Change IP adresses, including multicast.
         It's the same as above, only adds the udpMcastAddress param.
@@ -135,12 +82,12 @@
                 <!-- classpath path="${net.sf.saxon:saxon:jar}"/ -->
                 <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
                     <include name="**/standalone-full.xml"/>
-                    <include name="**/standalone-ha.xml"/>
+                    <include name="**/standalone*-ha.xml"/>
                     <include name="**/standalone.xml"/>
                 </fileset>
                 <param name="managementIPAddress" expression="@{node}"/>
                 <param name="publicIPAddress"     expression="@{node}"/>
-                
+
                 <param name="udpMcastAddress"         expression="@{mcast}"/>
                 <param name="diagnosticsMcastAddress" expression="@{mcast}"/>
                 <param name="mpingMcastAddress"       expression="@{mcast}"/>
@@ -150,7 +97,7 @@
             <!-- Move processed files back. -->
             <move todir="@{output.dir}/@{name}/@{config.dir.name}">
                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                   <include name="**/standalone-ha.xml.mod"/>
+                   <include name="**/standalone*-ha.xml.mod"/>
                    <include name="**/standalone.xml.mod"/>
                    <include name="**/standalone-full.xml.mod"/>
                </fileset>
@@ -185,7 +132,7 @@
                 <!-- can't get this to work -->
                 <!-- classpath path="${net.sf.saxon:saxon:jar}"/ -->
                 <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml"/>
+                    <include name="**/standalone*-ha.xml"/>
                     <include name="**/standalone.xml"/>
                     <include name="**/standalone-full.xml"/>
                 </fileset>
@@ -197,7 +144,7 @@
             <!-- Move processed files back. -->
             <move todir="@{output.dir}/@{name}/@{config.dir.name}">
                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                   <include name="**/standalone-ha.xml.mod"/>
+                   <include name="**/standalone*-ha.xml.mod"/>
                    <include name="**/standalone.xml.mod"/>
                    <include name="**/standalone-full.xml.mod"/>
                </fileset>
@@ -206,106 +153,6 @@
         </sequential>
     </macrodef>
 
-    <!--
-        Change default transport stack in clustering server profiles.
-    -->
-    <macrodef name="ts.config-as.change-transport-stack" description="Change default transport stack in clustering server profiles.">
-
-        <attribute name="name" default="jbossas"/>
-        <attribute name="output.dir" default="${project.build.directory}"/>
-        <attribute name="config.dir.name" default="standalone/configuration"/>
-
-        <attribute name="defaultStack" default="udp"/>
-
-        <sequential>
-            <echo message="Changing JGroups stack for config @{name}"/>
-
-            <!-- Process *.xml to *.xml.mod. -->
-            <xslt destdir="@{output.dir}/@{name}/@{config.dir.name}"
-                  style="${jbossas.ts.integ.dir}/src/test/xslt/changeTransportStack.xsl"
-                  extension=".xml.mod"
-                  useImplicitFileset="false">
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml"/>
-                    <include name="**/standalone.xml"/>
-                    <include name="**/standalone-full.xml"/>
-                </fileset>
-                <param name="defaultStack" expression="@{defaultStack}"/>
-            </xslt>
-
-            <!-- Move processed files back. -->
-            <move todir="@{output.dir}/@{name}/@{config.dir.name}">
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml.mod"/>
-                    <include name="**/standalone.xml.mod"/>
-                    <include name="**/standalone-full.xml.mod"/>
-                </fileset>
-                <mapper type="glob" from="*.mod" to="*"/>
-            </move>
-        </sequential>
-    </macrodef>
-
-    <!--
-        Change default cache mode in clustering server profiles.
-    -->
-    <macrodef name="ts.config-as.change-cache-mode" description="Change default cache mode in clustering server profiles.">
-
-        <attribute name="name" default="jbossas"/>
-        <attribute name="output.dir" default="${project.build.directory}"/>
-        <attribute name="config.dir.name" default="standalone/configuration"/>
-
-        <attribute name="cacheMode" default="SYNC"/>
-
-        <sequential>
-            <echo message="Changing cache mode for config @{name}"/>
-
-            <!-- WEB Cache -->
-            <xslt destdir="@{output.dir}/@{name}/@{config.dir.name}"
-                  style="${jbossas.ts.integ.dir}/src/test/xslt/changeCacheMode.xsl"
-                  extension=".xml.mod"
-                  useImplicitFileset="false">
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml"/>
-                    <include name="**/standalone.xml"/>
-                    <include name="**/standalone-full.xml"/>
-                </fileset>
-                <param name="mode" expression="@{cacheMode}"/>
-                <param name="name" expression="web"/>
-            </xslt>
-
-            <move todir="@{output.dir}/@{name}/@{config.dir.name}">
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml.mod"/>
-                    <include name="**/standalone.xml.mod"/>
-                    <include name="**/standalone-full.xml.mod"/>
-                </fileset>
-                <mapper type="glob" from="*.mod" to="*"/>
-            </move>
-
-            <!-- EJB Cache -->
-            <xslt destdir="@{output.dir}/@{name}/@{config.dir.name}"
-                  style="${jbossas.ts.integ.dir}/src/test/xslt/changeCacheMode.xsl"
-                  extension=".xml.mod"
-                  useImplicitFileset="false">
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml"/>
-                    <include name="**/standalone.xml"/>
-                    <include name="**/standalone-full.xml"/>
-                </fileset>
-                <param name="mode" expression="@{cacheMode}"/>
-                <param name="name" expression="ejb"/>
-            </xslt>
-
-            <move todir="@{output.dir}/@{name}/@{config.dir.name}">
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml.mod"/>
-                    <include name="**/standalone.xml.mod"/>
-                    <include name="**/standalone-full.xml.mod"/>
-                </fileset>
-                <mapper type="glob" from="*.mod" to="*"/>
-            </move>
-        </sequential>
-    </macrodef>
 
     <!--
         Enable JTS.
@@ -326,7 +173,7 @@
                   extension=".xml.mod"
                   useImplicitFileset="false">
                 <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml"/>
+                    <include name="**/standalone*-ha.xml"/>
                     <include name="**/standalone.xml"/>
                     <include name="**/standalone-full.xml"/>
                 </fileset>
@@ -335,7 +182,7 @@
             <!-- Move processed files back. -->
             <move todir="@{output.dir}/@{name}/@{config.dir.name}">
                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                   <include name="**/standalone-ha.xml.mod"/>
+                   <include name="**/standalone*-ha.xml.mod"/>
                    <include name="**/standalone.xml.mod"/>
                    <include name="**/standalone-full.xml.mod"/>
                </fileset>
@@ -343,47 +190,6 @@
              </move>
         </sequential>
     </macrodef>
-
-
-    <!--
-        Add a new cache container to the Infinispan subsystem.
-        The container definition is loaded from a file.
-    -->
-    <macrodef name="ts.config-as.add-cache-container" description="Add a cache container to the Infinispan subsystem">
-
-        <attribute name="name" default="jbossas"/>
-        <attribute name="output.dir" default="${project.build.directory}"/>
-        <attribute name="config.dir.name" default="standalone/configuration"/>
-        <attribute name="containerdef" default="cache-container.xml"/>
-
-        <sequential>
-            <echo message="Adding a cache container to Infinispan subsystem for config @{name}"/>
-
-            <!-- Process *.xml to *.xml.mod. -->
-            <xslt destdir="@{output.dir}/@{name}/@{config.dir.name}"
-                  style="${jbossas.ts.integ.dir}/src/test/xslt/addCacheContainer.xsl"
-                  extension=".xml.mod"
-                  useImplicitFileset="false">
-                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml"/>
-                    <include name="**/standalone.xml"/>
-                    <include name="**/standalone-full.xml"/>
-                </fileset>
-                <param name="filename" expression="@{containerdef}"/>
-            </xslt>
-
-            <!-- Move processed files back. -->
-            <move todir="@{output.dir}/@{name}/@{config.dir.name}">
-               <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                   <include name="**/standalone-ha.xml.mod"/>
-                   <include name="**/standalone.xml.mod"/>
-                   <include name="**/standalone-full.xml.mod"/>
-               </fileset>
-               <mapper type="glob" from="*.mod" to="*"/>
-             </move>
-        </sequential>
-    </macrodef>
-
 
 
 
@@ -401,6 +207,7 @@
         <attribute name="remotePort" default="4447"/>
         <attribute name="securityRealm" default="NOT_DEFINED"/>
         <attribute name="userName" default="NOT_DEFINED"/>
+        <attribute name="protocol" default="http-remoting"/>
 
         <sequential>
             <echo message="Adding a new remote outbound connection @{connectionName} for config @{name}"/>
@@ -411,7 +218,7 @@
                   extension=".xml.mod"
                   useImplicitFileset="false">
                 <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml"/>
+                    <include name="**/standalone*-ha.xml"/>
                     <include name="**/standalone.xml"/>
                     <include name="**/standalone-full.xml"/>
                 </fileset>
@@ -420,12 +227,13 @@
                 <param name="remotePort" expression="@{remotePort}"/>
                 <param name="securityRealm" expression="@{securityRealm}"/>
                 <param name="userName" expression="@{userName}"/>
+                <param name="protocol" expression="@{protocol}"/>
             </xslt>
 
             <!-- Move processed files back. -->
             <move todir="@{output.dir}/@{name}/@{config.dir.name}">
                <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                   <include name="**/standalone-ha.xml.mod"/>
+                   <include name="**/standalone*-ha.xml.mod"/>
                    <include name="**/standalone.xml.mod"/>
                    <include name="**/standalone-full.xml.mod"/>
                </fileset>
@@ -451,7 +259,7 @@
                   extension=".xml.mod"
                   useImplicitFileset="false">
                 <fileset dir="@{output.dir}/@{name}/@{config.dir.name}">
-                    <include name="**/standalone-ha.xml"/>
+                    <include name="**/standalone*-ha.xml"/>
                     <include name="**/standalone.xml"/>
                     <include name="**/standalone-full.xml"/>
                 </fileset>
@@ -462,7 +270,7 @@
             <!-- Move processed files back. -->
             <move todir="@{output.dir}/@{name}/@{config.dir.name}">
                <fileset dir="@{output.dir}/@{name}-tmp/@{config.dir.name}">
-                   <include name="**/standalone-ha.xml.mod"/>
+                   <include name="**/standalone*-ha.xml.mod"/>
                    <include name="**/standalone.xml.mod"/>
                    <include name="**/standalone-full.xml.mod"/>
                </fileset>

@@ -49,6 +49,8 @@ import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
 import org.jboss.logging.annotations.Param;
 import org.jboss.modules.ModuleIdentifier;
+import org.jboss.modules.ModuleLoadException;
+import org.jboss.modules.ModuleNotFoundException;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartException;
 
@@ -1779,12 +1781,12 @@ public interface ControllerMessages {
      * @param handler the handler that failed.
      * @param op      the operation.
      * @param address the path address.
-     * @param msg     the error message.
+     * @param cause   the error.
      *
      * @return the message.
      */
     @Message(id = 14781, value = "Step handler %s for operation %s at address %s failed handling operation rollback -- %s")
-    String stepHandlerFailedRollback(OperationStepHandler handler, String op, PathAddress address, String msg);
+    String stepHandlerFailedRollback(OperationStepHandler handler, String op, PathAddress address, Throwable cause);
 
     /**
      * A message indicating an interruption awaiting subsystem boot operation execution.
@@ -2048,7 +2050,7 @@ public interface ControllerMessages {
      * @return an {@link OperationFailedRuntimeException} for the error.
      */
     @Message(id = 14807, value = "Management resource '%s' not found")
-    OperationFailedRuntimeException managementResourceNotFound(PathAddress pathAddress);
+    NoSuchResourceException managementResourceNotFound(PathAddress pathAddress);
 
     /**
      * Creates an exception message indicating a child resource cannot be found.
@@ -2517,7 +2519,6 @@ public interface ControllerMessages {
     @Message(id = 14871, value = "No operation called '%s' found for alias address '%s' which maps to '%s'")
     IllegalArgumentException aliasStepHandlerOperationNotFound(String name, PathAddress aliasAddress, PathAddress targetAddress);
 
-
     @Message(id = 14872, value = "Resource registration is not an alias")
     IllegalStateException resourceRegistrationIsNotAnAlias();
 
@@ -2551,7 +2552,6 @@ public interface ControllerMessages {
 
     @Message(id = 14880, value = "No operation entry called '%s' registered at '%s'")
     String noOperationEntry(String op, PathAddress pathAddress);
-
 
     @Message(id = 14881, value = "No operation handler called '%s' registered at '%s'")
     String noOperationHandler(String op, PathAddress pathAddress);
@@ -2639,9 +2639,112 @@ public interface ControllerMessages {
     @Message(id = 14899, value = "read only context")
     IllegalStateException readOnlyContext();
 
+    // END OF 148xx SERIES USABLE FOR LOGGER MESSAGES
+
     @Message(id = 13450, value = "We are trying to read data from the master host controller, which is currently busy executing another set of operations. This is a temporary situation, please retry")
     String cannotGetControllerLock();
 
     @Message(id = 13451, value = "Cannot configure an interface to use 'any-ipv6-address' when system property java.net.preferIPv4Stack is true")
     String invalidAnyIPv6();
+
+    @Message(id = 13452, value = "Legacy extension '%s' is not supported on servers running this version. The extension " +
+            "is only supported for use by hosts running a previous release in a mixed-version managed domain")
+    String unsupportedLegacyExtension(String extensionName);
+
+    @Message(id = 13453, value = "Extension module %s not found")
+    OperationFailedException extensionModuleNotFound(@Cause ModuleNotFoundException cause, String module);
+
+    @Message(id = 13454, value = "Failed to load Extension module %s")
+    RuntimeException extensionModuleLoadingFailure(@Cause ModuleLoadException cause, String module);
+
+    @Message(id = 13455, value = "no context to delegate with id: %s")
+    IllegalStateException noContextToDelegateTo(int operationId);
+
+    @Message(id = 13456, value = "Unauthorized to execute operation '%s' for resource '%s' -- %s")
+    UnauthorizedException unauthorized(String name, PathAddress address, ModelNode explanation);
+
+    @Message(id = 13457, value = "Users with multiple roles are not allowed")
+    SecurityException illegalMultipleRoles();
+
+    @Message(id = 13458, value = "An unexpected number of AccountPrincipals %d have been found in the current Subject.")
+    IllegalStateException unexpectedAccountPrincipalCount(int count);
+
+    @Message(id = 13459, value = "Different realms '%s' '%s' found in single Subject")
+    IllegalStateException differentRealmsInSubject(String realmOne, String realmTwo);
+
+    @Message(id = 13460, value = "There is no handler called '%s'")
+    IllegalStateException noHandlerCalled(String name);
+
+    @Message(id = 13461, value = "The operation context is not an AbstractOperationContext")
+    OperationFailedException operationContextIsNotAbstractOperationContext();
+
+    @Message(id = 13462, value = "The handler is referenced by %s and so cannot be removed")
+    IllegalStateException handlerIsReferencedBy(Set<PathAddress> references);
+
+    @Message(id = 13463, value = "The resolved file %s either does not exist or is a directory")
+    IllegalStateException resolvedFileDoesNotExistOrIsDirectory(File file);
+
+    @Message(id = 13464, value = "Could not back up '%s' to '%s'")
+    IllegalStateException couldNotBackUp(@Cause IOException cause, String absolutePath, String absolutePath1);
+
+    @Message(id = 13465, value = "Attempt was made to both remove and add a handler from a composite operation - update the handler instead")
+    IllegalStateException attemptToBothRemoveAndAddHandlerUpdateInstead();
+
+    @Message(id = 13466, value = "Attempt was made to both add and remove a handler from a composite operation")
+    IllegalStateException attemptToBothAddAndRemoveAndHandlerFromCompositeOperation();
+
+    @Message(id = 13467, value = "Attempt was made to both update and remove a handler from a composite operation")
+    IllegalStateException attemptToBothUpdateAndRemoveHandlerFromCompositeOperation();
+
+    @Message(id = 13468, value = "Attempt was made to both remove and add a handler reference from a composite operation")
+    IllegalStateException attemptToBothRemoveAndAddHandlerReferenceFromCompositeOperation();
+
+    // This Message ID never made it to a Final release although it was close so may be referenced!
+
+    //@Message(id = 13469, value = "Unable to unmarshall Subject received for request.")
+    //IOException unableToUnmarshallSubject(@Cause ClassNotFoundException e);
+
+    @Message(id = 13470, value = "Unknown role '%s'")
+    IllegalArgumentException unknownRole(String roleName);
+
+    @Message(id = 13471, value = "Cannot remove standard role '%s'")
+    IllegalStateException cannotRemoveStandardRole(String roleName);
+
+    @Message(id = 13472, value = "Unknown base role '%s'")
+    IllegalArgumentException unknownBaseRole(String roleName);
+
+    @Message(id = 13473, value = "Role '%s' is already registered")
+    IllegalStateException roleIsAlreadyRegistered(String roleName);
+
+    @Message(id = 13474, value = "Can only create child audit logger for main audit logger")
+    IllegalStateException canOnlyCreateChildAuditLoggerForMainAuditLogger();
+
+    @Message(id = 13475, value = "Permission denied")
+    String permissionDenied();
+
+    @Message(id = 13476, value = "Cannot add a Permission to a readonly PermissionCollection")
+    SecurityException permissionCollectionIsReadOnly();
+
+    @Message(id = 13477, value = "Incompatible permission type %s")
+    IllegalArgumentException incompatiblePermissionType(Class<?> clazz);
+
+    @Message(id = 13478, value = "Management resource '%s' not found")
+    String managementResourceNotFoundMessage(PathAddress pathAddress);
+
+    @Message(id = 13479, value = "The following attributes are nillable in the current model but must be defined in the target model version: %s")
+    String attributesMustBeDefined(Set<String> keySet);
+
+    @Message(id = 13480, value = "Unsupported Principal type '%X' received.")
+    IOException unsupportedPrincipalType(byte type);
+
+    @Message(id = 13481, value = "Unsupported Principal parameter '%X' received parsing principal type '%X'.")
+    IOException unsupportedPrincipalParameter(byte parameterType, byte principalType);
+
+    @Message(id = 13482, value = "The following attributes must be defined as %s in the current model: %s")
+    String attributesMustBeDefinedAs(ModelNode value, Set<String> names);
+
+    @Message(id = 13483, value = "The following attributes must NOT be defined as %s in the current model: %s")
+    String attributesMustNotBeDefinedAs(ModelNode value, Set<String> names);
+
+    // 13499 IS END OF 134xx SERIES USABLE FOR NON-LOGGER MESSAGES
 }

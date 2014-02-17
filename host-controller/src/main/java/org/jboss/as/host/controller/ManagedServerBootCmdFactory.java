@@ -45,10 +45,12 @@ import org.jboss.as.host.controller.model.host.HostResourceDefinition;
 import org.jboss.as.host.controller.model.jvm.JvmElement;
 import org.jboss.as.host.controller.model.jvm.JvmOptionsBuilderFactory;
 import org.jboss.as.process.DefaultJvmUtils;
+import org.jboss.as.process.ProcessControllerClient;
 import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Combines the relevant parts of the domain-level and host-level models to
@@ -58,6 +60,8 @@ import org.jboss.dmr.Property;
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  */
 public class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
+
+    private static final String HOST_CONTROLLER_PROCESS_NAME_PROP = "[" + ProcessControllerClient.HOST_CONTROLLER_PROCESS_NAME + "]";
 
     private static final ModelNode EMPTY = new ModelNode();
     static {
@@ -196,11 +200,15 @@ public class ManagedServerBootCmdFactory implements ManagedServerBootConfigurati
         }
         for (Entry<String, String> entry : bootTimeProperties.entrySet()) {
             String property = entry.getKey();
-            if (!"org.jboss.boot.log.file".equals(property) && !"logging.configuration".equals(property)) {
+            String value = entry.getValue();
+            if (!"org.jboss.boot.log.file".equals(property) && !"logging.configuration".equals(property)
+                    && !HOST_CONTROLLER_PROCESS_NAME_PROP.equals(property)) {
                 final StringBuilder sb = new StringBuilder("-D");
                 sb.append(property);
-                sb.append('=');
-                sb.append(entry.getValue() == null ? "true" : entry.getValue());
+                if (value != null) {
+                    sb.append('=');
+                    sb.append(value);
+                }
                 command.add(sb.toString());
             }
         }
@@ -211,23 +219,32 @@ public class ManagedServerBootCmdFactory implements ManagedServerBootConfigurati
                 directoryGrouping, environment.getDomainLogDir(), serverDir);
         addPathProperty(command, "tmp", ServerEnvironment.SERVER_TEMP_DIR, bootTimeProperties,
                 directoryGrouping, environment.getDomainTempDir(), serverDir);
-        addPathProperty(command, "data", ServerEnvironment.SERVER_DATA_DIR, bootTimeProperties,
+        final String dataDir = addPathProperty(command, "data", ServerEnvironment.SERVER_DATA_DIR, bootTimeProperties,
                 directoryGrouping, environment.getDomainDataDir(), serverDir);
 
-        final File loggingConfig = new File(getAbsolutePath(environment.getDomainServersDir(), serverName, "data", "logging.properties"));
+        final File loggingConfig = new File(dataDir, "logging.properties");
         final String path;
         if (loggingConfig.exists()) {
             path = "file:" + loggingConfig.getAbsolutePath();
         } else {
             // Sets the initial log file to use
             command.add("-Dorg.jboss.boot.log.file=" + getAbsolutePath(new File(logDir), "server.log"));
-            final String fileName = SecurityActions.getSystemProperty("logging.configuration");
-            if (fileName == null) {
-                // If nothing else is defined use a default logging configuration that matches the default from the
-                // standalone server. This allows a single log file to be used.
-                path = "file:" + getAbsolutePath(environment.getDomainConfigurationDir(), "default-server-logging.properties");
+
+            // The default host controller and process controller configuration file
+            final String domainConfigFile = "file:" + getAbsolutePath(environment.getDomainConfigurationDir(), "logging.properties");
+            // The configuration file from the system property, could the default domain/configuration/logging.properties file
+            final String systemPropConfigFile = WildFlySecurityManager.getPropertyPrivileged("logging.configuration", null);
+            // The default configuration file to use if nothing is set
+            final File defaultConfigFile = getAbsoluteFile(environment.getDomainConfigurationDir(), "default-server-logging.properties");
+
+            // Ignore the system property value if domain/configuration/logging.properties is used
+            if (domainConfigFile.equals(systemPropConfigFile) && defaultConfigFile.exists()) {
+                path = "file:" + defaultConfigFile.getAbsolutePath();
+            } else if (systemPropConfigFile != null) {
+                path = systemPropConfigFile;
             } else {
-                path = fileName;
+                // Default to the domain/configuration/logging.properties if nothing else found
+                path = domainConfigFile;
             }
         }
         command.add(String.format("-Dlogging.configuration=%s", path));
@@ -348,11 +365,15 @@ public class ManagedServerBootCmdFactory implements ManagedServerBootConfigurati
     }
 
     static String getAbsolutePath(final File root, final String... paths) {
+        return getAbsoluteFile(root, paths).getAbsolutePath();
+    }
+
+    static File getAbsoluteFile(final File root, final String... paths) {
         File path = root;
         for(String segment : paths) {
             path = new File(path, segment);
         }
-        return path.getAbsolutePath();
+        return path.getAbsoluteFile();
     }
 
 }

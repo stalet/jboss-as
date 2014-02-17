@@ -27,19 +27,19 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <artifactId>jboss-as-testsuite</artifactId>
-        <groupId>org.jboss.as</groupId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <artifactId>wildfly-testsuite</artifactId>
+        <groupId>org.wildfly</groupId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-testsuite-integration-mixed-domain</artifactId>
-    <name>JBoss Application Server Test Suite: Mixed Domain Mode Integration Tests</name>
+    <artifactId>wildfly-testsuite-integration-mixed-domain</artifactId>
+    <name>WildFly Test Suite: Mixed Domain Mode Integration Tests</name>
 
     <properties>
 
         <!-- used to provide an absolute location for the distribution under test -->
         <!-- this value is overridden in modules with the correct relative pathname -->
-        <jboss.dist>${project.basedir}/../../build/target/jboss-as-${jboss.as.release.version}</jboss.dist>
+        <jboss.dist>${project.basedir}/../../${wildfly.build.output.dir}</jboss.dist>
         <jboss.home>${jboss.dist}</jboss.home>
 
         <!-- Used to provide an absolute location for the XSLT scripts. -->
@@ -53,6 +53,11 @@
     -->
 
     <dependencies>
+       <dependency>
+         <groupId>org.wildfly</groupId>
+         <artifactId>wildfly-model-test</artifactId>
+         <scope>test</scope>
+       </dependency>
     </dependencies>
     <build>
         <plugins>

@@ -43,6 +43,7 @@ import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
  * CalendarBasedTimeout
  *
  * @author Jaikiran Pai
+ * @author "<a href=\"mailto:wfink@redhat.com\">Wolf-Dieter Fink</a>"
  * @version $Revision: $
  */
 public class CalendarBasedTimeout {
@@ -234,6 +235,7 @@ public class CalendarBasedTimeout {
         }
         Calendar nextCal = this.copy(currentCal);
 
+        nextCal.setTimeZone(this.timezone);
         Date start = this.scheduleExpression.getStart();
         if (start != null && currentCal.getTime().before(start)) {
             nextCal.setTime(start);
@@ -469,32 +471,24 @@ public class CalendarBasedTimeout {
             // set the chosen day-of-week
             int dayDiff = nextDayOfWeek - currentDayOfWeek;
             nextCal.add(Calendar.DAY_OF_MONTH, dayDiff);
-            // since we are moving to a different day-of-week (as compared to the current day-of-week),
-            // we should reset the second, minute and hour appropriately, to their first possible
-            // values
-            nextCal.set(Calendar.SECOND, this.second.getFirst());
-            nextCal.set(Calendar.MINUTE, this.minute.getFirst());
-            nextCal.set(Calendar.HOUR_OF_DAY, this.hour.getFirst());
-            return nextCal;
-        }
-
-        // case#2
-        if (nextDayOfWeek < currentDayOfWeek) {
+        } else {
+            // case#2 nextDayOfWeek < currentDayOfWeek
             // set the chosen day-of-week
             nextCal.set(Calendar.DAY_OF_WEEK, nextDayOfWeek);
             // advance to next week
             nextCal.add(Calendar.WEEK_OF_MONTH, 1);
-
-            // since we are moving to a different day-of-week (as compared to the current day-of-week),
-            // we should reset the second, minute and hour appropriately, to their first possible
-            // values
-            nextCal.set(Calendar.SECOND, this.second.getFirst());
-            nextCal.set(Calendar.MINUTE, this.minute.getFirst());
-            nextCal.set(Calendar.HOUR_OF_DAY, this.hour.getFirst());
-
-            return nextCal;
         }
-        return null;
+        // since we are moving to a different day-of-week (as compared to the current day-of-week),
+        // we should reset the second, minute and hour appropriately, to their first possible
+        // values
+        nextCal.set(Calendar.SECOND, this.second.getFirst());
+        nextCal.set(Calendar.MINUTE, this.minute.getFirst());
+        nextCal.set(Calendar.HOUR_OF_DAY, this.hour.getFirst());
+
+        if (nextCal.get(Calendar.MONTH) != currentCal.get(Calendar.MONTH)) {
+            nextCal = computeNextMonth(nextCal);
+        }
+        return nextCal;
     }
 
     private Calendar computeNextMonth(Calendar currentCal) {
@@ -622,7 +616,12 @@ public class CalendarBasedTimeout {
                 nextCal = this.advanceTillMonthHasDate(nextCal, nextDayOfMonth);
             }
         } else if (nextDayOfMonth < currentDayOfMonth) {
+            // since the next day is before the current day we need to shift to the next month
             nextCal.add(Calendar.MONTH, 1);
+            // also we need to reset the time
+            nextCal.set(Calendar.SECOND, this.second.getFirst());
+            nextCal.set(Calendar.MINUTE, this.minute.getFirst());
+            nextCal.set(Calendar.HOUR_OF_DAY, this.hour.getFirst());
             nextCal = this.computeNextMonth(nextCal);
             if (nextCal == null) {
                 return null;

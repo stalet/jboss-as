@@ -51,6 +51,7 @@ import org.jboss.as.protocol.StreamUtils;
 import org.jboss.as.test.integration.domain.management.util.DomainTestSupport;
 import org.jboss.as.test.shared.TestSuiteEnvironment;
 import org.jboss.dmr.ModelNode;
+import org.jboss.logging.Logger;
 import org.jboss.sasl.util.UsernamePasswordHashUtil;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -93,6 +94,8 @@ public class RespawnTestCase {
 
     static TestControllerUtils utils;
     static TestControllerClient client;
+
+    private static final Logger log = Logger.getLogger(RespawnTestCase.class);
 
     @BeforeClass
     public static void createProcessController() throws IOException, URISyntaxException, NoSuchAlgorithmException {
@@ -165,6 +168,8 @@ public class RespawnTestCase {
         args.add(address);
         args.add("--pc-address");
         args.add(address);
+
+        log.info(args.toString());
 
         processController = Main.start(args.toArray(new String[args.size()]));
     }
@@ -301,6 +306,23 @@ public class RespawnTestCase {
     }
 
     @Test
+    public void testStartKilledServer() throws Exception {
+
+        List<RunningProcess> original = waitForAllProcessesFullyStarted();
+        RunningProcess serverOne = processUtil.getProcess(original, SERVER_ONE);
+        Assert.assertNotNull(serverOne);
+
+        System.out.println("killing respawn-one: " + serverOne);
+        processUtil.killProcess(serverOne);
+        manageServer("start", SERVER_ONE);
+        readHostControllerServer(SERVER_ONE);
+
+        //Check all processes are the same
+        List<RunningProcess> reloaded = waitForAllProcesses();
+        Assert.assertEquals(original.size(), reloaded.size());
+    }
+
+    @Test
     public void testHCReloadAbortPreservesServers() throws Exception {
 
         System.out.println("testHCReloadAbortPreservesServers()");
@@ -397,6 +419,7 @@ public class RespawnTestCase {
         ModelNode operation = new ModelNode();
         operation.get(OP).set(operationName);
         operation.get(OP_ADDR).set(getHostControllerServerConfigAddress(MASTER, serverName));
+        operation.get("blocking").set(true);
 
         try {
             Assert.assertEquals(SUCCESS, getControllerClient().execute(operation).get(OUTCOME).asString());

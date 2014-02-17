@@ -24,12 +24,9 @@
 
 package org.jboss.as.connector.subsystems.datasources;
 
-import static org.jboss.as.connector.subsystems.datasources.Constants.DATA_SOURCE;
 import static org.jboss.as.connector.subsystems.datasources.Constants.GET_INSTALLED_DRIVER;
 import static org.jboss.as.connector.subsystems.datasources.Constants.INSTALLED_DRIVERS;
 import static org.jboss.as.connector.subsystems.datasources.Constants.INSTALLED_DRIVERS_LIST;
-import static org.jboss.as.connector.subsystems.datasources.Constants.XA_DATASOURCE;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PERSISTENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
 
 import org.jboss.as.controller.ModelVersion;
@@ -37,15 +34,11 @@ import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.SubsystemRegistration;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
-import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.as.controller.transform.description.TransformationDescription;
 import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
-import org.jboss.dmr.ModelNode;
 
 /**
  * @author Stefano Maestri
@@ -76,7 +69,7 @@ public class DataSourcesSubsystemRootDefinition extends SimpleResourceDefinition
     @Override
     public void registerOperations(ManagementResourceRegistration resourceRegistration) {
         super.registerOperations(resourceRegistration);
-        resourceRegistration.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION,  DataSourceDescriptionHandler.INSTANCE);
+        resourceRegistration.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, GenericSubsystemDescribeHandler.INSTANCE);
         if (registerRuntimeOnly && ! deployed) {
             resourceRegistration.registerOperationHandler(INSTALLED_DRIVERS_LIST, InstalledDriversListOperationHandler.INSTANCE);
             resourceRegistration.registerOperationHandler(GET_INSTALLED_DRIVER, GetInstalledDriverOperationHandler.INSTANCE);
@@ -103,34 +96,26 @@ public class DataSourcesSubsystemRootDefinition extends SimpleResourceDefinition
     }
 
     static void registerTransformers(SubsystemRegistration subsystem) {
+        TransformationDescription.Tools.register(get110TransformationDescription(), subsystem, ModelVersion.create(1, 1, 0));
+        TransformationDescription.Tools.register(get111TransformationDescription(), subsystem, ModelVersion.create(1, 1, 1));
+    }
+
+    static TransformationDescription get110TransformationDescription() {
+
         ResourceTransformationDescriptionBuilder builder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
         JdbcDriverDefinition.registerTransformers110(builder);
         DataSourceDefinition.registerTransformers110(builder);
         XaDataSourceDefinition.registerTransformers110(builder);
-        TransformationDescription.Tools.register(builder.build(), subsystem, ModelVersion.create(1, 1, 0));
-
+        return builder.build();
     }
 
-    private static class DataSourceDescriptionHandler extends GenericSubsystemDescribeHandler {
-        public static final DataSourceDescriptionHandler INSTANCE = new DataSourceDescriptionHandler();
+    static TransformationDescription get111TransformationDescription() {
 
-
-        @Override
-        protected void describe(Resource resource, ModelNode address, ModelNode result, ImmutableManagementResourceRegistration registration) {
-            super.describe(resource, address, result, registration);
-            if (address.asList().size() == 2 && (address.asList().get(1).hasDefined(DATA_SOURCE) || address.asList().get(1).hasDefined(XA_DATASOURCE))) {
-                result.add(createEnableOperation(address, resource.getModel()));
-            }
-        }
-
-        private ModelNode createEnableOperation(final ModelNode address, final ModelNode subModel) {
-            final ModelNode operation = new ModelNode();
-            operation.get(ModelDescriptionConstants.OP).set(ModelDescriptionConstants.ENABLE);
-            operation.get(ModelDescriptionConstants.OP_ADDR).set(address);
-            operation.get(PERSISTENT).set(subModel.hasDefined(PERSISTENT) ? subModel.get(PERSISTENT) : new ModelNode(true));
-
-            return operation;
-        }
-
+        ResourceTransformationDescriptionBuilder builder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+        JdbcDriverDefinition.registerTransformers111(builder);
+        DataSourceDefinition.registerTransformers111(builder);
+        XaDataSourceDefinition.registerTransformers111(builder);
+        return builder.build();
     }
+
 }

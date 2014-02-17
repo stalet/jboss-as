@@ -21,6 +21,13 @@
 */
 package org.jboss.as.ee.subsystem;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
+import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.ANNOTATIONS;
+import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.GLOBAL_MODULES;
+import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.META_INF;
+import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.SERVICES;
+import static org.jboss.as.model.test.FailedOperationTransformationConfig.REJECTED_RESOURCE;
+
 import java.io.IOException;
 import java.util.List;
 
@@ -41,15 +48,9 @@ import org.jboss.dmr.ModelNode;
 import org.junit.Assert;
 import org.junit.Test;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
-import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.ANNOTATIONS;
-import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.GLOBAL_MODULES;
-import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.META_INF;
-import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.SERVICES;
-
 /**
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
+ * @author Eduardo Martins
  */
 public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
 
@@ -62,10 +63,24 @@ public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
         return readResource("subsystem.xml");
     }
 
+
     @Test
     public void testTransformers712() throws Exception {
         //Due to https://issues.jboss.org/browse/AS7-4892 the jboss-descriptor-property-replacement
         //does not get set properly on 7.1.2, so let's do a reject test.
+        testTransformers712(ModelTestControllerVersion.V7_1_2_FINAL);
+    }
+
+    @Test
+    public void testTransformersEAP600() throws Exception {
+        //Due to https://issues.jboss.org/browse/AS7-4892 the jboss-descriptor-property-replacement
+        //does not get set properly on 7.1.2, so let's do a reject test.
+        testTransformers712(ModelTestControllerVersion.EAP_6_0_0);
+    }
+
+    private void testTransformers712(ModelTestControllerVersion controllerVersion) throws Exception {
+        //Due to https://issues.jboss.org/browse/AS7-4892 the jboss-descriptor-property-replacement
+        //does not get set properly on 7.1.2, so let's do a reject test
 
         ModelVersion modelVersion = ModelVersion.create(1, 0, 0);
 
@@ -90,12 +105,9 @@ public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
                     modelVersion,
                     bootOps,
                     new FailedOperationTransformationConfig()
-                            .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, EeExtension.SUBSYSTEM_NAME)),
-                                    new JBossDescriptorPropertyReplacementConfig()));
-
+                            .addFailedAttribute(PathAddress.pathAddress(EeExtension.PATH_SUBSYSTEM), new JBossDescriptorPropertyReplacementConfig()));
 
             checkSubsystemModelTransformation(mainServices, modelVersion, new ModelFixer() {
-
                 @Override
                 public ModelNode fixModel(ModelNode modelNode) {
                     Assert.assertTrue(modelNode.get(EESubsystemModel.JBOSS_DESCRIPTOR_PROPERTY_REPLACEMENT).asBoolean());
@@ -111,8 +123,31 @@ public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
 
     @Test
     public void testTransformers713() throws Exception {
-        //We are 100% compatible with 7.1.3 so do a normal transformation test
+        testTransformers1_0_0_post712(ModelTestControllerVersion.V7_1_3_FINAL);
+    }
 
+    @Test
+    public void testTransformers720() throws Exception {
+        testTransformers1_0_0_post712(ModelTestControllerVersion.V7_2_0_FINAL);
+    }
+
+    @Test
+    public void testTransformersEAP601() throws Exception {
+        testTransformers1_0_0_post712(ModelTestControllerVersion.EAP_6_0_1);
+    }
+
+    @Test
+    public void testTransformersEAP610() throws Exception {
+        testTransformers1_0_0_post712(ModelTestControllerVersion.EAP_6_1_0);
+    }
+
+    @Test
+    public void testTransformersEAP611() throws Exception {
+        testTransformers1_0_0_post712(ModelTestControllerVersion.EAP_6_1_1);
+    }
+
+    private void testTransformers1_0_0_post712(ModelTestControllerVersion controllerVersion) throws Exception {
+        //Do a normal transformation test containing parts of the subsystem that work everywhere
         String subsystemXml = readResource("subsystem-transformers.xml");
         ModelVersion modelVersion = ModelVersion.create(1, 0, 0);
         //Use the non-runtime version of the extension which will happen on the HC
@@ -120,8 +155,8 @@ public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
                 .setSubsystemXml(subsystemXml);
 
         // Add legacy subsystems
-        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_3_FINAL, modelVersion)
-                .addMavenResourceURL("org.jboss.as:jboss-as-ee:7.1.3.Final");
+        builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-ee:" + controllerVersion.getMavenGavVersion());
 
         KernelServices mainServices = builder.build();
         KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
@@ -132,8 +167,31 @@ public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
     }
 
     @Test
-    public void testTransformersRejectGlobalModules() throws Exception {
+    public void testTransformers713Reject() throws Exception {
+        testTransformers1_0_0_reject(ModelTestControllerVersion.V7_1_3_FINAL);
+    }
 
+    @Test
+    public void testTransformers720Reject() throws Exception {
+        testTransformers1_0_0_reject(ModelTestControllerVersion.V7_2_0_FINAL);
+    }
+
+    @Test
+    public void testTransformersEAP601Reject() throws Exception {
+        testTransformers1_0_0_reject(ModelTestControllerVersion.EAP_6_0_1);
+    }
+
+    @Test
+    public void testTransformersEAP610Reject() throws Exception {
+        testTransformers1_0_0_reject(ModelTestControllerVersion.EAP_6_1_0);
+    }
+
+    @Test
+    public void testTransformersEAP611Reject() throws Exception {
+        testTransformers1_0_0_reject(ModelTestControllerVersion.EAP_6_1_1);
+    }
+
+    private void testTransformers1_0_0_reject(ModelTestControllerVersion controllerVersion) throws Exception {
         String subsystemXml = readResource("subsystem.xml");
         ModelVersion modelVersion = ModelVersion.create(1, 0, 0);
         //Use the non-runtime version of the extension which will happen on the HC
@@ -142,21 +200,61 @@ public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
         List<ModelNode> xmlOps = builder.parseXml(subsystemXml);
 
         // Add legacy subsystems
-        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_3_FINAL, modelVersion)
-                .addMavenResourceURL("org.jboss.as:jboss-as-ee:7.1.3.Final");
+        builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-ee:" + controllerVersion.getMavenGavVersion());
 
         KernelServices mainServices = builder.build();
         Assert.assertTrue(mainServices.isSuccessfulBoot());
 
-        ModelTestUtils.checkFailedTransformedBootOperations(mainServices, modelVersion, xmlOps, new FailedOperationTransformationConfig()
-                .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, EeExtension.SUBSYSTEM_NAME)),
-                                    new GlobalModulesConfig()));
+        FailedOperationTransformationConfig.ChainedConfig chained =
+                FailedOperationTransformationConfig.ChainedConfig.createBuilder(GlobalModulesDefinition.INSTANCE.getName(), EESubsystemModel.ANNOTATION_PROPERTY_REPLACEMENT)
+                .addConfig(new GlobalModulesConfig())
+                .addConfig(new FailedOperationTransformationConfig.RejectExpressionsConfig(EESubsystemModel.ANNOTATION_PROPERTY_REPLACEMENT) {
+                    @Override
+                    protected ModelNode correctValue(ModelNode toResolve, boolean isWriteAttribute) {
+                        ModelNode resolved = super.correctValue(toResolve, isWriteAttribute);
+                        //Make it a boolean
+                        return new ModelNode(resolved.asBoolean());
+                    }})
+                .build();
 
+
+        FailedOperationTransformationConfig config =  new FailedOperationTransformationConfig()
+        .addFailedAttribute(PathAddress.pathAddress(EeExtension.PATH_SUBSYSTEM), chained)
+        .addFailedAttribute(PathAddress.pathAddress(EeExtension.PATH_SUBSYSTEM, PathElement.pathElement(EESubsystemModel.CONTEXT_SERVICE)), REJECTED_RESOURCE)
+        .addFailedAttribute(PathAddress.pathAddress(EeExtension.PATH_SUBSYSTEM, PathElement.pathElement(EESubsystemModel.MANAGED_THREAD_FACTORY)), REJECTED_RESOURCE)
+        .addFailedAttribute(PathAddress.pathAddress(EeExtension.PATH_SUBSYSTEM, PathElement.pathElement(EESubsystemModel.MANAGED_EXECUTOR_SERVICE)), REJECTED_RESOURCE)
+        .addFailedAttribute(PathAddress.pathAddress(EeExtension.PATH_SUBSYSTEM, PathElement.pathElement(EESubsystemModel.MANAGED_SCHEDULED_EXECUTOR_SERVICE)), REJECTED_RESOURCE);
+
+        ModelTestUtils.checkFailedTransformedBootOperations(mainServices, modelVersion, xmlOps, config);
     }
 
     @Test
-    public void testTransformersDiscardGlobalModules() throws Exception {
+    public void testTransformersDiscardsImpliedValues713() throws Exception {
+        testTransformersDiscardsImpliedValues1_0_0(ModelTestControllerVersion.V7_1_3_FINAL);
+    }
 
+    @Test
+    public void testTransformersDiscardsImpliedValues720() throws Exception {
+        testTransformersDiscardsImpliedValues1_0_0(ModelTestControllerVersion.V7_2_0_FINAL);
+    }
+
+    @Test
+    public void testTransformersDiscardsImpliedValuesEAP601() throws Exception {
+        testTransformersDiscardsImpliedValues1_0_0(ModelTestControllerVersion.EAP_6_0_1);
+    }
+
+    @Test
+    public void testTransformersDiscardsImpliedValuesEAP610() throws Exception {
+        testTransformersDiscardsImpliedValues1_0_0(ModelTestControllerVersion.EAP_6_1_0);
+    }
+
+    @Test
+    public void testTransformersDiscardsImpliedValuesEAP611() throws Exception {
+        testTransformersDiscardsImpliedValues1_0_0(ModelTestControllerVersion.EAP_6_1_1);
+    }
+
+    private void testTransformersDiscardsImpliedValues1_0_0(ModelTestControllerVersion controllerVersion) throws Exception {
         String subsystemXml = readResource("subsystem-transformers-discard.xml");
         ModelVersion modelVersion = ModelVersion.create(1, 0, 0);
         //Use the non-runtime version of the extension which will happen on the HC
@@ -164,8 +262,8 @@ public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
                 .setSubsystemXml(subsystemXml);
 
         // Add legacy subsystems
-        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_3_FINAL, modelVersion)
-                .addMavenResourceURL("org.jboss.as:jboss-as-ee:7.1.3.Final")
+        builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-ee:" + controllerVersion.getMavenGavVersion())
                 .configureReverseControllerCheck(AdditionalInitialization.MANAGEMENT, new ModelFixer() {
                     // The regular model will have the new attributes because they are in the xml,
                     // but the reverse controller model will not because transformation strips them
@@ -257,4 +355,6 @@ public class EeSubsystemTestCase extends AbstractSubsystemBaseTest {
             return toResolve;
         }
     }
+
+
 }

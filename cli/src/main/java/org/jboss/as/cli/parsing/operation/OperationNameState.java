@@ -21,9 +21,12 @@
  */
 package org.jboss.as.cli.parsing.operation;
 
-import org.jboss.as.cli.parsing.DefaultParsingState;
+import org.jboss.as.cli.CommandFormatException;
+import org.jboss.as.cli.parsing.CharacterHandler;
+import org.jboss.as.cli.parsing.ExpressionBaseState;
 import org.jboss.as.cli.parsing.GlobalCharacterHandlers;
 import org.jboss.as.cli.parsing.OutputTargetState;
+import org.jboss.as.cli.parsing.ParsingContext;
 import org.jboss.as.cli.parsing.WordCharacterHandler;
 
 
@@ -31,7 +34,7 @@ import org.jboss.as.cli.parsing.WordCharacterHandler;
  *
  * @author Alexey Loubyansky
  */
-public final class OperationNameState extends DefaultParsingState {
+public final class OperationNameState extends ExpressionBaseState {
 
     public static final String ID = "OP_NAME";
     public static final OperationNameState INSTANCE = new OperationNameState();
@@ -39,7 +42,11 @@ public final class OperationNameState extends DefaultParsingState {
     public OperationNameState() {
         super(ID);
         setIgnoreWhitespaces(true);
-        setEnterHandler(WordCharacterHandler.IGNORE_LB_ESCAPE_ON);
+        setEnterHandler(new CharacterHandler(){
+            @Override
+            public void handle(ParsingContext ctx) throws CommandFormatException {
+                WordCharacterHandler.IGNORE_LB_ESCAPE_ON.handle(ctx);
+            }});
         setDefaultHandler(WordCharacterHandler.IGNORE_LB_ESCAPE_ON);
         putHandler('(', GlobalCharacterHandlers.LEAVE_STATE_HANDLER);
         putHandler('{', GlobalCharacterHandlers.LEAVE_STATE_HANDLER);

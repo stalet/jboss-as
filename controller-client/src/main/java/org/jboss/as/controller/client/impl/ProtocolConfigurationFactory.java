@@ -44,7 +44,13 @@ class ProtocolConfigurationFactory {
     static ProtocolChannelClient.Configuration create(final ModelControllerClientConfiguration client) throws URISyntaxException {
         final ProtocolChannelClient.Configuration configuration = new ProtocolChannelClient.Configuration();
 
-        configuration.setUri(new URI("remote://" + formatPossibleIpv6Address(client.getHost()) +  ":" + client.getPort()));
+        if(client.getProtocol() == null) {
+            // WFLY-1462 for compatibility assume remoting if the standard native port is configured
+            String protocol = client.getPort() == 9999 ? "remote://" : "http-remoting://";
+            configuration.setUri(new URI(protocol + formatPossibleIpv6Address(client.getHost()) +  ":" + client.getPort()));
+        } else  {
+            configuration.setUri(new URI(client.getProtocol() + "://" + formatPossibleIpv6Address(client.getHost()) +  ":" + client.getPort()));
+        }
         configuration.setOptionMap(DEFAULT_OPTIONS);
         final long timeout = client.getConnectionTimeout();
         if(timeout > 0) {

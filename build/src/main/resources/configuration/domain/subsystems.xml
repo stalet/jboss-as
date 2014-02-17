@@ -4,7 +4,7 @@
    <subsystems name="default">
       <!-- Each subsystem to be included relative to the src/main/resources directory -->
       <subsystem>configuration/subsystems/logging.xml</subsystem>
-      <subsystem>configuration/subsystems/configadmin.xml</subsystem>
+      <subsystem>configuration/subsystems/batch.xml</subsystem>
       <subsystem>configuration/subsystems/datasources.xml</subsystem>
       <subsystem>configuration/subsystems/ee.xml</subsystem>
       <subsystem>configuration/subsystems/ejb3.xml</subsystem>
@@ -32,7 +32,7 @@
    <subsystems name="ha">
       <!-- Each subsystem to be included relative to the src/main/resources directory -->
       <subsystem>configuration/subsystems/logging.xml</subsystem>
-      <subsystem>configuration/subsystems/configadmin.xml</subsystem>
+      <subsystem>configuration/subsystems/batch.xml</subsystem>
       <subsystem>configuration/subsystems/datasources.xml</subsystem>
       <subsystem>configuration/subsystems/ee.xml</subsystem>
       <subsystem supplement="ha">configuration/subsystems/ejb3.xml</subsystem>
@@ -46,7 +46,7 @@
       <subsystem>configuration/subsystems/jpa.xml</subsystem>
       <subsystem>configuration/subsystems/jsf.xml</subsystem>
       <subsystem>configuration/subsystems/mail.xml</subsystem>
-      <subsystem>configuration/subsystems/modcluster.xml</subsystem>
+      <subsystem>configuration/subsystems/mod_cluster.xml</subsystem>
       <subsystem>configuration/subsystems/naming.xml</subsystem>
       <subsystem>configuration/subsystems/pojo.xml</subsystem>
       <subsystem>configuration/subsystems/remoting.xml</subsystem>
@@ -62,7 +62,7 @@
    <subsystems name="full">
       <!-- Each subsystem to be included relative to the src/main/resources directory -->
       <subsystem>configuration/subsystems/logging.xml</subsystem>
-      <subsystem>configuration/subsystems/configadmin.xml</subsystem>
+      <subsystem>configuration/subsystems/batch.xml</subsystem>
       <subsystem>configuration/subsystems/datasources.xml</subsystem>
       <subsystem>configuration/subsystems/ee.xml</subsystem>
       <subsystem supplement="full">configuration/subsystems/ejb3.xml</subsystem>
@@ -93,7 +93,7 @@
    <subsystems name="full-ha">
       <!-- Each subsystem to be included relative to the src/main/resources directory -->
       <subsystem>configuration/subsystems/logging.xml</subsystem>
-      <subsystem>configuration/subsystems/configadmin.xml</subsystem>
+      <subsystem>configuration/subsystems/batch.xml</subsystem>
       <subsystem>configuration/subsystems/datasources.xml</subsystem>
       <subsystem>configuration/subsystems/ee.xml</subsystem>
       <subsystem supplement="full-ha">configuration/subsystems/ejb3.xml</subsystem>
@@ -110,7 +110,7 @@
       <subsystem>configuration/subsystems/jsr77.xml</subsystem>
       <subsystem>configuration/subsystems/mail.xml</subsystem>
       <subsystem supplement="ha">configuration/subsystems/messaging.xml</subsystem>
-      <subsystem>configuration/subsystems/modcluster.xml</subsystem>
+      <subsystem>configuration/subsystems/mod_cluster.xml</subsystem>
       <subsystem>configuration/subsystems/naming.xml</subsystem>
       <subsystem>configuration/subsystems/pojo.xml</subsystem>
       <subsystem>configuration/subsystems/remoting.xml</subsystem>

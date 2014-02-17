@@ -21,6 +21,8 @@
  */
 package org.jboss.as.naming.subsystem;
 
+import static org.jboss.as.naming.subsystem.NamingSubsystemModel.TYPE;
+
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Arrays;
@@ -32,6 +34,7 @@ import javax.naming.InitialContext;
 import javax.naming.spi.ObjectFactory;
 
 import org.jboss.as.controller.AbstractAddStepHandler;
+import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
@@ -40,11 +43,11 @@ import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.naming.ContextListAndJndiViewManagedReferenceFactory;
 import org.jboss.as.naming.ContextListManagedReferenceFactory;
 import org.jboss.as.naming.ExternalContextObjectFactory;
+import org.jboss.as.naming.ImmediateManagedReference;
 import org.jboss.as.naming.ManagedReference;
 import org.jboss.as.naming.ManagedReferenceFactory;
 import org.jboss.as.naming.NamingMessages;
 import org.jboss.as.naming.ServiceBasedNamingStore;
-import org.jboss.as.naming.ValueManagedReference;
 import org.jboss.as.naming.ValueManagedReferenceFactory;
 import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.as.naming.service.BinderService;
@@ -56,9 +59,7 @@ import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.value.ImmediateValue;
-
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.BINDING_TYPE;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.TYPE;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A {@link org.jboss.as.controller.AbstractAddStepHandler} to handle the add operation for simple JNDI bindings
@@ -155,9 +156,9 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
 
         final ObjectFactory objectFactoryClassInstance;
 
-        final ClassLoader cl = SecurityActions.getContextClassLoader();
+        final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         try {
-            SecurityActions.setContextClassLoader(module.getClassLoader());
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(module.getClassLoader());
             final Class<?> clazz = module.getClassLoader().loadClass(className);
             objectFactoryClassInstance = (ObjectFactory) clazz.newInstance();
         } catch (ClassNotFoundException e) {
@@ -169,7 +170,7 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
         } catch (ClassCastException e) {
             throw NamingMessages.MESSAGES.notAnInstanceOfObjectFactory(className, moduleID);
         } finally {
-            SecurityActions.setContextClassLoader(cl);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
         }
 
         final ServiceTarget serviceTarget = context.getServiceTarget();
@@ -183,7 +184,7 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
             public ManagedReference getReference() {
                 try {
                     final Object value = objectFactoryClassInstance.getObjectInstance(name, null, null, environment);
-                    return new ValueManagedReference(new ImmediateValue<Object>(value));
+                    return new ImmediateManagedReference(value);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -191,24 +192,24 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
 
             @Override
             public String getInstanceClassName() {
-                final ClassLoader cl = SecurityActions.getContextClassLoader();
+                final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
                 try {
-                    SecurityActions.setContextClassLoader(objectFactoryClassInstance.getClass().getClassLoader());
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(objectFactoryClassInstance.getClass().getClassLoader());
                     final Object value = getReference().getInstance();
                     return value != null ? value.getClass().getName() : ContextListManagedReferenceFactory.DEFAULT_INSTANCE_CLASS_NAME;
                 } finally {
-                    SecurityActions.setContextClassLoader(cl);
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
                 }
             }
 
             @Override
             public String getJndiViewInstanceValue() {
-                final ClassLoader cl = SecurityActions.getContextClassLoader();
+                final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
                 try {
-                    SecurityActions.setContextClassLoader(objectFactoryClassInstance.getClass().getClassLoader());
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(objectFactoryClassInstance.getClass().getClassLoader());
                     return String.valueOf(getReference().getInstance());
                 } finally {
-                    SecurityActions.setContextClassLoader(cl);
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
                 }
             }
         });
@@ -252,7 +253,7 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
             public ManagedReference getReference() {
                 try {
                     final Object value = objectFactoryClassInstance.getObjectInstance(name, null, null, environment);
-                    return new ValueManagedReference(new ImmediateValue<Object>(value));
+                    return new ImmediateManagedReference(value);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -265,12 +266,12 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
 
             @Override
             public String getJndiViewInstanceValue() {
-                final ClassLoader cl = SecurityActions.getContextClassLoader();
+                final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
                 try {
-                    SecurityActions.setContextClassLoader(objectFactoryClassInstance.getClass().getClassLoader());
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(objectFactoryClassInstance.getClass().getClassLoader());
                     return String.valueOf(getReference().getInstance());
                 } finally {
-                    SecurityActions.setContextClassLoader(cl);
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
                 }
             }
         });
@@ -311,7 +312,7 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
             public ManagedReference getReference() {
                 try {
                     final Object value = new InitialContext().lookup(lookup);
-                    return new ValueManagedReference(new ImmediateValue<Object>(value));
+                    return new ImmediateManagedReference(value);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -377,24 +378,9 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
 
     @Override
     protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
-        final BindingType type = BindingType.forName(operation.require(BINDING_TYPE).asString());
-        NamingBindingResourceDefinition.BINDING_TYPE.validateAndSet(operation, model);
-        if (type == BindingType.SIMPLE) {
-            NamingBindingResourceDefinition.VALUE.validateAndSet(operation, model);
-            NamingBindingResourceDefinition.TYPE.validateAndSet(operation, model);
-        } else if (type == BindingType.OBJECT_FACTORY) {
-            NamingBindingResourceDefinition.MODULE.validateAndSet(operation, model);
-            NamingBindingResourceDefinition.CLASS.validateAndSet(operation, model);
-            NamingBindingResourceDefinition.ENVIRONMENT.validateAndSet(operation, model);
-        } else if (type == BindingType.EXTERNAL_CONTEXT) {
-            NamingBindingResourceDefinition.MODULE.validateAndSet(operation, model);
-            NamingBindingResourceDefinition.CLASS.validateAndSet(operation, model);
-            NamingBindingResourceDefinition.CACHE.validateAndSet(operation, model);
-            NamingBindingResourceDefinition.ENVIRONMENT.validateAndSet(operation, model);
-        } else if (type == BindingType.LOOKUP) {
-            NamingBindingResourceDefinition.LOOKUP.validateAndSet(operation, model);
-        } else {
-            throw NamingMessages.MESSAGES.unknownBindingType(type.toString());
+        for (AttributeDefinition attr : NamingBindingResourceDefinition.ATTRIBUTES) {
+            attr.validateAndSet(operation, model);
         }
+        NamingBindingResourceDefinition.validateResourceModel(model);
     }
 }

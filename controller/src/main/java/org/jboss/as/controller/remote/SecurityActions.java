@@ -1,6 +1,6 @@
 /*
  * JBoss, Home of Professional Open Source.
- * Copyright 2012, Red Hat, Inc., and individual contributors
+ * Copyright 2013, Red Hat, Inc., and individual contributors
  * as indicated by the @author tags. See the copyright.txt file in the
  * distribution for a full listing of individual contributors.
  *
@@ -22,46 +22,55 @@
 
 package org.jboss.as.controller.remote;
 
+import java.security.AccessControlContext;
+import java.security.AccessController;
 import java.security.PrivilegedAction;
 
 import javax.security.auth.Subject;
 
-import org.jboss.as.controller.security.SecurityContext;
-import org.jboss.as.util.security.ReadPropertyAction;
-
-import static java.lang.System.getProperty;
-import static java.lang.System.getSecurityManager;
-import static java.security.AccessController.doPrivileged;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
- * Security Actions for classes in the org.jboss.as.controller.remote package.
- *
- * No methods in this class are to be made public under any circumstances!
+ * Security actions for the 'org.jboss.as.controller.remote' package.
  *
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
 class SecurityActions {
 
-    static String getSystemProperty(final String key, final String defaultValue) {
-        return getSecurityManager() == null ? getProperty(key, defaultValue) : doPrivileged(new ReadPropertyAction(key, defaultValue));
+    static Subject getSubject() {
+        AccessControlContext acc = AccessController.getContext();
+        return getSubjectAction().getSubject(acc);
     }
 
-    static void setSecurityContextSubject(final Subject subject) {
-        doPrivileged(new PrivilegedAction<Void>() {
-            public Void run() {
-                SecurityContext.setSubject(subject);
-                return null;
-            }
-        });
+    private static GetSubjectAction getSubjectAction() {
+        return WildFlySecurityManager.isChecking() ? GetSubjectAction.PRIVILEGED : GetSubjectAction.NON_PRIVILEGED;
     }
 
-    static void clearSubjectSecurityContext() {
-        doPrivileged(new PrivilegedAction<Void>() {
-            public Void run() {
-                SecurityContext.clearSubject();
-                return null;
+    private interface GetSubjectAction {
+        Subject getSubject(AccessControlContext acc);
+
+        GetSubjectAction NON_PRIVILEGED = new GetSubjectAction() {
+
+            @Override
+            public Subject getSubject(AccessControlContext acc) {
+                return Subject.getSubject(acc);
             }
-        });
+        };
+
+        GetSubjectAction PRIVILEGED = new GetSubjectAction() {
+
+            @Override
+            public Subject getSubject(final AccessControlContext acc) {
+                return AccessController.doPrivileged(new PrivilegedAction<Subject>() {
+
+                    @Override
+                    public Subject run() {
+                        return NON_PRIVILEGED.getSubject(acc);
+                    }
+                });
+            }
+        };
+
     }
 
 }

@@ -26,17 +26,12 @@ import static org.jboss.as.test.clustering.ClusteringTestConstants.GRACE_TIME_TO
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.utils.HttpClientUtils;
-import org.junit.Assert;
 
 /**
  * Helper class to start and stop container including a deployment.
@@ -45,16 +40,6 @@ import org.junit.Assert;
  * @version April 2012
  */
 public final class ClusterHttpClientUtil {
-
-    public static void establishView(final HttpClient client, final URL baseURL, final String cluster, final String... members) throws URISyntaxException, IOException {
-        URI uri = ViewChangeListenerServlet.createURI(baseURL, cluster, members);
-        HttpResponse response = client.execute(new HttpGet(uri));
-        try {
-            Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
-        } finally {
-            HttpClientUtils.closeQuietly(response);
-        }
-    }
 
     /**
      * Tries a get on the provided client with default GRACE_TIME_TO_MEMBERSHIP_CHANGE.
@@ -104,13 +89,13 @@ public final class ClusterHttpClientUtil {
         HttpResponse response = tryGet(client, url);
 
         // Consume it
-        BufferedReader br = new BufferedReader(new InputStreamReader(response.getEntity().getContent()), 4096);
-        String line;
         StringBuilder sb = new StringBuilder();
-        while ((line = br.readLine()) != null) {
-            sb.append(line);
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(response.getEntity().getContent()), 4096)) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line);
+            }
         }
-        br.close();
         return sb.toString();
     }
 

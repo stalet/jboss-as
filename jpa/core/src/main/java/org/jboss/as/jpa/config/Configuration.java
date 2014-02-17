@@ -25,7 +25,8 @@ package org.jboss.as.jpa.config;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.jboss.as.jpa.spi.PersistenceUnitMetadata;
+import org.jipijapa.plugin.spi.PersistenceUnitMetadata;
+
 
 /**
  * configuration properties that may appear in persistence.xml
@@ -39,9 +40,14 @@ public class Configuration {
     public static final String PROVIDER_MODULE = "jboss.as.jpa.providerModule";
 
     /**
-     * Hibernate 4 persistence provider
+     * Hibernate 4.3.x (default) persistence provider
      */
-    public static final String PROVIDER_MODULE_HIBERNATE4 = "org.hibernate";
+    public static final String PROVIDER_MODULE_HIBERNATE4_3 = "org.hibernate";
+
+    /**
+     * Hibernate 4.1.x persistence provider, note that Hibernate 4.1.x is expected to be in the 4.1 slot
+     */
+    public static final String PROVIDER_MODULE_HIBERNATE4_1 = "org.hibernate:4.1";
 
     /**
      * Hibernate OGM persistence provider
@@ -66,12 +72,17 @@ public class Configuration {
     /**
      * default if no PROVIDER_MODULE is specified.
      */
-    public static final String PROVIDER_MODULE_DEFAULT = PROVIDER_MODULE_HIBERNATE4;
+    public static final String PROVIDER_MODULE_DEFAULT = PROVIDER_MODULE_HIBERNATE4_3;
 
     /**
-     * Hibernate persistence provider class
+     * Hibernate 4.1.x persistence provider class
      */
-    public static final String PROVIDER_CLASS_HIBERNATE = "org.hibernate.ejb.HibernatePersistence";
+    public static final String PROVIDER_CLASS_HIBERNATE4_1 = "org.hibernate.ejb.HibernatePersistence";
+
+    /**
+     * Hibernate 4.3.x persistence provider class
+     */
+    public static final String PROVIDER_CLASS_HIBERNATE = "org.hibernate.jpa.HibernatePersistenceProvider";
 
     /**
      * Hibernate OGM persistence provider class
@@ -131,21 +142,30 @@ public class Configuration {
     public static final String ADAPTER_MODULE = "jboss.as.jpa.adapterModule";
 
     /**
-     * default if no ADAPTER_MODULE is specified.
-     */
-    public static final String ADAPTER_MODULE_DEFAULT = "org.jboss.as.jpa.hibernate:4";
-
-    /**
      * defaults to true, if changed to false (in the persistence.xml),
      * the JPA container will not start the persistence unit service.
      */
     public static final String JPA_CONTAINER_MANAGED = "jboss.as.jpa.managed";
+
+    public static final String JPA_DEFAULT_PERSISTENCE_UNIT = "wildfly.jpa.default-unit";
 
     /**
      * defaults to true, if false, persistence unit will not support javax.persistence.spi.ClassTransformer Interface
      * which means no application class rewriting
      */
     public static final String JPA_CONTAINER_CLASS_TRANSFORMER = "jboss.as.jpa.classtransformer";
+
+    /**
+     * set to false to force a single phase persistence unit bootstrap to be used (default is true
+     * which uses two phases to start the persistence unit).
+     */
+    public static final String JPA_ALLOW_TWO_PHASE_BOOTSTRAP = "wildfly.jpa.twophasebootstrap";
+
+    /**
+     * set to false to ignore default data source (defaults to true)
+     */
+    private static final String JPA_ALLOW_DEFAULT_DATA_SOURCE_USE = "wildfly.jpa.allowdefaultdatasourceuse";
+
     /**
      * name of the persistence provider adapter class
      */
@@ -157,7 +177,13 @@ public class Configuration {
     static {
         // always choose the default hibernate version for the Hibernate provider class mapping
         // if the user wants a different version. they can specify the provider module name
-        providerClassToModuleName.put(PROVIDER_CLASS_HIBERNATE, PROVIDER_MODULE_HIBERNATE4);
+        providerClassToModuleName.put(PROVIDER_CLASS_HIBERNATE, PROVIDER_MODULE_HIBERNATE4_3);
+        // WFLY-2136/HHH-8543 to make migration to Hibernate 4.3.x easier, we also map the (now)
+        // deprecated PROVIDER_CLASS_HIBERNATE4_1 to the org.hibernate:main module
+        // when PROVIDER_CLASS_HIBERNATE4_1 is no longer in a future Hibernate version (5.x?)
+        // we can map PROVIDER_CLASS_HIBERNATE4_1 to org.hibernate:4.3 at that time.
+        // persistence units can set "jboss.as.jpa.providerModule=org.hibernate:4.1" to use Hibernate 4.1.x/4.2.x
+        providerClassToModuleName.put(PROVIDER_CLASS_HIBERNATE4_1, PROVIDER_MODULE_HIBERNATE4_3);
         providerClassToModuleName.put(PROVIDER_CLASS_HIBERNATE_OGM, PROVIDER_MODULE_HIBERNATE_OGM);
         providerClassToModuleName.put(PROVIDER_CLASS_TOPLINK_ESSENTIALS, PROVIDER_MODULE_TOPLINK);
         providerClassToModuleName.put(PROVIDER_CLASS_TOPLINK, PROVIDER_MODULE_TOPLINK);
@@ -213,5 +239,33 @@ public class Configuration {
 
     public static String getDefaultProviderModuleName() {
         return PROVIDER_MODULE_DEFAULT;
+    }
+
+    /**
+     * Determine if two phase persistence unit start is allowed
+     *
+     * @param pu
+     * @return
+     */
+    public static boolean allowTwoPhaseBootstrap(PersistenceUnitMetadata pu) {
+        boolean result = true;
+        if (pu.getProperties().containsKey(Configuration.JPA_ALLOW_TWO_PHASE_BOOTSTRAP)) {
+            result = Boolean.parseBoolean(pu.getProperties().getProperty(Configuration.JPA_ALLOW_TWO_PHASE_BOOTSTRAP));
+        }
+        return result;
+    }
+
+    /**
+     * Determine if the default data-source should be used
+     *
+     * @param pu
+     * @return true if the default data-source should be used
+     */
+    public static boolean allowDefaultDataSourceUse(PersistenceUnitMetadata pu) {
+        boolean result = true;
+        if (pu.getProperties().containsKey(Configuration.JPA_ALLOW_DEFAULT_DATA_SOURCE_USE)) {
+            result = Boolean.parseBoolean(pu.getProperties().getProperty(Configuration.JPA_ALLOW_DEFAULT_DATA_SOURCE_USE));
+        }
+        return result;
     }
 }

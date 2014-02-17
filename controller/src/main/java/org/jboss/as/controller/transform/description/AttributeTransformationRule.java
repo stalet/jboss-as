@@ -22,6 +22,11 @@
 
 package org.jboss.as.controller.transform.description;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -29,6 +34,7 @@ import java.util.Set;
 
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
+import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.transform.OperationRejectionPolicy;
 import org.jboss.as.controller.transform.OperationResultTransformer;
@@ -53,8 +59,10 @@ class AttributeTransformationRule extends TransformationRule {
         doTransform(address, transformed, operation, context, rejectedAttributes);
 
         final OperationRejectionPolicy policy;
+        final OperationResultTransformer resultTransformer;
         if (!rejectedAttributes.hasRejections()) {
             policy = OperationTransformer.DEFAULT_REJECTION_POLICY;
+            resultTransformer = OperationResultTransformer.ORIGINAL_RESULT;
         } else {
             policy = new OperationRejectionPolicy() {
                 @Override
@@ -67,9 +75,21 @@ class AttributeTransformationRule extends TransformationRule {
                     return rejectedAttributes.getOperationRejectDescription();
                 }
             };
+            resultTransformer = new OperationResultTransformer() {
+                @Override
+                public ModelNode transformResult(ModelNode result) {
+                    ModelNode res = result;
+                    if (!result.hasDefined(OUTCOME) || SUCCESS.equals(result.get(OUTCOME).asString())) {
+                        res = result.clone();
+                        res.get(OUTCOME).set(FAILED);
+                        res.get(FAILURE_DESCRIPTION).set(policy.getFailureDescription());
+                    }
+                    return res;
+                }
+            };
         }
 
-        context.invokeNext(new OperationTransformer.TransformedOperation(transformed, policy, OperationResultTransformer.ORIGINAL_RESULT));
+        context.invokeNext(new OperationTransformer.TransformedOperation(transformed, policy, resultTransformer));
     }
 
     @Override
@@ -115,18 +135,20 @@ class AttributeTransformationRule extends TransformationRule {
                 }
             }
 
-            //Check rejections
-            for(final Map.Entry<String, AttributeTransformationDescription> entry : descriptions.entrySet()) {
-                final String attributeName = entry.getKey();
-                if (!discardedAttributes.contains(attributeName)) {
-                    final ModelNode attributeValue = modelOrOp.get(attributeName);
-                    AttributeTransformationDescription description = entry.getValue();
+            //Check rejections (unless it is a remove operation, in which case we just remove)
+            if (operation == null || (!operation.get(ModelDescriptionConstants.OP).asString().equals(ModelDescriptionConstants.REMOVE) && !
+                    operation.get(ModelDescriptionConstants.OP).asString().equals(ModelDescriptionConstants.READ_ATTRIBUTE_OPERATION))) {
+                for(final Map.Entry<String, AttributeTransformationDescription> entry : descriptions.entrySet()) {
+                    final String attributeName = entry.getKey();
+                    if (!discardedAttributes.contains(attributeName)) {
+                        final ModelNode attributeValue = modelOrOp.get(attributeName);
+                        AttributeTransformationDescription description = entry.getValue();
 
-                    //Check the rest of the model can be transformed
-                    description.rejectAttributes(rejectedAttributes, TransformationRule.cloneAndProtect(attributeValue));
+                        //Check the rest of the model can be transformed
+                        description.rejectAttributes(rejectedAttributes, TransformationRule.cloneAndProtect(attributeValue));
+                    }
                 }
             }
-
             //Do conversions
             for(final Map.Entry<String, AttributeTransformationDescription> entry : descriptions.entrySet()) {
                 final String attributeName = entry.getKey();

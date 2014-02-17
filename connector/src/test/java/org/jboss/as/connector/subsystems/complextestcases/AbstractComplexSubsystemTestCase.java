@@ -22,7 +22,6 @@
 package org.jboss.as.connector.subsystems.complextestcases;
 
 
-import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.controller.Extension;
 import org.jboss.as.subsystem.test.AbstractSubsystemTest;
 import org.jboss.as.subsystem.test.AdditionalInitialization;
@@ -57,8 +56,6 @@ public class AbstractComplexSubsystemTestCase extends AbstractSubsystemTest {
                 .build();
 
         ModelNode model = services.readWholeModel();
-        if (archiveName!=null)
-            ConnectorServices.unregisterResourceIdentifiers(archiveName);
 
         // Marshal the xml to see that it is the same as before
         String marshalled = services.getPersistedSubsystemXml();

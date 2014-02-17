@@ -22,13 +22,13 @@
 
 package org.jboss.as.jacorb.csiv2;
 
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 
 import org.jacorb.orb.MinorCodes;
 import org.jboss.as.jacorb.JacORBLogger;
 import org.jboss.as.jacorb.JacORBMessages;
 import org.jboss.security.RunAs;
-import org.jboss.security.SecurityContextAssociation;
 import org.omg.CORBA.Any;
 import org.omg.CORBA.BAD_PARAM;
 import org.omg.CORBA.CompletionStatus;
@@ -130,8 +130,8 @@ public class SASClientIdentityInterceptor extends LocalObject implements ClientR
 
             if ((secMech.sas_context_mech.target_supports & IdentityAssertion.value) != 0) {
                 // will create identity token.
-                RunAs runAs = SecurityContextAssociation.peekRunAsIdentity();
-                Principal p = (runAs != null) ? runAs : SecurityContextAssociation.getPrincipal();
+                RunAs runAs = SecurityActions.peekRunAsIdentity();
+                Principal p = (runAs != null) ? runAs : SecurityActions.getPrincipal();
 
                 if (p != null) {
                     // The name scope needs to be externalized.
@@ -139,7 +139,7 @@ public class SASClientIdentityInterceptor extends LocalObject implements ClientR
                     if (name.indexOf('@') < 0) {
                         name += "@default"; // hardcoded (REVISIT!)
                     }
-                    byte[] principalName = name.getBytes("UTF-8");
+                    byte[] principalName = name.getBytes(StandardCharsets.UTF_8);
 
                     // encode the principal name as mandated by RFC2743.
                     byte[] encodedName = CSIv2Util.encodeGssExportedName(principalName);
@@ -171,12 +171,12 @@ public class SASClientIdentityInterceptor extends LocalObject implements ClientR
                 if (name.indexOf('@') < 0) {
                     byte[] decodedTargetName =
                             CSIv2Util.decodeGssExportedName(encodedTargetName);
-                    String targetName = new String(decodedTargetName, "UTF-8");
+                    String targetName = new String(decodedTargetName, StandardCharsets.UTF_8);
                     name += "@" + targetName; // "@default"
                 }
-                byte[] username = name.getBytes("UTF-8");
+                byte[] username = name.getBytes(StandardCharsets.UTF_8);
                 // I don't know why there is not a better way to go from char[] -> byte[].
-                byte[] password = serverPassword.getBytes("UTF-8");
+                byte[] password = serverPassword.getBytes(StandardCharsets.UTF_8);
 
                 // create authentication token
                 InitialContextToken authenticationToken = new InitialContextToken(username, password, encodedTargetName);
@@ -199,8 +199,6 @@ public class SASClientIdentityInterceptor extends LocalObject implements ClientR
                 ServiceContext sc = new ServiceContext(sasContextId, codec.encode_value(any));
                 ri.add_request_service_context(sc, true /*replace existing context*/);
             }
-        } catch (java.io.UnsupportedEncodingException e) {
-            throw JacORBMessages.MESSAGES.unexpectedException(e);
         } catch (InvalidTypeForEncoding e) {
             throw JacORBMessages.MESSAGES.unexpectedException(e);
         }

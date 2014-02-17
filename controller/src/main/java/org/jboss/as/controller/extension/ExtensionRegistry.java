@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+
 import javax.xml.namespace.QName;
 
 import org.jboss.as.controller.AttributeDefinition;
@@ -54,6 +55,17 @@ import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.RunningModeControl;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.SubsystemRegistration;
+import org.jboss.as.controller.access.Action;
+import org.jboss.as.controller.access.AuthorizationResult;
+import org.jboss.as.controller.access.Caller;
+import org.jboss.as.controller.access.Environment;
+import org.jboss.as.controller.access.JmxAction;
+import org.jboss.as.controller.access.TargetAttribute;
+import org.jboss.as.controller.access.TargetResource;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.JmxAuthorizer;
+import org.jboss.as.controller.audit.AuditLogger;
+import org.jboss.as.controller.audit.ManagedAuditLogger;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.OverrideDescriptionProvider;
@@ -96,15 +108,32 @@ public class ExtensionRegistry {
     // subsystem -> extension
     private final ConcurrentMap<String, String> reverseMap = new ConcurrentHashMap<String, String>();
     private final RunningModeControl runningModeControl;
+    private final ManagedAuditLogger auditLogger;
+    private final JmxAuthorizer authorizer;
     // protected by extensions
     private boolean unnamedMerged;
     private final ConcurrentHashMap<String, SubsystemInformation> subsystemsInfo = new ConcurrentHashMap<String, SubsystemInformation>();
     private volatile TransformerRegistry transformerRegistry = TransformerRegistry.Factory.create(this);
 
-    public ExtensionRegistry(ProcessType processType, RunningModeControl runningModeControl) {
+    public ExtensionRegistry(ProcessType processType, RunningModeControl runningModeControl, ManagedAuditLogger auditLogger, JmxAuthorizer authorizer) {
         this.processType = processType;
         this.runningModeControl = runningModeControl;
+        this.auditLogger = auditLogger != null ? auditLogger : AuditLogger.NO_OP_LOGGER;
+        this.authorizer = authorizer != null ? authorizer : NO_OP_AUTHORIZER;
     }
+
+    /**
+     * Constructor
+     *
+     * @param processType
+     * @param runningModeControl
+     * @deprecated Here for core-model-test and subsystem-test backwards compatibility
+     */
+    @Deprecated
+    public ExtensionRegistry(ProcessType processType, RunningModeControl runningModeControl) {
+        this(processType, runningModeControl, null, null);
+    }
+
 
     /**
      * Gets the type of the current process.
@@ -220,7 +249,7 @@ public class ExtensionRegistry {
      * @throws IllegalStateException if no {@link #setSubsystemParentResourceRegistrations(ManagementResourceRegistration, ManagementResourceRegistration)} profile resource registration has been set}
      */
     public ExtensionContext getExtensionContext(final String moduleName, boolean isMasterDomainController) {
-        return new ExtensionContextImpl(moduleName, pathManager, isMasterDomainController);
+        return new ExtensionContextImpl(moduleName, pathManager, isMasterDomainController, auditLogger);
     }
 
     /**
@@ -350,7 +379,11 @@ public class ExtensionRegistry {
         final Map<String, SubsystemInformation> subsystemsInfo = getAvailableSubsystems(moduleName);
         if(subsystemsInfo != null && ! subsystemsInfo.isEmpty()) {
             for(final Map.Entry<String, SubsystemInformation> entry : subsystemsInfo.entrySet()) {
-                subsystems.add(entry.getKey(), entry.getValue().getManagementInterfaceMajorVersion() +"."+ entry.getValue().getManagementInterfaceMinorVersion());
+                SubsystemInformation subsystem = entry.getValue();
+                subsystems.add(entry.getKey(),
+                        subsystem.getManagementInterfaceMajorVersion() + "."
+                        + subsystem.getManagementInterfaceMinorVersion()
+                        + "." + subsystem.getManagementInterfaceMicroVersion());
             }
         }
     }
@@ -472,12 +505,14 @@ public class ExtensionRegistry {
         private final ExtensionInfo extension;
         private final PathManager pathManager;
         private final boolean registerTransformers;
+        private final ManagedAuditLogger auditLogger;
 
-        private ExtensionContextImpl(String extensionName, PathManager pathManager, boolean registerTransformers) {
+        private ExtensionContextImpl(String extensionName, PathManager pathManager, boolean registerTransformers, ManagedAuditLogger auditLogger) {
             assert pathManager != null || !processType.isServer() : "pathManager is null";
             this.pathManager = pathManager;
             this.extension = getExtensionInfo(extensionName);
             this.registerTransformers = registerTransformers;
+            this.auditLogger = auditLogger;
         }
 
         @Override
@@ -529,10 +564,26 @@ public class ExtensionRegistry {
             return pathManager;
         }
 
-
         @Override
         public boolean isRegisterTransformers() {
             return registerTransformers;
+        }
+
+        /**
+         * This method is only for internal use. We do NOT currently want to expose it on the ExtensionContext interface.
+         */
+        public AuditLogger getAuditLogger(boolean inheritConfiguration, boolean manualCommit) {
+            if (inheritConfiguration) {
+                return auditLogger;
+            }
+            return auditLogger.createNewConfiguration(manualCommit);
+        }
+
+        /**
+         * This method is only for internal use. We do NOT currently want to expose it on the ExtensionContext interface.
+         */
+        public JmxAuthorizer getAuthorizer() {
+            return authorizer;
         }
     }
 
@@ -791,6 +842,11 @@ public class ExtensionRegistry {
             return deployments.getSubModel(address);
         }
 
+        @Override
+        public List<AccessConstraintDefinition> getAccessConstraints() {
+            return deployments.getAccessConstraints();
+        }
+
         @SuppressWarnings("deprecation")
         @Override
         public ManagementResourceRegistration registerSubModel(PathElement address, DescriptionProvider descriptionProvider) {
@@ -874,7 +930,7 @@ public class ExtensionRegistry {
 
         @Override
         public void registerOperationHandler(OperationDefinition definition, OperationStepHandler handler) {
-            registerOperationHandler(definition,handler,false);
+            registerOperationHandler(definition, handler, false);
         }
 
         @Override
@@ -989,4 +1045,46 @@ public class ExtensionRegistry {
             return deployments.isAlias();
         }
     }
+
+    private static final JmxAuthorizer NO_OP_AUTHORIZER = new JmxAuthorizer() {
+
+        @Override
+        public AuthorizationResult authorize(Caller caller, Environment callEnvironment, Action action, TargetResource target) {
+            return AuthorizationResult.PERMITTED;
+        }
+
+        @Override
+        public AuthorizerDescription getDescription() {
+            return new AuthorizerDescription() {
+                @Override
+                public boolean isRoleBased() {
+                    return false;
+                }
+
+                @Override
+                public Set<String> getStandardRoles() {
+                    return Collections.emptySet();
+                }
+            };
+        }
+
+        @Override
+        public AuthorizationResult authorize(Caller caller, Environment callEnvironment, Action action, TargetAttribute target) {
+            return AuthorizationResult.PERMITTED;
+        }
+
+        @Override
+        public AuthorizationResult authorizeJmxOperation(Caller caller, Environment callEnvironment, JmxAction action) {
+            return AuthorizationResult.PERMITTED;
+        }
+
+        @Override
+        public Set<String> getCallerRoles(Caller caller, Environment callEnvironment, Set<String> runAsRoles) {
+            return null;
+        }
+
+        @Override
+        public void setNonFacadeMBeansSensitive(boolean sensitive) {
+        }
+    };
 }

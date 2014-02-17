@@ -27,6 +27,7 @@ import java.util.Properties;
 import javax.resource.spi.ActivationSpec;
 import javax.resource.spi.ResourceAdapter;
 
+import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.ee.component.BasicComponent;
 import org.jboss.as.ee.component.ComponentConfiguration;
 import org.jboss.as.ejb3.EjbLogger;
@@ -49,11 +50,13 @@ public class MessageDrivenComponentCreateService extends EJBComponentCreateServi
     private final Class<?> messageListenerInterface;
     private final Properties activationProps;
     private final String resourceAdapterName;
+    private final boolean deliveryActive;
     private final InjectedValue<ResourceAdapter> resourceAdapterInjectedValue = new InjectedValue<ResourceAdapter>();
     private final InjectedValue<PoolConfig> poolConfig = new InjectedValue<PoolConfig>();
     private final InjectedValue<DefaultResourceAdapterService> defaultResourceAdapterServiceInjectedValue = new InjectedValue<DefaultResourceAdapterService>();
     private final InjectedValue<EJBUtilities> ejbUtilitiesInjectedValue = new InjectedValue<EJBUtilities>();
     private final ClassLoader moduleClassLoader;
+
     /**
      * Construct a new instance.
      *
@@ -63,7 +66,8 @@ public class MessageDrivenComponentCreateService extends EJBComponentCreateServi
         super(componentConfiguration, ejbJarConfiguration);
 
         final MessageDrivenComponentDescription componentDescription = (MessageDrivenComponentDescription) componentConfiguration.getComponentDescription();
-        this.resourceAdapterName = this.stripDotRarSuffix(componentDescription.getResourceAdapterName());
+        this.resourceAdapterName = componentDescription.getResourceAdapterName();
+        this.deliveryActive = componentDescription.isDeliveryActive();
         // see MessageDrivenComponentDescription.<init>
         this.messageListenerInterface = messageListenerInterface;
 
@@ -80,14 +84,19 @@ public class MessageDrivenComponentCreateService extends EJBComponentCreateServi
 
     @Override
     protected BasicComponent createComponent() {
-        final String activeResourceAdapterName;
+        String configuredResourceAdapterName;
         if (resourceAdapterName == null) {
-            activeResourceAdapterName = defaultResourceAdapterServiceInjectedValue.getValue().getDefaultResourceAdapterName();
+            configuredResourceAdapterName = defaultResourceAdapterServiceInjectedValue.getValue().getDefaultResourceAdapterName();
         } else {
-            activeResourceAdapterName = resourceAdapterName;
+            configuredResourceAdapterName = resourceAdapterName;
         }
+
+        // Match configured value to the actual RA names
+        final String activeResourceAdapterName = searchActiveResourceAdapterName(configuredResourceAdapterName);
+
+
         final ActivationSpec activationSpec = getEndpointDeployer().createActivationSpecs(activeResourceAdapterName, messageListenerInterface, activationProps, getDeploymentClassLoader());
-        final MessageDrivenComponent component = new MessageDrivenComponent(this, messageListenerInterface, activationSpec);
+        final MessageDrivenComponent component = new MessageDrivenComponent(this, messageListenerInterface, activationSpec, deliveryActive);
         // set the resource adapter
         final ResourceAdapter resourceAdapter = this.resourceAdapterInjectedValue.getValue();
         component.setResourceAdapter(resourceAdapter);
@@ -98,6 +107,25 @@ public class MessageDrivenComponentCreateService extends EJBComponentCreateServi
 
         return component;
     }
+
+    private String searchActiveResourceAdapterName(String configuredResourceAdapterName) {
+        // Use the configured value unless it doesn't match and some variant of it does
+        String result = configuredResourceAdapterName;
+        if (ConnectorServices.getRegisteredResourceAdapterIdentifier(configuredResourceAdapterName) == null) {
+            // No direct match. See if we have a match with .rar removed or appended
+            String amended = stripDotRarSuffix(configuredResourceAdapterName);
+            if (configuredResourceAdapterName.equals(amended)) {
+                // There was no .rar to strip; try appending
+                amended = configuredResourceAdapterName + ".rar";
+            }
+            if (ConnectorServices.getRegisteredResourceAdapterIdentifier(amended) != null) {
+                result = amended;
+            }
+        }
+
+        return result;
+    }
+
 
     Injector<DefaultResourceAdapterService> getDefaultResourceAdapterServiceInjector() {
         return defaultResourceAdapterServiceInjectedValue;

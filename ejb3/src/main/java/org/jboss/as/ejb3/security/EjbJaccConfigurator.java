@@ -25,8 +25,10 @@ package org.jboss.as.ejb3.security;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.security.jacc.EJBMethodPermission;
 import javax.security.jacc.EJBRoleRefPermission;
@@ -50,6 +52,8 @@ import org.jboss.as.server.deployment.reflect.ClassReflectionIndexUtil;
 import org.jboss.as.server.deployment.reflect.DeploymentReflectionIndex;
 import org.jboss.invocation.proxy.MethodIdentifier;
 import org.jboss.metadata.ejb.spec.MethodInterfaceType;
+import org.jboss.metadata.javaee.spec.SecurityRoleMetaData;
+import org.jboss.metadata.javaee.spec.SecurityRolesMetaData;
 
 /**
  * Component configurator the calculates JACC roles
@@ -58,6 +62,9 @@ import org.jboss.metadata.ejb.spec.MethodInterfaceType;
  * @author <a href="mailto:sguilhen@redhat.com">Stefan Guilhen</a>
  */
 public class EjbJaccConfigurator implements ComponentConfigurator {
+
+    private static final String ANY_AUTHENTICATED_USER_ROLE = "**";
+
     @Override
     public void configure(final DeploymentPhaseContext context, final ComponentDescription description, final ComponentConfiguration configuration) throws DeploymentUnitProcessingException {
 
@@ -86,6 +93,15 @@ public class EjbJaccConfigurator implements ComponentConfigurator {
             }
         }
 
+        Set<String> descriptorRoles = new HashSet<String>();
+        SecurityRolesMetaData secRolesMetaData = ejbComponentDescription.getSecurityRoles();
+        if (secRolesMetaData != null) {
+            for (SecurityRoleMetaData secRoleMetaData : secRolesMetaData) {
+                descriptorRoles.add(secRoleMetaData.getRoleName());
+            }
+        }
+        descriptorRoles.add(ANY_AUTHENTICATED_USER_ROLE);
+
         // process the security-role-ref.
         Map<String, Collection<String>> securityRoles = ejbComponentDescription.getSecurityRoleLinks();
         for (Map.Entry<String, Collection<String>> entry : securityRoles.entrySet()) {
@@ -94,6 +110,13 @@ public class EjbJaccConfigurator implements ComponentConfigurator {
                 EJBRoleRefPermission p = new EJBRoleRefPermission(ejbComponentDescription.getEJBName(), roleName);
                 ejbJaccConfig.addRole(roleLink, p);
             }
+            descriptorRoles.remove(roleName);
+        }
+
+        // an EJBRoleRefPermission must be created for each declared role that does not appear in the security-role-ref.
+        for (String role : descriptorRoles) {
+            EJBRoleRefPermission p = new EJBRoleRefPermission(ejbComponentDescription.getEJBName(), role);
+            ejbJaccConfig.addRole(role, p);
         }
 
         // special handling of stateful session bean getEJBObject due how the stateful session handles acquire the
@@ -111,10 +134,10 @@ public class EjbJaccConfigurator implements ComponentConfigurator {
                                      final Method viewMethod, final DeploymentReflectionIndex index, final ApplicableMethodInformation<EJBMethodSecurityAttribute> permissions) {
 
         MethodIdentifier methodIdentifier = MethodIdentifier.getIdentifierForMethod(viewMethod);
-        EJBMethodSecurityAttribute ejbMethodSecurityMetaData = permissions.getViewAttribute(ejbViewConfiguration.getMethodIntf(), viewMethod.getName(), methodIdentifier.getParameterTypes());
+        EJBMethodSecurityAttribute ejbMethodSecurityMetaData = permissions.getViewAttribute(ejbViewConfiguration.getMethodIntf(), viewMethod);
         //if this is null we try with the corresponding bean method.
         if (ejbMethodSecurityMetaData == null) {
-            ejbMethodSecurityMetaData = permissions.getViewAttribute(MethodIntf.BEAN, viewMethod.getName(), methodIdentifier.getParameterTypes());
+            ejbMethodSecurityMetaData = permissions.getViewAttribute(MethodIntf.BEAN, viewMethod);
         }
 
         final Method classMethod = ClassReflectionIndexUtil.findMethod(index, ejbViewConfiguration.getComponentConfiguration().getComponentClass(), viewMethod);
@@ -122,9 +145,9 @@ public class EjbJaccConfigurator implements ComponentConfigurator {
             if (classMethod != null) {
                 methodIdentifier = methodIdentifier.getIdentifierForMethod(classMethod);
                 //if this is null we try with the corresponding bean method.
-                ejbMethodSecurityMetaData = permissions.getAttribute(ejbViewConfiguration.getMethodIntf(), classMethod.getDeclaringClass().getName(), classMethod.getName(), methodIdentifier.getParameterTypes());
+                ejbMethodSecurityMetaData = permissions.getAttribute(ejbViewConfiguration.getMethodIntf(), classMethod);
                 if (ejbMethodSecurityMetaData == null) {
-                    ejbMethodSecurityMetaData = permissions.getAttribute(MethodIntf.BEAN, classMethod.getDeclaringClass().getName(), classMethod.getName(), methodIdentifier.getParameterTypes());
+                    ejbMethodSecurityMetaData = permissions.getAttribute(MethodIntf.BEAN, classMethod);
 
                 }
             }

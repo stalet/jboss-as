@@ -1,7 +1,6 @@
 package org.jboss.as.connector.util;
 
-import java.util.Map;
-
+import org.jboss.as.controller.ObjectListAttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PropertiesAttributeDefinition;
@@ -9,6 +8,9 @@ import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.dmr.ModelNode;
 import org.jboss.jca.common.api.metadata.common.Extension;
 import org.jboss.jca.common.api.validator.ValidateException;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class ModelNodeUtil {
     public static Long getLongIfSetOrGetDefault(final OperationContext context, final ModelNode dataSourceNode, final SimpleAttributeDefinition key) throws OperationFailedException {
@@ -53,4 +55,16 @@ public class ModelNodeUtil {
             return null;
         }
     }
+
+    public static Map<String,String> extractMap(ModelNode operation,  ObjectListAttributeDefinition objList, SimpleAttributeDefinition keyAttribute, SimpleAttributeDefinition valueAttribute) {
+            Map<String, String> returnMap = null;
+            if (operation.hasDefined(objList.getName())) {
+                returnMap = new HashMap<String, String>(operation.get(objList.getName()).asList().size());
+                for (ModelNode node : operation.get(objList.getName()).asList()) {
+                    returnMap.put(node.asObject().get(keyAttribute.getName()).asString(), node.asObject().get(valueAttribute.getName()).asString());
+                }
+
+            }
+            return returnMap;
+        }
 }

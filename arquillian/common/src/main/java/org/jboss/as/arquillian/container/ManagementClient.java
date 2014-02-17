@@ -37,6 +37,7 @@ import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
+
 import javax.management.Attribute;
 import javax.management.AttributeList;
 import javax.management.AttributeNotFoundException;
@@ -91,6 +92,7 @@ public class ManagementClient implements AutoCloseable, Closeable {
 
     private final String mgmtAddress;
     private final int mgmtPort;
+    private final String mgmtProtocol;
     private final ModelControllerClient client;
 
     private URI webUri;
@@ -102,13 +104,14 @@ public class ManagementClient implements AutoCloseable, Closeable {
     private MBeanServerConnection connection;
     private JMXConnector connector;
 
-    public ManagementClient(ModelControllerClient client, final String mgmtAddress, final int managementPort) {
+    public ManagementClient(ModelControllerClient client, final String mgmtAddress, final int managementPort, final String protocol) {
         if (client == null) {
             throw new IllegalArgumentException("Client must be specified");
         }
         this.client = client;
         this.mgmtAddress = mgmtAddress;
         this.mgmtPort = managementPort;
+        this.mgmtProtocol = protocol;
     }
 
     //-------------------------------------------------------------------------------------||
@@ -125,25 +128,27 @@ public class ManagementClient implements AutoCloseable, Closeable {
     public URI getWebUri() {
         if (webUri == null) {
             try {
+                webUri = new URI("http://localhost:8080");
+            } catch (URISyntaxException e) {
+                throw new RuntimeException(e);
+            }
+            try {
                 if (rootNode == null) {
                     readRootNode();
                 }
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-            List<Property> vhosts = rootNode.get("subsystem", UNDERTOW).get("server").asPropertyList();
-            ModelNode socketBinding = new ModelNode();
-            if (!vhosts.isEmpty()) {//if empty no virtual hosts defined
-                socketBinding = vhosts.get(0).getValue().get("http-listener", "default").get("socket-binding");
-            }
-            if (!socketBinding.isDefined()) {
-                try {
-                    webUri = new URI("http://localhost:8080");
-                } catch (URISyntaxException e) {
-                    throw new RuntimeException(e);
+            ModelNode undertowNode = rootNode.get("subsystem", UNDERTOW);
+            if (undertowNode.isDefined()) {
+                List<Property> vhosts = undertowNode.get("server").asPropertyList();
+                ModelNode socketBinding = new ModelNode();
+                if (!vhosts.isEmpty()) {//if empty no virtual hosts defined
+                    socketBinding = vhosts.get(0).getValue().get("http-listener", "default").get("socket-binding");
                 }
-            } else {
-                webUri = getBinding("http", socketBinding.asString());
+                if (socketBinding.isDefined()) {
+                    webUri = getBinding("http", socketBinding.asString());
+                }
             }
         }
         return webUri;
@@ -182,11 +187,14 @@ public class ManagementClient implements AutoCloseable, Closeable {
             return SUCCESS.equals(rsp.get(OUTCOME).asString())
                     && !CONTROLLER_PROCESS_STATE_STARTING.equals(rsp.get(RESULT).asString())
                     && !CONTROLLER_PROCESS_STATE_STOPPING.equals(rsp.get(RESULT).asString());
-        } catch (Throwable ignored) {
+        } catch (RuntimeException rte) {
+            throw rte;
+        } catch (IOException ex) {
             return false;
         }
     }
 
+    @Override
     public void close() {
         try {
             getControllerClient().close();
@@ -336,8 +344,12 @@ public class ManagementClient implements AutoCloseable, Closeable {
         if (connection == null) {
             try {
                 final HashMap<String, Object> env = new HashMap<String, Object>();
-                env.put(CallbackHandler.class.getName(), Authentication.getCallbackHandler());
-                connection = new MBeanConnectionProxy(JMXConnectorFactory.connect(getRemoteJMXURL(), env).getMBeanServerConnection());
+                if (Authentication.username != null && Authentication.username.length() > 0) {
+                    // Only set this is there is a username as it disabled local authentication.
+                    env.put(CallbackHandler.class.getName(), Authentication.getCallbackHandler());
+                }
+                connector = JMXConnectorFactory.connect(getRemoteJMXURL(), env);
+                connection = new MBeanConnectionProxy(connector.getMBeanServerConnection());
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -347,7 +359,13 @@ public class ManagementClient implements AutoCloseable, Closeable {
 
     public JMXServiceURL getRemoteJMXURL() {
         try {
-            return new JMXServiceURL("service:jmx:remoting-jmx://" + NetworkUtils.formatPossibleIpv6Address(mgmtAddress) + ":" + mgmtPort);
+            if (mgmtProtocol.equals("http-remoting")) {
+                return new JMXServiceURL("service:jmx:http-remoting-jmx://" + NetworkUtils.formatPossibleIpv6Address(mgmtAddress) + ":" + mgmtPort);
+            } else if (mgmtProtocol.equals("https-remoting")) {
+                return new JMXServiceURL("service:jmx:https-remoting-jmx://" + NetworkUtils.formatPossibleIpv6Address(mgmtAddress) + ":" + mgmtPort);
+            } else {
+                return new JMXServiceURL("service:jmx:remoting-jmx://" + NetworkUtils.formatPossibleIpv6Address(mgmtAddress) + ":" + mgmtPort);
+            }
         } catch (Exception e) {
             throw new RuntimeException("Could not create JMXServiceURL:" + this, e);
         }
@@ -361,17 +379,18 @@ public class ManagementClient implements AutoCloseable, Closeable {
         return NetworkUtils.formatPossibleIpv6Address(mgmtAddress);
     }
 
+    public String getMgmtProtocol() {
+        return mgmtProtocol;
+    }
+
     public URI getRemoteEjbURL() {
         if (ejbUri == null) {
-            if (rootNode == null) {
-                try {
-                    readRootNode();
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
+            URI webUri = getWebUri();
+            try {
+                ejbUri = new URI("http-remoting", webUri.getUserInfo(), webUri.getHost(), webUri.getPort(),null,null,null);
+            } catch (URISyntaxException e) {
+                throw new RuntimeException(e);
             }
-            String socketBinding = rootNode.get("subsystem").get("remoting").get("connector").get("remoting-connector").get("socket-binding").asString();
-            ejbUri = getBinding("remote", socketBinding);
         }
         return ejbUri;
     }
@@ -656,7 +675,7 @@ public class ManagementClient implements AutoCloseable, Closeable {
 
         private boolean checkConnection() {
             try {
-                this.connection.getMBeanCount();
+                this.connection.getDefaultDomain();
                 return true;
             } catch (IOException ioe) {
             }

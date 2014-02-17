@@ -3,13 +3,14 @@ package org.jboss.as.test.shared;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
+import org.apache.commons.lang.StringUtils;
 
 import org.jboss.as.arquillian.container.Authentication;
 import org.jboss.as.controller.client.ModelControllerClient;
 
 /**
- * Class that allows for non arquillian tests to access the current
- * server address and port, and other testsuite environment properties.
+ * Class that allows for non arquillian tests to access the current server address and port, and other testsuite environment
+ * properties.
  * <p/>
  * This should only be used for tests that do not have access to the {@link org.jboss.as.arquillian.container.ManagementClient}
  *
@@ -23,17 +24,48 @@ public class TestSuiteEnvironment {
                     InetAddress.getByName(getServerAddress()),
                     TestSuiteEnvironment.getServerPort(),
                     Authentication.getCallbackHandler()
-            );
+                    );
         } catch (UnknownHostException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static String getJavaPath() {
+        String home = System.getenv("JAVA_HOME");
+        if(home == null) {
+            home = getSystemProperty("java.home");
+        }
+        if(home != null) {
+            return home + java.io.File.separator + "bin" + java.io.File.separator + "java";
+        }
+        return "java";
+    }
+
+    public static String getSystemProperty(String name, String def) {
+        return System.getProperty(name, def);
+    }
+
+    public static String getSystemProperty(String name) {
+        return System.getProperty(name);
+    }
+
+    public static void setSystemProperty(String name, String value) {
+        System.setProperty(name, value);
+    }
+
+    public static void clearSystemProperty(String name) {
+        System.clearProperty(name);
+    }
+
+    public static String getTmpDir() {
+        return getSystemProperty("java.io.tmpdir");
     }
 
     /**
      * @return The server port for node0
      */
     public static int getServerPort() {
-        return Integer.getInteger("as.managementPort", 9999);
+        return Integer.getInteger("as.managementPort", 9990);
     }
 
     /**
@@ -77,5 +109,16 @@ public class TestSuiteEnvironment {
             return address;
         }
         return "[" + address + "]";
+    }
+
+    public static String getSecondaryTestAddress(final boolean useCannonicalHost) {
+        String address = System.getProperty("secondary.test.address");
+        if (StringUtils.isBlank(address)) {
+            address = getServerAddress();
+        }
+        if (useCannonicalHost) {
+            address = StringUtils.strip(address, "[]");
+        }
+        return address;
     }
 }

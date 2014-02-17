@@ -25,13 +25,10 @@ package org.jboss.as.webservices.deployers;
 import static org.jboss.as.ee.component.Attachments.EE_MODULE_DESCRIPTION;
 import static org.jboss.as.webservices.WSLogger.ROOT_LOGGER;
 import static org.jboss.as.webservices.util.ASHelper.getRequiredAttachment;
-import static org.jboss.as.webservices.util.ASHelper.isJaxwsService;
+import static org.jboss.as.webservices.util.ASHelper.isJaxwsEndpoint;
 import static org.jboss.as.webservices.util.DotNames.SINGLETON_ANNOTATION;
 import static org.jboss.as.webservices.util.DotNames.STATELESS_ANNOTATION;
-import static org.jboss.as.webservices.util.DotNames.WEB_SERVICE_ANNOTATION;
-import static org.jboss.as.webservices.util.DotNames.WEB_SERVICE_PROVIDER_ANNOTATION;
 
-import java.lang.reflect.Modifier;
 import java.util.List;
 
 import org.jboss.as.ee.component.ComponentConfiguration;
@@ -51,12 +48,14 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.annotation.CompositeIndex;
 import org.jboss.as.webservices.injection.WSComponentDescription;
 import org.jboss.as.webservices.service.EndpointService;
+import org.jboss.invocation.PrivilegedWithCombinerInterceptor;
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.AnnotationTarget;
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceName;
+import org.jboss.invocation.AccessCheckingInterceptor;
 
 /**
  * @author <a href="mailto:ropalka@redhat.com">Richard Opalka</a>
@@ -105,29 +104,6 @@ public abstract class AbstractIntegrationProcessorJAXWS implements DeploymentUni
 
     protected abstract void processAnnotation(final DeploymentUnit unit, final ClassInfo classInfo, final AnnotationInstance wsAnnotation, final CompositeIndex compositeIndex) throws DeploymentUnitProcessingException;
 
-    private static boolean isJaxwsEndpoint(final ClassInfo clazz, final CompositeIndex index) {
-        // assert JAXWS endpoint class flags
-        final short flags = clazz.flags();
-        if (Modifier.isInterface(flags)) return false;
-        if (Modifier.isAbstract(flags)) return false;
-        if (!Modifier.isPublic(flags)) return false;
-        if (isJaxwsService(clazz, index)) return false;
-        final boolean hasWebServiceAnnotation = clazz.annotations().containsKey(WEB_SERVICE_ANNOTATION);
-        final boolean hasWebServiceProviderAnnotation = clazz.annotations().containsKey(WEB_SERVICE_PROVIDER_ANNOTATION);
-        if (!hasWebServiceAnnotation && !hasWebServiceProviderAnnotation) {
-            return false;
-        }
-        if (hasWebServiceAnnotation && hasWebServiceProviderAnnotation) {
-            ROOT_LOGGER.mutuallyExclusiveAnnotations(clazz.name().toString());
-            return false;
-        }
-        if (Modifier.isFinal(flags)) {
-            ROOT_LOGGER.finalEndpointClassDetected(clazz.name().toString());
-            return false;
-        }
-        return true;
-    }
-
     static ComponentDescription createComponentDescription(final DeploymentUnit unit, final String componentName, final String componentClassName, final String dependsOnEndpointClassName) {
         final EEModuleDescription moduleDescription = getRequiredAttachment(unit, EE_MODULE_DESCRIPTION);
         // JBoss WEB processors may install fake components for WS endpoints - removing them forcibly
@@ -148,6 +124,8 @@ public abstract class AbstractIntegrationProcessorJAXWS implements DeploymentUni
         pojoView.getConfigurators().add(new ViewConfigurator() {
             @Override
             public void configure(DeploymentPhaseContext context, ComponentConfiguration componentConfiguration, ViewDescription description, ViewConfiguration configuration) throws DeploymentUnitProcessingException {
+                configuration.addViewInterceptor(PrivilegedWithCombinerInterceptor.getFactory(), InterceptorOrder.View.PRIVILEGED_INTERCEPTOR);
+                configuration.addViewInterceptor(AccessCheckingInterceptor.getFactory(), InterceptorOrder.View.CHECKING_INTERCEPTOR);
                 // add WS POJO component instance associating interceptor
                 configuration.addViewInterceptor(WSComponentInstanceAssociationInterceptor.FACTORY, InterceptorOrder.View.ASSOCIATING_INTERCEPTOR);
             }

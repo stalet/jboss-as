@@ -25,6 +25,8 @@ package org.jboss.as.connector.deployers.ra.processors;
 import static org.jboss.as.connector.logging.ConnectorLogger.DEPLOYMENT_CONNECTOR_LOGGER;
 import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
 
+import java.util.Collections;
+import java.util.Locale;
 import java.util.Map;
 
 import org.jboss.as.connector.annotations.repository.jandex.JandexAnnotationRepositoryImpl;
@@ -40,10 +42,12 @@ import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ServiceVerificationHandler;
+import org.jboss.as.controller.descriptions.OverrideDescriptionProvider;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.naming.service.NamingService;
 import org.jboss.as.security.service.SubjectFactoryService;
+import org.jboss.as.server.Services;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentModelUtils;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
@@ -52,6 +56,7 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.annotation.AnnotationIndexUtils;
 import org.jboss.as.server.deployment.module.ResourceRoot;
+import org.jboss.dmr.ModelNode;
 import org.jboss.jandex.Index;
 import org.jboss.jca.common.annotations.Annotations;
 import org.jboss.jca.common.api.metadata.ironjacamar.IronJacamar;
@@ -124,8 +129,29 @@ public class ParsedRaDeploymentProcessor implements DeploymentUnitProcessor {
 
         ServiceBuilder builder = process(connectorXmlDescriptor, ironJacamarXmlDescriptor, classLoader, serviceTarget, annotationIndexes, deploymentUnit.getServiceName(), null);
         if (builder != null) {
+            String bootstrapCtx = null;
 
-            builder.addListener(new AbstractResourceAdapterDeploymentServiceListener(registration, deploymentUnit.getName(), deploymentResource) {
+            if (ironJacamarXmlDescriptor != null && ironJacamarXmlDescriptor.getIronJacamar() != null && ironJacamarXmlDescriptor.getIronJacamar().getBootstrapContext() != null)
+                bootstrapCtx = ironJacamarXmlDescriptor.getIronJacamar().getBootstrapContext();
+
+            if (bootstrapCtx == null)
+                bootstrapCtx = "default";
+            //Register an empty override model regardless of we're enabled or not - the statistics listener will add the relevant childresources
+            if (registration.isAllowsOverride() && registration.getOverrideModel(deploymentUnit.getName()) == null) {
+                registration.registerOverrideModel(deploymentUnit.getName(), new OverrideDescriptionProvider() {
+                    @Override
+                    public Map<String, ModelNode> getAttributeOverrideDescriptions(Locale locale) {
+                        return Collections.emptyMap();
+                    }
+
+                    @Override
+                    public Map<String, ModelNode> getChildTypeOverrideDescriptions(Locale locale) {
+                        return Collections.emptyMap();
+                    }
+                });
+
+            }
+            builder.addListener(new AbstractResourceAdapterDeploymentServiceListener(registration, deploymentUnit.getName(), deploymentResource, bootstrapCtx, deploymentUnit.getName()) {
 
                 @Override
                 protected void registerIronjacamar(final ServiceController<? extends Object> controller, final ManagementResourceRegistration subRegistration, final Resource subsystemResource) {
@@ -188,7 +214,10 @@ public class ParsedRaDeploymentProcessor implements DeploymentUnitProcessor {
 
 
             // Create the service
-            ServiceBuilder builder = serviceTarget.addService(deployerServiceName, raDeploymentService)
+            ServiceBuilder builder =
+                    Services.addServerExecutorDependency(
+                        serviceTarget.addService(deployerServiceName, raDeploymentService),
+                        raDeploymentService.getExecutorServiceInjector(), false)
                     .addDependency(ConnectorServices.IRONJACAMAR_MDR, AS7MetadataRepository.class, raDeploymentService.getMdrInjector())
                     .addDependency(ConnectorServices.RA_REPOSITORY_SERVICE, ResourceAdapterRepository.class, raDeploymentService.getRaRepositoryInjector())
                     .addDependency(ConnectorServices.MANAGEMENT_REPOSITORY_SERVICE, ManagementRepository.class, raDeploymentService.getManagementRepositoryInjector())

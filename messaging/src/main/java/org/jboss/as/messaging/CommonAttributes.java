@@ -44,8 +44,12 @@ import org.hornetq.core.config.impl.ConfigurationImpl;
 import org.hornetq.core.config.impl.FileConfiguration;
 import org.hornetq.core.server.JournalType;
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PrimitiveListAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
+import org.jboss.as.controller.access.constraint.SensitivityClassification;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
+import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
@@ -61,6 +65,16 @@ public interface CommonAttributes {
 
     String DISCOVERY_GROUP_NAME = "discovery-group-name";
     String ENTRIES = "entries";
+
+    SensitivityClassification MESSAGING_MANAGEMENT =
+            new SensitivityClassification(MessagingExtension.SUBSYSTEM_NAME, "messaging-management", false, false, true);
+
+    SensitiveTargetAccessConstraintDefinition MESSAGING_MANAGEMENT_DEF = new SensitiveTargetAccessConstraintDefinition(MESSAGING_MANAGEMENT);
+
+    SensitivityClassification MESSAGING_SECURITY =
+            new SensitivityClassification(MessagingExtension.SUBSYSTEM_NAME, "messaging-security", false, false, true);
+
+    SensitiveTargetAccessConstraintDefinition MESSAGING_SECURITY_DEF = new SensitiveTargetAccessConstraintDefinition(MESSAGING_SECURITY);
 
     SimpleAttributeDefinition ALLOW_FAILBACK = create("allow-failback", BOOLEAN)
             .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.isDefaultAllowAutoFailback()))
@@ -129,6 +143,8 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.CREDENTIAL)
+            .addAccessConstraint(MESSAGING_SECURITY_DEF)
             .build();
 
     SimpleAttributeDefinition CLUSTER_USER = create("cluster-user", ModelType.STRING)
@@ -136,6 +152,8 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.CREDENTIAL)
+            .addAccessConstraint(MESSAGING_SECURITY_DEF)
             .build();
 
     AttributeDefinition CONSUMER_COUNT = create("consumer-count", INT)
@@ -225,7 +243,6 @@ public interface CommonAttributes {
     SimpleAttributeDefinition FAILOVER_ON_SERVER_SHUTDOWN = create("failover-on-server-shutdown", ModelType.BOOLEAN)
             .setAllowNull(true)
             .setDeprecated(VERSION_1_2_0)
-            .setAttributeMarshaller(NOOP_MARSHALLER)
             .build();
 
     SimpleAttributeDefinition FAILOVER_ON_SHUTDOWN = create("failover-on-shutdown", BOOLEAN)
@@ -244,21 +261,21 @@ public interface CommonAttributes {
     // do not allow expressions on deprecated attribute
     @Deprecated
     SimpleAttributeDefinition GROUP_ADDRESS = create("group-address", ModelType.STRING)
-            .setDefaultValue(null)
             .setAllowNull(true)
             .setAlternatives("socket-binding", "jgroups-stack", "jgroups-channel")
             .setDeprecated(VERSION_1_2_0)
             .setFlags(RESTART_ALL_SERVICES)
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SOCKET_CONFIG)
             .build();
 
     // do not allow expressions on deprecated attribute
     @Deprecated
     SimpleAttributeDefinition GROUP_PORT = create("group-port", INT)
-            .setDefaultValue(null)
             .setAllowNull(true)
             .setAlternatives("socket-binding", "jgroups-stack", "jgroups-channel")
             .setDeprecated(VERSION_1_2_0)
             .setFlags(RESTART_ALL_SERVICES)
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SOCKET_CONFIG)
             .build();
 
     SimpleAttributeDefinition HA = create("ha", BOOLEAN)
@@ -281,6 +298,7 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
+            .addAccessConstraint(MESSAGING_MANAGEMENT_DEF)
             .build();
 
     SimpleAttributeDefinition JMX_MANAGEMENT_ENABLED = create("jmx-management-enabled", BOOLEAN)
@@ -288,6 +306,7 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
+            .addAccessConstraint(MESSAGING_MANAGEMENT_DEF)
             .build();
 
     // no default values, depends on whether NIO or AIO is used.
@@ -375,11 +394,11 @@ public interface CommonAttributes {
     // do not allow expressions on deprecated attribute
     @Deprecated
     SimpleAttributeDefinition LOCAL_BIND_ADDRESS = create("local-bind-address", ModelType.STRING)
-            .setDefaultValue(null)
             .setAllowNull(true)
             .setAlternatives("socket-binding", "jgroups-stack", "jgroups-channel")
             .setDeprecated(VERSION_1_2_0)
             .setFlags(RESTART_ALL_SERVICES)
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SOCKET_CONFIG)
             .build();
 
     // do not allow expressions on deprecated attribute
@@ -390,10 +409,10 @@ public interface CommonAttributes {
             .setAlternatives("socket-binding", "jgroups-stack", "jgroups-channel")
             .setDeprecated(VERSION_1_2_0)
             .setFlags(RESTART_ALL_SERVICES)
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SOCKET_CONFIG)
             .build();
 
     SimpleAttributeDefinition JGROUPS_STACK = create("jgroups-stack", ModelType.STRING)
-            .setDefaultValue(null)
             .setAllowNull(true)
             .setAllowExpression(true)
             .setAlternatives("socket-binding",
@@ -403,7 +422,6 @@ public interface CommonAttributes {
             .build();
 
     SimpleAttributeDefinition JGROUPS_CHANNEL = create("jgroups-channel", ModelType.STRING)
-            .setDefaultValue(null)
             .setAllowNull(true)
             .setAllowExpression(true)
             .setAlternatives("socket-binding",
@@ -424,6 +442,7 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
+            .addAccessConstraint(MESSAGING_MANAGEMENT_DEF)
             .build();
 
     SimpleAttributeDefinition MANAGEMENT_NOTIFICATION_ADDRESS = create("management-notification-address", ModelType.STRING)
@@ -431,11 +450,19 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
+            .addAccessConstraint(MESSAGING_MANAGEMENT_DEF)
             .build();
 
     AttributeDefinition MAX_RETRY_INTERVAL = create("max-retry-interval", LONG)
             .setDefaultValue(new ModelNode(DEFAULT_MAX_RETRY_INTERVAL))
             .setMeasurementUnit(MILLISECONDS)
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setRestartAllServices()
+            .build();
+
+    AttributeDefinition MAX_SAVED_REPLICATED_JOURNAL_SIZE = create("max-saved-replicated-journal-size", INT)
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultMaxSavedReplicatedJournalsSize()))
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
@@ -461,10 +488,17 @@ public interface CommonAttributes {
             .setStorageRuntime()
             .build();
 
-    SimpleAttributeDefinition MESSAGE_COUNTER_ENABLED = create("message-counter-enabled", BOOLEAN)
-            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.isDefaultMessageCounterEnabled()))
+    SimpleAttributeDefinition STATISTICS_ENABLED = create(ModelDescriptionConstants.STATISTICS_ENABLED, BOOLEAN)
+            .setDefaultValue(new ModelNode(false))
             .setAllowNull(true)
             .setAllowExpression(true)
+            .build();
+
+    SimpleAttributeDefinition MESSAGE_COUNTER_ENABLED = create("message-counter-enabled", BOOLEAN)
+            .setDefaultValue(new ModelNode(false))
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setDeprecated(ModelVersion.create(2))
             .build();
 
     SimpleAttributeDefinition MESSAGE_COUNTER_MAX_DAY_HISTORY = create("message-counter-max-day-history", INT)
@@ -630,6 +664,8 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(false) // references the security domain service name
             .setRestartAllServices()
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SECURITY_DOMAIN_REF)
+            .addAccessConstraint(MESSAGING_SECURITY_DEF)
             .build();
 
     SimpleAttributeDefinition SECURITY_ENABLED = create("security-enabled", BOOLEAN)
@@ -637,6 +673,7 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
+            .addAccessConstraint(MESSAGING_SECURITY_DEF)
             .build();
 
     SimpleAttributeDefinition SECURITY_INVALIDATION_INTERVAL = create("security-invalidation-interval", LONG)
@@ -645,6 +682,7 @@ public interface CommonAttributes {
             .setAllowNull(true)
             .setAllowExpression(true)
             .setRestartAllServices()
+            .addAccessConstraint(MESSAGING_SECURITY_DEF)
             .build();
 
     SimpleAttributeDefinition SELECTOR = create("selector", ModelType.STRING)
@@ -670,15 +708,15 @@ public interface CommonAttributes {
             .build();
 
     SimpleAttributeDefinition SOCKET_BINDING = create("socket-binding", ModelType.STRING)
-            .setDefaultValue(null)
-            .setAllowNull(false)
+            .setAllowNull(true)
             .setAlternatives(GROUP_ADDRESS.getName(),
-                            GROUP_PORT.getName(),
-                            LOCAL_BIND_ADDRESS.getName(),
-                            LOCAL_BIND_PORT.getName(),
-                            JGROUPS_STACK.getName(),
-                            JGROUPS_CHANNEL.getName())
+                    GROUP_PORT.getName(),
+                    LOCAL_BIND_ADDRESS.getName(),
+                    LOCAL_BIND_PORT.getName(),
+                    JGROUPS_STACK.getName(),
+                    JGROUPS_CHANNEL.getName())
             .setRestartAllServices()
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SOCKET_BINDING_REF)
             .build();
 
     AttributeDefinition TEMPORARY = create("temporary", BOOLEAN)
@@ -745,6 +783,7 @@ public interface CommonAttributes {
     String CONNECTOR_REF_STRING = "connector-ref";
     String CONNECTOR_SERVICE = "connector-service";
     String CONNECTOR_SERVICES = "connector-services";
+    String CORE = "core";
     String CORE_ADDRESS = "core-address";
     String CORE_QUEUE = "core-queue";
     String CORE_QUEUES = "core-queues";
@@ -760,6 +799,11 @@ public interface CommonAttributes {
     String ENTRY = "entry";
     String FILE_DEPLOYMENT_ENABLED = "file-deployment-enabled";
     String GROUPING_HANDLER = "grouping-handler";
+    String HOST = "host";
+    String HTTP = "http";
+    String HTTP_ACCEPTOR = "http-acceptor";
+    String HTTP_CONNECTOR = "http-connector";
+    String HTTP_LISTENER = "http-listener";
     String ID = "id";
     String IN_VM_ACCEPTOR = "in-vm-acceptor";
     String IN_VM_CONNECTOR = "in-vm-connector";
@@ -808,6 +852,7 @@ public interface CommonAttributes {
     String SECURITY_ROLE = "security-role";
     String SECURITY_SETTING = "security-setting";
     String SECURITY_SETTINGS = "security-settings";
+    String SERVLET_PATH = "servlet-path";
     String HORNETQ_SERVER = "hornetq-server";
     String STARTED = "started";
     String STATIC_CONNECTORS = "static-connectors";
@@ -816,6 +861,8 @@ public interface CommonAttributes {
     String SUBSYSTEM = "subsystem";
     String TOPIC_ADDRESS = "topic-address";
     String TYPE_ATTR_NAME = "type";
+    String USE_INVM = "use-invm";
+    String USE_SERVLET = "use-servlet";
     String VERSION = "version";
     String XA = "xa";
     String XA_TX = "XATransaction";
@@ -823,7 +870,7 @@ public interface CommonAttributes {
     AttributeDefinition[] SIMPLE_ROOT_RESOURCE_ATTRIBUTES = { CLUSTERED, PERSISTENCE_ENABLED, SCHEDULED_THREAD_POOL_MAX_SIZE,
             THREAD_POOL_MAX_SIZE, SECURITY_DOMAIN, SECURITY_ENABLED, SECURITY_INVALIDATION_INTERVAL, WILD_CARD_ROUTING_ENABLED,
             MANAGEMENT_ADDRESS, MANAGEMENT_NOTIFICATION_ADDRESS, CLUSTER_USER, CLUSTER_PASSWORD, JMX_MANAGEMENT_ENABLED,
-            JMX_DOMAIN, MESSAGE_COUNTER_ENABLED, MESSAGE_COUNTER_SAMPLE_PERIOD, MESSAGE_COUNTER_MAX_DAY_HISTORY,
+            JMX_DOMAIN, STATISTICS_ENABLED, MESSAGE_COUNTER_ENABLED, MESSAGE_COUNTER_SAMPLE_PERIOD, MESSAGE_COUNTER_MAX_DAY_HISTORY,
             CONNECTION_TTL_OVERRIDE, ASYNC_CONNECTION_EXECUTION_ENABLED, TRANSACTION_TIMEOUT, TRANSACTION_TIMEOUT_SCAN_PERIOD,
             MESSAGE_EXPIRY_SCAN_PERIOD, MESSAGE_EXPIRY_THREAD_PRIORITY, ID_CACHE_SIZE, PERSIST_ID_CACHE,
             REMOTING_INTERCEPTORS, REMOTING_INCOMING_INTERCEPTORS, REMOTING_OUTGOING_INTERCEPTORS,
@@ -831,10 +878,9 @@ public interface CommonAttributes {
             PAGE_MAX_CONCURRENT_IO, CREATE_BINDINGS_DIR, CREATE_JOURNAL_DIR, JOURNAL_TYPE, JOURNAL_BUFFER_TIMEOUT,
             JOURNAL_BUFFER_SIZE, JOURNAL_SYNC_TRANSACTIONAL, JOURNAL_SYNC_NON_TRANSACTIONAL, LOG_JOURNAL_WRITE_RATE,
             JOURNAL_FILE_SIZE, JOURNAL_MIN_FILES, JOURNAL_COMPACT_PERCENTAGE, JOURNAL_COMPACT_MIN_FILES, JOURNAL_MAX_IO,
-            PERF_BLAST_PAGES, RUN_SYNC_SPEED_TEST, SERVER_DUMP_INTERVAL, MEMORY_WARNING_THRESHOLD, MEMORY_MEASURE_INTERVAL,
+            MAX_SAVED_REPLICATED_JOURNAL_SIZE, PERF_BLAST_PAGES, RUN_SYNC_SPEED_TEST, SERVER_DUMP_INTERVAL, MEMORY_WARNING_THRESHOLD, MEMORY_MEASURE_INTERVAL,
             CHECK_FOR_LIVE_SERVER, BACKUP_GROUP_NAME, REPLICATION_CLUSTERNAME };
 
     AttributeDefinition[] SIMPLE_ROOT_RESOURCE_WRITE_ATTRIBUTES = { FAILOVER_ON_SHUTDOWN, MESSAGE_COUNTER_ENABLED,
             MESSAGE_COUNTER_MAX_DAY_HISTORY, MESSAGE_COUNTER_SAMPLE_PERIOD };
-
 }

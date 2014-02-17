@@ -28,19 +28,27 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-jpa-parent</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-jpa-parent</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-jpa-util</artifactId>
-    <version>8.0.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-jpa-util</artifactId>
+    <version>8.0.1.Final-SNAPSHOT</version>
 
-    <name>JBoss Application Server: JPA UTIL</name>
+    <name>WildFly: JPA UTIL</name>
 
     <dependencies>
         <!-- Internal -->
+
+
+        <!-- External -->
+
+        <dependency>
+            <groupId>org.hibernate.javax.persistence</groupId>
+            <artifactId>hibernate-jpa-2.1-api</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.jboss.msc</groupId>

@@ -33,6 +33,7 @@ import org.jboss.as.connector.deployers.ra.processors.ParsedRaDeploymentProcesso
 import org.jboss.as.connector.deployers.ra.processors.RaDeploymentParsingProcessor;
 import org.jboss.as.connector.deployers.ra.processors.RaNativeProcessor;
 import org.jboss.as.connector.deployers.ra.processors.RaStructureProcessor;
+import org.jboss.as.connector.deployers.ra.processors.RaXmlDependencyProcessor;
 import org.jboss.as.connector.deployers.ra.processors.RaXmlDeploymentProcessor;
 import org.jboss.as.connector.deployers.ra.processors.RarDependencyProcessor;
 import org.jboss.as.connector.services.mdr.MdrService;
@@ -44,6 +45,7 @@ import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.server.DeploymentProcessorTarget;
 import org.jboss.as.server.deployment.Phase;
 import org.jboss.jca.core.spi.mdr.MetadataRepository;
+import org.jboss.jca.core.spi.transaction.TransactionIntegration;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceListener;
 import org.jboss.msc.service.ServiceTarget;
@@ -55,7 +57,12 @@ import org.jboss.msc.service.ServiceTarget;
  * @author <a href="mailto:stefano.maestri@redhat.com">Stefano Maestri</a>
  */
 public class RaDeploymentActivator {
+    private final boolean appclient;
     private final MdrService mdrService = new MdrService();
+
+    public RaDeploymentActivator(final boolean appclient) {
+        this.appclient = appclient;
+    }
 
     public Collection<ServiceController<?>> activateServices(final ServiceTarget serviceTarget, final ServiceListener<Object>... listeners) {
         final List<ServiceController<?>> controllers = new ArrayList<ServiceController<?>>();
@@ -68,7 +75,8 @@ public class RaDeploymentActivator {
         RaRepositoryService raRepositoryService = new RaRepositoryService();
         controllers.add(serviceTarget.addService(ConnectorServices.RA_REPOSITORY_SERVICE, raRepositoryService)
             .addDependency(ConnectorServices.IRONJACAMAR_MDR, MetadataRepository.class, raRepositoryService.getMdrInjector())
-            .addListener(listeners)
+                .addDependency(ConnectorServices.TRANSACTION_INTEGRATION_SERVICE, TransactionIntegration.class,
+                        raRepositoryService.getTransactionIntegrationInjector()).addListener(listeners)
             .install());
 
         ManagementRepositoryService managementRepositoryService = new ManagementRepositoryService();
@@ -92,11 +100,17 @@ public class RaDeploymentActivator {
         updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_RA_DEPLOYMENT, new RaDeploymentParsingProcessor());
         updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_IRON_JACAMAR_DEPLOYMENT,
                 new IronJacamarDeploymentParsingProcessor());
-        updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_RAR_CONFIG, new RarDependencyProcessor());
+        updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_RAR_CONFIG, new RarDependencyProcessor(appclient));
+                if (!appclient)
+                    updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_RAR_SERVICES_DEPS, new RaXmlDependencyProcessor());
         updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_RA_NATIVE, new RaNativeProcessor());
         updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_RA_DEPLOYMENT, new ParsedRaDeploymentProcessor());
         updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_RA_XML_DEPLOYMENT, new RaXmlDeploymentProcessor(
                 mdrService.getValue()));
+        updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_CONNECTION_FACTORY_DEFINITION_ANNOTATION,
+                                             new ConnectionFactoryDefinitionAnnotationParser());
+        updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_ADMIN_OBJECT_DEFINITION_ANNOTATION,
+                                             new AdministeredObjectDefinitionAnnotationParser());
         updateContext.addDeploymentProcessor(ResourceAdaptersExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_JDBC_DRIVER, new DriverProcessor());
     }
 }

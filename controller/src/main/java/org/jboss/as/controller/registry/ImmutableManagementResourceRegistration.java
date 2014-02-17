@@ -22,6 +22,7 @@
 
 package org.jboss.as.controller.registry;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -29,6 +30,7 @@ import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProxyController;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 
 /**
@@ -144,10 +146,10 @@ public interface ImmutableManagementResourceRegistration {
     AttributeAccess getAttributeAccess(PathAddress address, String attributeName);
 
     /**
-     * Get the names of the operations for a node
+     * Get the names of the types of children for a node
      *
      * @param address the address, relative to this node
-     * @return the operation names. If there are none an empty set is returned
+     * @return the child type names. If there are none an empty set is returned
      * @throws SecurityException if the caller does not have {@link #ACCESS_PERMISSION}
      */
     Set<String> getChildNames(PathAddress address);
@@ -212,4 +214,6 @@ public interface ImmutableManagementResourceRegistration {
      * @throws SecurityException if the caller does not have {@link #ACCESS_PERMISSION}
      */
     ImmutableManagementResourceRegistration getSubModel(PathAddress address);
+
+    List<AccessConstraintDefinition> getAccessConstraints();
 }

@@ -32,6 +32,7 @@ import javax.naming.NamingException;
 
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.naming.deployment.JndiName;
+import org.jboss.as.naming.subsystem.BindingType;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
@@ -194,7 +195,7 @@ public interface NamingMessages {
      * @return a {@link NamingException} for the error.
      */
     @Message(id = 11843, value = "Failed instantiate %s %s from classloader %s")
-    NamingException failedToInstantiate(String description, String className, ClassLoader classLoader);
+    NamingException failedToInstantiate(@Cause Throwable cause, String description, String className, ClassLoader classLoader);
 
     /**
      * A message indicating the context entries could not be read from the binding name represented by the
@@ -377,7 +378,7 @@ public interface NamingMessages {
     @Message(id = 11863, value = "Invalid name for context binding %s")
     DeploymentUnitProcessingException invalidNameForContextBinding(String name);
 
-    @Message(id = 11864, value = "Invaliding binding name %s, name must start with one of %s")
+    @Message(id = 11864, value = "Invalid binding name %s, name must start with one of %s")
     OperationFailedException invalidNamespaceForBinding(String name, String namespaces);
 
     /**
@@ -463,4 +464,26 @@ public interface NamingMessages {
      */
     @Message(id = 11874, value = "Binding add operation for external context not supported in Naming Subsystem model version %s")
     String failedToTransformExternalContext(String modelVersion);
+
+    /**
+     * Creates an exception indicating a lookup failed, wrt {@link Resource} injection.
+     *
+     * @param jndiName the JNDI name.
+     *
+     * @return a {@link RuntimeException} for the error.
+     */
+    @Message(id = 11875, value = "Resource lookup for injection failed: %s")
+    RuntimeException resourceLookupForInjectionFailed(String jndiName, @Cause Throwable cause);
+
+    /**
+     * Creates an exception indicating that a required attribute is not defined.
+     * @param bindingType
+     * @param attributeName
+     * @return
+     */
+    @Message(id = 11876, value = "Binding type %s requires attributed named %s defined")
+    OperationFailedException bindingTypeRequiresAttributeDefined(BindingType bindingType, String attributeName);
+
+    @Message(id = 11877, value = "Binding type %s can not take a 'cache' attribute")
+    OperationFailedException cacheNotValidForBindingType(BindingType type);
 }

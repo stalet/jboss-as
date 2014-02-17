@@ -22,6 +22,7 @@
 
 package org.jboss.as.clustering.infinispan;
 
+import java.net.URL;
 import java.net.UnknownHostException;
 import java.util.Properties;
 
@@ -169,7 +170,7 @@ public interface InfinispanMessages {
      * @return IllegalStateException instance.
      */
     @Message(id = 10381, value = "Failed to parse %s")
-    IllegalStateException failedToParse(@Cause Throwable cause, String resourceName);
+    IllegalStateException failedToParse(@Cause Throwable cause, URL url);
 
     /**
      * Creates an exception indicating a singleton resource already exists.
@@ -203,5 +204,19 @@ public interface InfinispanMessages {
     @Message(id = 10385, value = "Attribute 'segments' is an expression and therefore cannot be translated to legacy attribute 'virtual-nodes'. This resource will need to be ignored on that host.")
     String virtualNodesDoesNotSupportExpressions();
 
+    @Message(id = 10386, value = "Unknown metric %s")
+    String unknownMetric(String metricName);
 
+    /**
+     * Creates an exception indicating failure to invoke an operation.
+     *
+     * @param operation the operation name.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 10387, value = "Failed to invoke operation: %s")
+    OperationFailedException failedToInvokeOperation(@Cause Throwable cause, String operation);
+
+    @Message(id = 10388, value = "Attribute 'virtual nodes' is an expression and therefore cannot be translated to attribute 'segments'.")
+    String segmentsDoesNotSupportExpressions();
 }

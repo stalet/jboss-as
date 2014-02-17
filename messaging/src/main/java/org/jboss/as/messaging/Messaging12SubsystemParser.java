@@ -122,11 +122,11 @@ public class Messaging12SubsystemParser extends MessagingSubsystemParser {
                 }
                 case FAILOVER_ON_SERVER_SHUTDOWN: {
                     MessagingLogger.ROOT_LOGGER.deprecatedXMLElement(element.toString());
-                    skipElementText(reader);
+                    handleElementText(reader, element, bridgeAdd);
                     break;
                 }
                 default: {
-                    throw ParseUtils.unexpectedElement(reader);
+                    handleUnknownBridgeAttribute(reader, element, bridgeAdd);
                 }
             }
         }
@@ -138,6 +138,10 @@ public class Messaging12SubsystemParser extends MessagingSubsystemParser {
         }
 
         updates.add(bridgeAdd);
+    }
+
+    protected void handleUnknownBridgeAttribute(XMLExtendedStreamReader reader, Element element, ModelNode bridgeAdd) throws XMLStreamException {
+        throw ParseUtils.unexpectedElement(reader);
     }
 
     @Override

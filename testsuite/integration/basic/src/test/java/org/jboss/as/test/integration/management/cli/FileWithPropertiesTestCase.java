@@ -41,6 +41,7 @@ import org.junit.runner.RunWith;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -67,15 +68,15 @@ public class FileWithPropertiesTestCase {
     private static final File PROPS_FILE;
     private static final File TMP_JBOSS_CLI_FILE;
     static {
-        SCRIPT_FILE = new File(new File(System.getProperty("java.io.tmpdir")), SCRIPT_NAME);
-        PROPS_FILE = new File(new File(System.getProperty("java.io.tmpdir")), PROPS_NAME);
-        TMP_JBOSS_CLI_FILE = new File(new File(System.getProperty("java.io.tmpdir")), "tmp-jboss-cli.xml");
+        SCRIPT_FILE = new File(new File(TestSuiteEnvironment.getTmpDir()), SCRIPT_NAME);
+        PROPS_FILE = new File(new File(TestSuiteEnvironment.getTmpDir()), PROPS_NAME);
+        TMP_JBOSS_CLI_FILE = new File(new File(TestSuiteEnvironment.getTmpDir()), "tmp-jboss-cli.xml");
     }
 
     @BeforeClass
     public static void setup() {
         ensureRemoved(TMP_JBOSS_CLI_FILE);
-        jbossDist = System.getProperty("jboss.dist");
+        jbossDist = TestSuiteEnvironment.getSystemProperty("jboss.dist");
         if(jbossDist == null) {
             fail("jboss.dist system property is not set");
         }
@@ -187,18 +188,7 @@ public class FileWithPropertiesTestCase {
     public void testResolved() {
         assertEquals(0, execute(true, true));
         assertNotNull(cliOutput);
-        final String valuePrefix = "\"value\" => \"";
-        int i = cliOutput.indexOf(valuePrefix, 0);
-        if(i < 0) {
-            fail("The output doesn't contain a value: " + cliOutput);
-        }
-        int endQuote = cliOutput.indexOf('\"', valuePrefix.length() + i);
-        if(endQuote < 0) {
-            fail("The output doesn't contain a value: " + cliOutput);
-        }
-
-        final String value = cliOutput.substring(i + valuePrefix.length(), endQuote);
-        assertEquals(CLI_PROP_VALUE, value);
+        assertEquals(CLI_PROP_VALUE, getValue("value"));
     }
 
     /**
@@ -207,28 +197,31 @@ public class FileWithPropertiesTestCase {
      */
     @Test
     public void testNotresolved() {
-        assertEquals(0, execute(false, true));
+        assertEquals(1, execute(false, true));
         assertNotNull(cliOutput);
-        final String valuePrefix = "\"value\" => \"";
+        assertEquals("failed", getValue("outcome"));
+        assertTrue(getValue("failure-description").contains("JBAS014802"));
+    }
+
+    protected String getValue(final String value) {
+        final String valuePrefix = "\"" + value + "\" => \"";
         int i = cliOutput.indexOf(valuePrefix, 0);
         if(i < 0) {
-            fail("The output doesn't contain a value: " + cliOutput);
+            fail("The output doesn't contain '" + value + "': " + cliOutput);
         }
         int endQuote = cliOutput.indexOf('\"', valuePrefix.length() + i);
         if(endQuote < 0) {
-            fail("The output doesn't contain a value: " + cliOutput);
+            fail("The output doesn't contain '" + value + "': " + cliOutput);
         }
 
-        final String value = cliOutput.substring(i + valuePrefix.length(), endQuote);
-        //assertEquals(CLI_PROP_NAME, value);
-        assertEquals("$", value);
+        return cliOutput.substring(i + valuePrefix.length(), endQuote);
     }
 
     protected int execute(boolean resolveProps, boolean logFailure) {
         if(jbossDist == null) {
             fail("jboss.dist system property is not set");
         }
-        final String modulePath = System.getProperty("module.path");
+        final String modulePath = TestSuiteEnvironment.getSystemProperty("module.path");
         if(modulePath == null) {
             fail("module.path system property is not set");
         }
@@ -236,7 +229,7 @@ public class FileWithPropertiesTestCase {
         final ProcessBuilder builder = new ProcessBuilder();
         builder.redirectErrorStream(true);
         final List<String> command = new ArrayList<String>();
-        command.add("java");
+        command.add(TestSuiteEnvironment.getJavaPath());
         TestSuiteEnvironment.getIpv6Args(command);
         if(resolveProps) {
             command.add("-Djboss.cli.config=" + TMP_JBOSS_CLI_FILE.getAbsolutePath());

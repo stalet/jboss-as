@@ -26,7 +26,6 @@ package org.jboss.as.ejb3;
 
 import java.io.File;
 import java.lang.reflect.Method;
-import java.net.InetAddress;
 import java.sql.SQLException;
 import java.util.Date;
 
@@ -478,8 +477,8 @@ public interface EjbLogger extends BasicLogger {
     void asyncMethodSupportedOnlyForSessionBeans(Class beanClass, Method invokedMethod);
 
     @LogMessage(level = INFO)
-    @Message(id = 14224, value = "Cannot add cluster node %s to cluster %s since none of the client mappings matched for address %s")
-    void cannotAddClusterNodeDueToUnresolvableClientMapping(final String nodeName, final String clusterName, final InetAddress bindAddress);
+    @Message(id = 14224, value = "Cannot add cluster node %s to cluster %s since none of the client mappings matched for addresses %s")
+    void cannotAddClusterNodeDueToUnresolvableClientMapping(final String nodeName, final String clusterName, final Object bindings);
 
     // Note that 14225-14240 is used in EjbMessages
 
@@ -524,8 +523,8 @@ public interface EjbLogger extends BasicLogger {
     void couldNotWriteMethodInvocation(@Cause Throwable cause, Method invokedMethod, String beanName, String appName, String moduleName, String distinctName);
 
     @LogMessage(level = ERROR)
-    @Message(id = 14251, value = "IOException while generating session id for invocation id: %s on channel %s")
-    void exceptionGeneratingSessionId(@Cause Throwable cause, short invocationId, Channel channel);
+    @Message(id = 14251, value = "Exception while generating session id for component %s with invocation id: %s on channel %s")
+    void exceptionGeneratingSessionId(@Cause Throwable cause, String componentName, short invocationId, Channel channel);
 
     @LogMessage(level = ERROR)
     @Message(id = 14252, value = "Could not write out message to channel due to")
@@ -582,6 +581,17 @@ public interface EjbLogger extends BasicLogger {
     @Message(id = 14264, value = "Exception running timer task for timer %s on EJB %s")
     void exceptionRunningTimerTask(String timerId, String timedObjectId, @Cause  Exception e);
 
+    @LogMessage(level = ERROR)
+    @Message(id = 14265, value = "Error during transaction recovery")
+    void errorDuringTransactionRecovery(@Cause Throwable cause);
+
+    @LogMessage(level = WARN)
+    @Message(id = 14266, value = "The @%s annotation is deprecated and will be ignored.")
+    void deprecatedAnnotation(String annotation);
+
+    @LogMessage(level = WARN)
+    @Message(id = 14267, value = "The <%2$s xmlns=\"%1$s\"/> element will be ignored.")
+    void deprecatedNamespace(String namespace, String element);
 
     // Don't add message ids greater that 14299!!! If you need more first check what EjbMessages is
     // using and take more (lower) numbers from the available range for this module. If the range for the module is

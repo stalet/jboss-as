@@ -25,7 +25,9 @@ package org.jboss.as.server.parsing;
 import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
 import static org.jboss.as.controller.ControllerLogger.ROOT_LOGGER;
 import static org.jboss.as.controller.ControllerMessages.MESSAGES;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ACCESS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.AUTHORIZATION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CONTENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CORE_SERVICE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT;
@@ -81,6 +83,8 @@ import org.jboss.as.controller.parsing.ProfileParsingCompletionHandler;
 import org.jboss.as.controller.persistence.ModelMarshallingContext;
 import org.jboss.as.controller.persistence.SubsystemMarshallingContext;
 import org.jboss.as.controller.resource.SocketBindingGroupResourceDefinition;
+import org.jboss.as.domain.management.access.AccessAuthorizationResourceDefinition;
+import org.jboss.as.domain.management.parsing.AuditLogXml;
 import org.jboss.as.domain.management.parsing.ManagementXml;
 import org.jboss.as.server.controller.resources.DeploymentAttributes;
 import org.jboss.as.server.controller.resources.ServerRootResourceDefinition;
@@ -100,7 +104,7 @@ import org.jboss.staxmapper.XMLExtendedStreamWriter;
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
-public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
+public class StandaloneXml extends CommonXml {
 
     private final ExtensionXml extensionXml;
     private final ExtensionRegistry extensionRegistry;
@@ -122,11 +126,11 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
 
         Namespace readerNS = Namespace.forUri(reader.getNamespaceURI());
-
         switch (readerNS) {
-            case DOMAIN_1_0:
+            case DOMAIN_1_0: {
                 readServerElement_1_0(reader, address, operationList);
                 break;
+            }
             case DOMAIN_1_1:
             case DOMAIN_1_2:
             case DOMAIN_1_3:
@@ -226,8 +230,8 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
 
         if (element == Element.MANAGEMENT) {
-            ManagementXml managementXml = new ManagementXml(this);
-            managementXml.parseManagement(reader, address, DOMAIN_1_0, list, true, false);
+            ManagementXml managementXml = new ManagementXml(new ManagementXmlDelegate());
+            managementXml.parseManagement(reader, address, DOMAIN_1_0, list, false);
             element = nextElement(reader, DOMAIN_1_0);
         }
 
@@ -250,7 +254,7 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
         if (element == Element.DEPLOYMENTS) {
             parseDeployments(reader, address, DOMAIN_1_0, list, EnumSet.of(Attribute.NAME, Attribute.RUNTIME_NAME, Attribute.ENABLED),
-                    EnumSet.of(Element.CONTENT, Element.FS_ARCHIVE, Element.FS_EXPLODED));
+                    EnumSet.of(Element.CONTENT, Element.FS_ARCHIVE, Element.FS_EXPLODED), true);
             element = nextElement(reader, DOMAIN_1_0);
         }
 
@@ -337,8 +341,8 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
 
         if (element == Element.MANAGEMENT) {
-            ManagementXml managementXml = new ManagementXml(this);
-            managementXml.parseManagement(reader, address, namespace, list, true, false);
+            ManagementXml managementXml = new ManagementXml(new ManagementXmlDelegate());
+            managementXml.parseManagement(reader, address, namespace, list, false);
             element = nextElement(reader, namespace);
         }
         // Single profile
@@ -360,7 +364,7 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
         if (element == Element.DEPLOYMENTS) {
             parseDeployments(reader, address, namespace, list, EnumSet.of(Attribute.NAME, Attribute.RUNTIME_NAME, Attribute.ENABLED),
-                    EnumSet.of(Element.CONTENT, Element.FS_ARCHIVE, Element.FS_EXPLODED));
+                    EnumSet.of(Element.CONTENT, Element.FS_ARCHIVE, Element.FS_EXPLODED), true);
             element = nextElement(reader, namespace);
         }
         if (element != null) {
@@ -444,10 +448,9 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
             parseVault(reader, address, namespace, list);
             element = nextElement(reader, namespace);
         }
-
         if (element == Element.MANAGEMENT) {
-            ManagementXml managementXml = new ManagementXml(this);
-            managementXml.parseManagement(reader, address, namespace, list, true, false);
+            ManagementXml managementXml = new ManagementXml(new ManagementXmlDelegate());
+            managementXml.parseManagement(reader, address, namespace, list, false);
             element = nextElement(reader, namespace);
         }
         // Single profile
@@ -469,7 +472,7 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
         if (element == Element.DEPLOYMENTS) {
             parseDeployments(reader, address, namespace, list, EnumSet.of(Attribute.NAME, Attribute.RUNTIME_NAME, Attribute.ENABLED),
-                    EnumSet.of(Element.CONTENT, Element.FS_ARCHIVE, Element.FS_EXPLODED));
+                    EnumSet.of(Element.CONTENT, Element.FS_ARCHIVE, Element.FS_EXPLODED), true);
             element = nextElement(reader, namespace);
         }
 
@@ -479,19 +482,6 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
         if (element != null) {
             throw unexpectedElement(reader);
-        }
-    }
-
-    @Override
-    public void parseManagementInterfaces(final XMLExtendedStreamReader reader, final ModelNode address, final Namespace expectedNs,
-                                          final List<ModelNode> list) throws XMLStreamException {
-
-        switch (expectedNs) {
-            case DOMAIN_1_0:
-                parseManagementInterfaces_1_0(reader, address, expectedNs, list);
-                break;
-            default:
-                parseManagementInterfaces_1_1(reader, address, expectedNs, list);
         }
     }
 
@@ -634,11 +624,31 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
             final Element element = Element.forName(reader.getLocalName());
             switch (element) {
                 case NATIVE_INTERFACE: {
-                    parseManagementInterface1_1(reader, address, false, expectedNs, list);
+                    switch (expectedNs) { // Will not be 1.0 as this method is called for 1.1 and above.
+                        case DOMAIN_1_1:
+                        case DOMAIN_1_2:
+                        case DOMAIN_1_3:
+                        case DOMAIN_1_4:
+                        case DOMAIN_1_5:
+                            parseManagementInterface1_1(reader, address, false, expectedNs, list);
+                            break;
+                        default:
+                            parseManagementInterface2_0(reader, address, false, expectedNs, list);
+                    }
                     break;
                 }
                 case HTTP_INTERFACE: {
-                    parseManagementInterface1_1(reader, address, true, expectedNs, list);
+                    switch (expectedNs) { // Will not be 1.0 as this method is called for 1.1 and above.
+                        case DOMAIN_1_1:
+                        case DOMAIN_1_2:
+                        case DOMAIN_1_3:
+                        case DOMAIN_1_4:
+                        case DOMAIN_1_5:
+                            parseManagementInterface1_1(reader, address, true, expectedNs, list);
+                            break;
+                        default:
+                            parseManagementInterface2_0(reader, address, true, expectedNs, list);
+                    }
                     break;
                 }
                 case NATIVE_REMOTING_INTERFACE: {
@@ -685,6 +695,93 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
                         throw unexpectedAttribute(reader, i);
                 }
             }
+        }
+
+        // Handle elements
+        while (reader.hasNext() && reader.nextTag() != END_ELEMENT) {
+            requireNamespace(reader, expectedNs);
+            final Element element = Element.forName(reader.getLocalName());
+            switch (element) {
+                case SOCKET:
+                    if (http) {
+                        parseHttpManagementSocket(reader, addOp);
+                    } else {
+                        parseNativeManagementSocket(reader, addOp);
+                    }
+                    break;
+                case SOCKET_BINDING:
+                    if (http) {
+                        parseHttpManagementSocketBinding(reader, addOp);
+                    } else {
+                        parseNativeManagementSocketBinding(reader, addOp);
+                    }
+                    break;
+                default:
+                    throw unexpectedElement(reader);
+            }
+        }
+
+        list.add(addOp);
+    }
+
+    private void parseHttpManagementInterfaceAttributes2_0(XMLExtendedStreamReader reader,ModelNode addOp) throws XMLStreamException {
+        final int count = reader.getAttributeCount();
+        for (int i = 0; i < count; i++) {
+            final String value = reader.getAttributeValue(i);
+            if (!isNoNamespaceAttribute(reader, i)) {
+                throw unexpectedAttribute(reader, i);
+            } else {
+                final Attribute attribute = Attribute.forName(reader.getAttributeLocalName(i));
+                switch (attribute) {
+                    case SECURITY_REALM: {
+                        HttpManagementResourceDefinition.SECURITY_REALM.parseAndSetParameter(value, addOp, reader);
+                        break;
+                    }
+                    case CONSOLE_ENABLED: {
+                        HttpManagementResourceDefinition.CONSOLE_ENABLED.parseAndSetParameter(value, addOp, reader);
+                        break;
+                    }
+                    case HTTP_UPGRADE_ENABLED: {
+                        HttpManagementResourceDefinition.HTTP_UPGRADE_ENABLED.parseAndSetParameter(value, addOp, reader);
+                        break;
+                    }
+                    default:
+                        throw unexpectedAttribute(reader, i);
+                }
+            }
+        }
+    }
+
+    private void parseNativeManagementInterfaceAttributes2_0(XMLExtendedStreamReader reader, ModelNode addOp) throws XMLStreamException {
+        final int count = reader.getAttributeCount();
+        for (int i = 0; i < count; i++) {
+            final String value = reader.getAttributeValue(i);
+            if (!isNoNamespaceAttribute(reader, i)) {
+                throw unexpectedAttribute(reader, i);
+            } else {
+                final Attribute attribute = Attribute.forName(reader.getAttributeLocalName(i));
+                switch (attribute) {
+                    case SECURITY_REALM: {
+                        NativeManagementResourceDefinition.SECURITY_REALM.parseAndSetParameter(value, addOp, reader);
+                        break;
+                    }
+                    default:
+                        throw unexpectedAttribute(reader, i);
+                }
+            }
+        }
+    }
+
+    private void parseManagementInterface2_0(XMLExtendedStreamReader reader, ModelNode address, boolean http, Namespace expectedNs, List<ModelNode> list) throws XMLStreamException {
+        final ModelNode operationAddress = address.clone();
+        operationAddress.add(MANAGEMENT_INTERFACE, http ? HTTP_INTERFACE : NATIVE_INTERFACE);
+        final ModelNode addOp = Util.getEmptyOperation(ADD, operationAddress);
+
+        // Handle attributes
+        if (http) {
+            parseHttpManagementInterfaceAttributes2_0(reader, addOp);
+        } else {
+            parseNativeManagementInterfaceAttributes2_0(reader, addOp);
         }
 
         // Handle elements
@@ -1099,8 +1196,8 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
             writeNewLine(writer);
         }
 
-        if (modelNode.hasDefined(CORE_SERVICE) && modelNode.get(CORE_SERVICE).hasDefined(MANAGEMENT)) {
-            ManagementXml managementXml = new ManagementXml(this);
+        if (modelNode.hasDefined(CORE_SERVICE)) {
+            ManagementXml managementXml = new ManagementXml(new ManagementXmlDelegate());
             managementXml.writeManagement(writer, modelNode.get(CORE_SERVICE, MANAGEMENT), true);
             writeNewLine(writer);
         }
@@ -1198,49 +1295,127 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         writer.writeEndElement();
     }
 
-    @Override
-    public void writeNativeManagementProtocol(final XMLExtendedStreamWriter writer, final ModelNode protocol)
-            throws XMLStreamException {
+    private class ManagementXmlDelegate extends ManagementXml.Delegate {
+        AuditLogXml auditLogDelegate = new AuditLogXml(false);
 
-        writer.writeStartElement(Element.NATIVE_INTERFACE.getLocalName());
-        NativeManagementResourceDefinition.SECURITY_REALM.marshallAsAttribute(protocol, writer);
+        @Override
+        public void parseManagementInterfaces(final XMLExtendedStreamReader reader, final ModelNode address, final Namespace expectedNs,
+                                              final List<ModelNode> list) throws XMLStreamException {
 
-        if (NativeManagementResourceDefinition.INTERFACE.isMarshallable(protocol)) {
-            writer.writeEmptyElement(Element.SOCKET.getLocalName());
-            NativeManagementResourceDefinition.INTERFACE.marshallAsAttribute(protocol, writer);
-            NativeManagementResourceDefinition.NATIVE_PORT.marshallAsAttribute(protocol, writer);
-        } else if (NativeManagementResourceDefinition.SOCKET_BINDING.isMarshallable(protocol)) {
-            writer.writeEmptyElement(Element.SOCKET_BINDING.getLocalName());
-            NativeManagementResourceDefinition.SOCKET_BINDING.marshallAsAttribute(protocol, writer);
+            switch (expectedNs) {
+                case DOMAIN_1_0:
+                    parseManagementInterfaces_1_0(reader, address, expectedNs, list);
+                    break;
+                default:
+                    parseManagementInterfaces_1_1(reader, address, expectedNs, list);
+            }
         }
 
-        writer.writeEndElement();
-    }
+        @Override
+        public void parseAccessControl(final XMLExtendedStreamReader reader, final ModelNode address, final Namespace expectedNs,
+                                       final List<ModelNode> list) throws XMLStreamException {
+            ModelNode accAuthzAddr = address.clone().add(ACCESS, AUTHORIZATION);
 
-    @Override
-    public void writeHttpManagementProtocol(final XMLExtendedStreamWriter writer, final ModelNode protocol)
-            throws XMLStreamException {
+            final int count = reader.getAttributeCount();
+            for (int i = 0; i < count; i++) {
 
-        writer.writeStartElement(Element.HTTP_INTERFACE.getLocalName());
-        HttpManagementResourceDefinition.SECURITY_REALM.marshallAsAttribute(protocol, writer);
-        boolean consoleEnabled = protocol.get(ModelDescriptionConstants.CONSOLE_ENABLED).asBoolean(true);
-        if (!consoleEnabled) {
-            HttpManagementResourceDefinition.CONSOLE_ENABLED.marshallAsAttribute(protocol, writer);
+                final String value = reader.getAttributeValue(i);
+                if (!isNoNamespaceAttribute(reader, i)) {
+                    throw ParseUtils.unexpectedAttribute(reader, i);
+                }
+
+                final Attribute attribute = Attribute.forName(reader.getAttributeLocalName(i));
+                if (attribute == Attribute.PROVIDER) {
+                    ModelNode provider = AccessAuthorizationResourceDefinition.PROVIDER.parse(value, reader);
+                    ModelNode op = Util.getWriteAttributeOperation(accAuthzAddr, AccessAuthorizationResourceDefinition.PROVIDER.getName(), provider);
+
+                    list.add(op);
+                } else if (attribute == Attribute.PERMISSION_COMBINATION_POLICY) {
+                    ModelNode provider = AccessAuthorizationResourceDefinition.PERMISSION_COMBINATION_POLICY.parse(value, reader);
+                    ModelNode op = Util.getWriteAttributeOperation(accAuthzAddr, AccessAuthorizationResourceDefinition.PERMISSION_COMBINATION_POLICY.getName(), provider);
+
+                    list.add(op);
+                } else {
+                    throw unexpectedAttribute(reader, i);
+                }
+            }
+
+            while (reader.hasNext() && reader.nextTag() != END_ELEMENT) {
+                requireNamespace(reader, expectedNs);
+                final Element element = Element.forName(reader.getLocalName());
+                switch (element) {
+                    case ROLE_MAPPING: {
+                        ManagementXml.parseAccessControlRoleMapping(reader, accAuthzAddr, expectedNs, list);
+                        break;
+                    }
+                    case CONSTRAINTS: {
+                        ManagementXml.parseAccessControlConstraints(reader, accAuthzAddr, expectedNs, list);
+                        break;
+                    }
+                    default: {
+                        throw unexpectedElement(reader);
+                    }
+                }
+            }
         }
 
-        if (HttpManagementResourceDefinition.INTERFACE.isMarshallable(protocol)) {
-            writer.writeEmptyElement(Element.SOCKET.getLocalName());
-            HttpManagementResourceDefinition.INTERFACE.marshallAsAttribute(protocol, writer);
-            HttpManagementResourceDefinition.HTTP_PORT.marshallAsAttribute(protocol, writer);
-            HttpManagementResourceDefinition.HTTPS_PORT.marshallAsAttribute(protocol, writer);
-        } else if (HttpManagementResourceDefinition.SOCKET_BINDING.isMarshallable(protocol)
-                || HttpManagementResourceDefinition.SECURE_SOCKET_BINDING.isMarshallable(protocol)) {
-            writer.writeEmptyElement(Element.SOCKET_BINDING.getLocalName());
-            HttpManagementResourceDefinition.SOCKET_BINDING.marshallAsAttribute(protocol, writer);
-            HttpManagementResourceDefinition.SECURE_SOCKET_BINDING.marshallAsAttribute(protocol, writer);
+
+        @Override
+        protected void parseAuditLog(XMLExtendedStreamReader reader, ModelNode address, Namespace expectedNs, List<ModelNode> list)
+                throws XMLStreamException {
+            auditLogDelegate.parseAuditLog(reader, address, expectedNs, list);
         }
 
-        writer.writeEndElement();
+        @Override
+        public void writeNativeManagementProtocol(final XMLExtendedStreamWriter writer, final ModelNode protocol)
+                throws XMLStreamException {
+
+            writer.writeStartElement(Element.NATIVE_INTERFACE.getLocalName());
+            NativeManagementResourceDefinition.SECURITY_REALM.marshallAsAttribute(protocol, writer);
+
+            if (NativeManagementResourceDefinition.INTERFACE.isMarshallable(protocol)) {
+                writer.writeEmptyElement(Element.SOCKET.getLocalName());
+                NativeManagementResourceDefinition.INTERFACE.marshallAsAttribute(protocol, writer);
+                NativeManagementResourceDefinition.NATIVE_PORT.marshallAsAttribute(protocol, writer);
+            } else if (NativeManagementResourceDefinition.SOCKET_BINDING.isMarshallable(protocol)) {
+                writer.writeEmptyElement(Element.SOCKET_BINDING.getLocalName());
+                NativeManagementResourceDefinition.SOCKET_BINDING.marshallAsAttribute(protocol, writer);
+            }
+
+            writer.writeEndElement();
+        }
+
+        @Override
+        public void writeHttpManagementProtocol(final XMLExtendedStreamWriter writer, final ModelNode protocol)
+                throws XMLStreamException {
+
+            writer.writeStartElement(Element.HTTP_INTERFACE.getLocalName());
+            HttpManagementResourceDefinition.SECURITY_REALM.marshallAsAttribute(protocol, writer);
+            boolean consoleEnabled = protocol.get(ModelDescriptionConstants.CONSOLE_ENABLED).asBoolean(true);
+            if (!consoleEnabled) {
+                HttpManagementResourceDefinition.CONSOLE_ENABLED.marshallAsAttribute(protocol, writer);
+            }
+            HttpManagementResourceDefinition.HTTP_UPGRADE_ENABLED.marshallAsAttribute(protocol, writer);
+
+            if (HttpManagementResourceDefinition.INTERFACE.isMarshallable(protocol)) {
+                writer.writeEmptyElement(Element.SOCKET.getLocalName());
+                HttpManagementResourceDefinition.INTERFACE.marshallAsAttribute(protocol, writer);
+                HttpManagementResourceDefinition.HTTP_PORT.marshallAsAttribute(protocol, writer);
+                HttpManagementResourceDefinition.HTTPS_PORT.marshallAsAttribute(protocol, writer);
+            } else if (HttpManagementResourceDefinition.SOCKET_BINDING.isMarshallable(protocol)
+                    || HttpManagementResourceDefinition.SECURE_SOCKET_BINDING.isMarshallable(protocol)) {
+                writer.writeEmptyElement(Element.SOCKET_BINDING.getLocalName());
+                HttpManagementResourceDefinition.SOCKET_BINDING.marshallAsAttribute(protocol, writer);
+                HttpManagementResourceDefinition.SECURE_SOCKET_BINDING.marshallAsAttribute(protocol, writer);
+            }
+
+            writer.writeEndElement();
+        }
+
+        @Override
+        protected void writeAuditLog(XMLExtendedStreamWriter writer, ModelNode auditLog) throws XMLStreamException {
+            auditLogDelegate.writeAuditLog(writer, auditLog);
+        }
     }
 
 }

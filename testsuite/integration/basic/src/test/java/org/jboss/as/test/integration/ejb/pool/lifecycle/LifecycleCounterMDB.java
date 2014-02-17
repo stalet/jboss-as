@@ -21,80 +21,72 @@
  */
 package org.jboss.as.test.integration.ejb.pool.lifecycle;
 
-import java.util.logging.Logger;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
 import javax.ejb.ActivationConfigProperty;
+import javax.ejb.EJB;
 import javax.ejb.MessageDriven;
-import javax.jms.Connection;
 import javax.jms.ConnectionFactory;
 import javax.jms.Destination;
+import javax.jms.JMSContext;
 import javax.jms.JMSException;
 import javax.jms.Message;
 import javax.jms.MessageListener;
-import javax.jms.MessageProducer;
-import javax.jms.Session;
 import javax.jms.TextMessage;
-import javax.naming.InitialContext;
-import javax.naming.NamingException;
 
+import org.jboss.logging.Logger;
 
 
 /**
  * @author baranowb
+ * @author Jaikiran Pai - Updates related to https://issues.jboss.org/browse/WFLY-1506
  */
-@MessageDriven(activationConfig = { @ActivationConfigProperty(propertyName = "destination", propertyValue = "queue/myAwesomeQueue") })
-public class LifecycleCounterMDB implements MessageListener {//TODO: extend ReplyingMDB ?
+@MessageDriven(activationConfig = {@ActivationConfigProperty(propertyName = "destination", propertyValue = Constants.QUEUE_JNDI_NAME)})
+public class LifecycleCounterMDB implements MessageListener {
 
     private static final Logger log = Logger.getLogger(LifecycleCounterMDB.class.getName());
 
     @Resource(lookup = "java:/JmsXA")
     private ConnectionFactory factory;
 
-    private Connection connection;
-    private Session session;
-
-    // TODO: injection here does not work.
-    // @EJB
-    private LifecycleCounter lifeCycleCounter;
+    @EJB(lookup = "java:global/pool-ejb-callbacks-singleton/LifecycleTrackerBean!org.jboss.as.test.integration.ejb.pool.lifecycle.LifecycleTracker")
+    private LifecycleTracker lifeCycleTracker;
 
     @Override
     public void onMessage(Message message) {
         try {
-            System.out.println("Message " + message);
-            final Destination destination = message.getJMSReplyTo();
+            log.info(this + " received message " + message);
+            final Destination replyTo = message.getJMSReplyTo();
             // ignore messages that need no reply
-            if (destination == null)
+            if (replyTo == null) {
+                log.info(this + " noticed that no reply-to replyTo has been set. Just returning");
                 return;
-            final MessageProducer replyProducer = session.createProducer(destination);
-            final Message replyMsg = session.createTextMessage("replying " + ((TextMessage) message).getText());
-            replyMsg.setJMSCorrelationID(message.getJMSMessageID());
-            replyProducer.send(replyMsg);
-            replyProducer.close();
+            }
+            try (
+                    JMSContext context = factory.createContext()
+            ) {
+                String reply = Constants.REPLY_MESSAGE_PREFIX + ((TextMessage) message).getText();
+                context.createProducer()
+                        .setJMSCorrelationID(message.getJMSMessageID())
+                        .send(replyTo, reply);
+            }
         } catch (JMSException e) {
             throw new RuntimeException(e);
         }
     }
 
     @PreDestroy
-    protected void preDestroy() throws JMSException {
+    protected void preDestroy() {
 
-        this.log.info("MDB about to be gone, releasing resources");
-        this.session.close();
-        this.connection.close();
-        this.lifeCycleCounter.incrementPreDestroyCount();
+        log.info("@PreDestroy on " + this);
+        lifeCycleTracker.trackPreDestroyOn(this.getClass().getName());
     }
 
     @PostConstruct
-    protected void postConstruct() throws JMSException, NamingException {
-        this.log.info("MDB created, initializing");
-        this.connection = this.factory.createConnection();
-        this.session = this.connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-
-        this.lifeCycleCounter = (LifecycleCounter) new InitialContext()
-                .lookup("java:global/pool-ejb-callbacks-singleton/LifecycleCounterBean!org.jboss.as.test.integration.ejb.pool.lifecycle.LifecycleCounter");
-        this.lifeCycleCounter.incrementPostCreateCount();
+    protected void postConstruct() {
+        lifeCycleTracker.trackPostConstructOn(this.getClass().getName());
+        log.info(this + " MDB @PostConstructed");
     }
 }

@@ -25,15 +25,26 @@ import java.util.Properties;
 
 
 public enum ModelTestControllerVersion {
-    MASTER (CurrentVersion.VERSION, null),
-    V7_1_2_FINAL ("7.1.2.Final", "7.1.2"),
-    V7_1_3_FINAL ("7.1.3.Final", "7.1.2");
+    //AS releases
+    MASTER (CurrentVersion.VERSION, false, null),
+    V7_1_2_FINAL ("7.1.2.Final", false, "7.1.2"),
+    V7_1_3_FINAL ("7.1.3.Final", false, "7.1.2"),
+    V7_2_0_FINAL ("7.2.0.Final", false, "7.2.0"),
 
-    String mavenGavVersion;
-    String testControllerVersion;
-    private ModelTestControllerVersion(String mavenGavVersion, String testControllerVersion) {
+    //EAP releases
+    EAP_6_0_0 ("7.1.2.Final-redhat-1", true, "7.1.2"),
+    EAP_6_0_1 ("7.1.3.Final-redhat-4", true, "7.1.2"),
+    EAP_6_1_0 ("7.2.0.Final-redhat-8", true, "7.2.0"),
+    EAP_6_1_1 ("7.2.1.Final-redhat-10", true, "7.2.0")
+    ;
+
+    private final String mavenGavVersion;
+    private final String testControllerVersion;
+    private final boolean eap;
+    private ModelTestControllerVersion(String mavenGavVersion, boolean eap, String testControllerVersion) {
         this.mavenGavVersion = mavenGavVersion;
         this.testControllerVersion = testControllerVersion;
+        this.eap = eap;
     }
 
     public String getMavenGavVersion() {
@@ -42,6 +53,10 @@ public enum ModelTestControllerVersion {
 
     public String getTestControllerVersion() {
         return testControllerVersion;
+    }
+
+    public boolean isEap() {
+        return eap;
     }
 
     public interface CurrentVersion {
@@ -57,7 +72,7 @@ public enum ModelTestControllerVersion {
                 props.load(ModelTestControllerVersion.class.getResourceAsStream("version.properties"));
                 VERSION = props.getProperty("as.version");
             } catch (Exception e) {
-                VERSION = "8.0.0.Alpha1-SNAPSHOT";
+                VERSION = "8.0.0.Beta2-SNAPSHOT";
                 e.printStackTrace();
             }
         }

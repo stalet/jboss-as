@@ -23,9 +23,14 @@
 package org.jboss.as.server.deployment.module;
 
 import java.io.IOException;
+import java.security.Permission;
+import java.security.Permissions;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.Enumeration;
 import java.util.List;
+import java.util.PropertyPermission;
 
 import org.jboss.as.server.ServerLogger;
 import org.jboss.as.server.ServerMessages;
@@ -35,7 +40,9 @@ import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.SubDeploymentMarker;
+import org.jboss.as.server.moduleservice.ModuleDefinition;
 import org.jboss.as.server.moduleservice.ModuleLoadService;
+import org.jboss.as.server.moduleservice.ModuleResolvePhaseService;
 import org.jboss.as.server.moduleservice.ServiceModuleLoader;
 import org.jboss.modules.DependencySpec;
 import org.jboss.modules.ModuleIdentifier;
@@ -44,10 +51,15 @@ import org.jboss.modules.ResourceLoaderSpec;
 import org.jboss.modules.filter.MultiplePathFilterBuilder;
 import org.jboss.modules.filter.PathFilter;
 import org.jboss.modules.filter.PathFilters;
+import org.jboss.modules.security.FactoryPermissionCollection;
+import org.jboss.modules.security.ImmediatePermissionFactory;
+import org.jboss.modules.security.PermissionFactory;
 import org.jboss.msc.service.ServiceController.Mode;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ValueService;
 import org.jboss.msc.value.ImmediateValue;
+import org.jboss.vfs.VirtualFile;
+import org.jboss.vfs.VirtualFilePermission;
 
 /**
  * Processor responsible for creating the module spec service for this deployment. Once the module spec service is created the
@@ -110,7 +122,7 @@ public class ModuleSpecProcessor implements DeploymentUnitProcessor {
         final List<AdditionalModuleSpecification> additionalModules = topLevelDeployment.getAttachmentList(Attachments.ADDITIONAL_MODULES);
 
         // create the module service and set it to attach to the deployment in the next phase
-        final ServiceName moduleServiceName = createModuleService(phaseContext, deploymentUnit, resourceRoots, moduleSpec, moduleIdentifier, additionalModules);
+        final ServiceName moduleServiceName = createModuleService(phaseContext, deploymentUnit, resourceRoots, moduleSpec, moduleIdentifier);
         phaseContext.addDeploymentDependency(moduleServiceName, Attachments.MODULE);
 
         for (final DeploymentUnit subDeployment : deploymentUnit.getAttachmentList(Attachments.SUB_DEPLOYMENTS)) {
@@ -125,29 +137,62 @@ public class ModuleSpecProcessor implements DeploymentUnitProcessor {
             return;
         }
         for (final AdditionalModuleSpecification module : additionalModules) {
-            addSystemDependencies(moduleSpec, module);
+            addAllDependenciesAndPermissions(moduleSpec, module);
             List<ResourceRoot> roots = module.getResourceRoots();
-            ServiceName serviceName = createModuleService(phaseContext, deploymentUnit, roots, module, module.getModuleIdentifier(), additionalModules);
+            ServiceName serviceName = createModuleService(phaseContext, deploymentUnit, roots, module, module.getModuleIdentifier());
             phaseContext.addToAttachmentList(Attachments.NEXT_PHASE_DEPS, serviceName);
         }
     }
 
     /**
-     * Gives any additional modules the same system dependencies as the primary module.
+     * Gives any additional modules the same dependencies and permissions as the primary module.
      * <p/>
      * This makes sure they can access all API classes etc.
      *
      * @param moduleSpecification The primary module spec
      * @param module              The additional module
      */
-    private void addSystemDependencies(final ModuleSpecification moduleSpecification, final AdditionalModuleSpecification module) {
+    private void addAllDependenciesAndPermissions(final ModuleSpecification moduleSpecification, final AdditionalModuleSpecification module) {
         module.addSystemDependencies(moduleSpecification.getSystemDependencies());
+        module.addLocalDependencies(moduleSpecification.getLocalDependencies());
+        for(ModuleDependency dep : moduleSpecification.getUserDependencies()) {
+            if(!dep.getIdentifier().equals(module.getModuleIdentifier())) {
+                module.addUserDependency(dep);
+            }
+        }
+        for(PermissionFactory factory : moduleSpecification.getPermissionFactories()) {
+            module.addPermissionFactory(factory);
+        }
     }
 
+    private static final Permissions DEFAULT_PERMISSIONS;
+
+    static {
+        final Permissions permissions = new Permissions();
+        permissions.add(new PropertyPermission("file.encoding", "read"));
+        permissions.add(new PropertyPermission("file.separator", "read"));
+        permissions.add(new PropertyPermission("java.class.version", "read"));
+        permissions.add(new PropertyPermission("java.specification.version", "read"));
+        permissions.add(new PropertyPermission("java.specification.vendor", "read"));
+        permissions.add(new PropertyPermission("java.specification.name", "read"));
+        permissions.add(new PropertyPermission("java.vendor", "read"));
+        permissions.add(new PropertyPermission("java.vendor.url", "read"));
+        permissions.add(new PropertyPermission("java.version", "read"));
+        permissions.add(new PropertyPermission("java.vm.name", "read"));
+        permissions.add(new PropertyPermission("java.vm.vendor", "read"));
+        permissions.add(new PropertyPermission("java.vm.version", "read"));
+        permissions.add(new PropertyPermission("line.separator", "read"));
+        permissions.add(new PropertyPermission("os.name", "read"));
+        permissions.add(new PropertyPermission("os.version", "read"));
+        permissions.add(new PropertyPermission("os.arch", "read"));
+        permissions.add(new PropertyPermission("path.separator", "read"));
+        permissions.setReadOnly();
+        DEFAULT_PERMISSIONS = permissions;
+    }
 
     private ServiceName createModuleService(final DeploymentPhaseContext phaseContext, final DeploymentUnit deploymentUnit,
                                             final List<ResourceRoot> resourceRoots, final ModuleSpecification moduleSpecification,
-                                            final ModuleIdentifier moduleIdentifier, List<AdditionalModuleSpecification> additionalModuleSpecifications) throws DeploymentUnitProcessingException {
+                                            final ModuleIdentifier moduleIdentifier) throws DeploymentUnitProcessingException {
         logger.debug("Creating module: " + moduleIdentifier);
         final ModuleSpec.Builder specBuilder = ModuleSpec.build(moduleIdentifier);
         for (final DependencySpec dep : moduleSpecification.getModuleSystemDependencies()) {
@@ -156,6 +201,8 @@ public class ModuleSpecProcessor implements DeploymentUnitProcessor {
         final List<ModuleDependency> dependencies = moduleSpecification.getSystemDependencies();
         final List<ModuleDependency> localDependencies = moduleSpecification.getLocalDependencies();
         final List<ModuleDependency> userDependencies = moduleSpecification.getUserDependencies();
+
+        final List<PermissionFactory> permFactories = moduleSpecification.getPermissionFactories();
 
         installAliases(moduleSpecification, moduleIdentifier, deploymentUnit, phaseContext);
 
@@ -167,7 +214,7 @@ public class ModuleSpecProcessor implements DeploymentUnitProcessor {
 
         for (final ResourceRoot resourceRoot : resourceRoots) {
             logger.debug("Adding resource " + resourceRoot.getRoot() + " to module " + moduleIdentifier);
-            addResourceRoot(specBuilder, resourceRoot);
+            addResourceRoot(specBuilder, resourceRoot, permFactories);
         }
 
         createDependencies(specBuilder, dependencies, false);
@@ -181,13 +228,24 @@ public class ModuleSpecProcessor implements DeploymentUnitProcessor {
             createDependencies(specBuilder, localDependencies, moduleSpecification.isLocalDependenciesTransitive());
         }
 
+        final Enumeration<Permission> e = DEFAULT_PERMISSIONS.elements();
+        while (e.hasMoreElements()) {
+            permFactories.add(new ImmediatePermissionFactory(e.nextElement()));
+        }
+        // TODO: servlet context temp dir FilePermission
+
+        specBuilder.setPermissionCollection(
+                new FactoryPermissionCollection(permFactories.toArray(new PermissionFactory[permFactories.size()])));
+
         final DelegatingClassFileTransformer delegatingClassFileTransformer = new DelegatingClassFileTransformer();
         specBuilder.setClassFileTransformer(delegatingClassFileTransformer);
         deploymentUnit.putAttachment(DelegatingClassFileTransformer.ATTACHMENT_KEY, delegatingClassFileTransformer);
         final ModuleSpec moduleSpec = specBuilder.create();
         final ServiceName moduleSpecServiceName = ServiceModuleLoader.moduleSpecServiceName(moduleIdentifier);
-        final ValueService<ModuleSpec> moduleSpecService = new ValueService<ModuleSpec>(new ImmediateValue<ModuleSpec>(
-                moduleSpec));
+
+        ModuleDefinition moduleDefinition = new ModuleDefinition(moduleIdentifier, new HashSet<>(moduleSpecification.getAllDependencies()), moduleSpec);
+
+        final ValueService<ModuleDefinition> moduleSpecService = new ValueService<>(new ImmediateValue<>(moduleDefinition));
         phaseContext.getServiceTarget().addService(moduleSpecServiceName, moduleSpecService).addDependencies(
                 deploymentUnit.getServiceName()).addDependencies(phaseContext.getPhaseServiceName()).setInitialMode(
                 Mode.ON_DEMAND).install();
@@ -197,34 +255,26 @@ public class ModuleSpecProcessor implements DeploymentUnitProcessor {
         allDependencies.addAll(localDependencies);
         allDependencies.addAll(userDependencies);
 
-
-        //this is not that nice, but there is a situation where additional modules cause problems
-        //due to re-exporting of dependencies, as required by the Class-Path transitivity requirement
-        //we hack around this by simply making every module load service dependent on all the additional
-        //modules
-        //this will mostly resolve the issue, except in cases where another deployment is depending on a
-        //module that suffers from this problem (i.e. if you have a cross-deployment dependency, and the
-        //dependency you are targeting exports another module, it is possible for a race condition to occur
-        //where a module is loaded before its dependency is ready. This should be a corner case and can
-        //be worked around using whole deployment inter-deployment dependencies, rather than just a module
-        //dependency
-        //for more details see AS7-5971
-        for (AdditionalModuleSpecification module : additionalModuleSpecifications) {
-            allDependencies.add(new ModuleDependency(null, module.getModuleIdentifier(), false, false, false, false));
-        }
+        ModuleResolvePhaseService.installService(phaseContext.getServiceTarget(), moduleDefinition);
 
         return ModuleLoadService.install(phaseContext.getServiceTarget(), moduleIdentifier, allDependencies);
     }
 
     private void installAliases(final ModuleSpecification moduleSpecification, final ModuleIdentifier moduleIdentifier, final DeploymentUnit deploymentUnit, final DeploymentPhaseContext phaseContext) {
+
         for (final ModuleIdentifier alias : moduleSpecification.getAliases()) {
             final ServiceName moduleSpecServiceName = ServiceModuleLoader.moduleSpecServiceName(alias);
             final ModuleSpec spec = ModuleSpec.buildAlias(alias, moduleIdentifier).create();
-            final ValueService<ModuleSpec> moduleSpecService = new ValueService<ModuleSpec>(new ImmediateValue<ModuleSpec>(spec));
+
+            ModuleDefinition moduleDefinition = new ModuleDefinition(alias, new HashSet<>(moduleSpecification.getAllDependencies()), spec);
+
+            final ValueService<ModuleDefinition> moduleSpecService = new ValueService<>(new ImmediateValue<>(moduleDefinition));
             phaseContext.getServiceTarget().addService(moduleSpecServiceName, moduleSpecService).addDependencies(
                     deploymentUnit.getServiceName()).addDependencies(phaseContext.getPhaseServiceName()).setInitialMode(
                     Mode.ON_DEMAND).install();
             ModuleLoadService.installService(phaseContext.getServiceTarget(), alias, Collections.singletonList(moduleIdentifier));
+
+            ModuleResolvePhaseService.installService(phaseContext.getServiceTarget(), moduleDefinition);
         }
     }
 
@@ -268,20 +318,23 @@ public class ModuleSpecProcessor implements DeploymentUnitProcessor {
         }
     }
 
-    private void addResourceRoot(final ModuleSpec.Builder specBuilder, final ResourceRoot resource)
+    private void addResourceRoot(final ModuleSpec.Builder specBuilder, final ResourceRoot resource, final List<PermissionFactory> permFactories)
             throws DeploymentUnitProcessingException {
         try {
+            final VirtualFile root = resource.getRoot();
             if (resource.getExportFilters().isEmpty()) {
                 specBuilder.addResourceRoot(ResourceLoaderSpec.createResourceLoaderSpec(new VFSResourceLoader(resource
-                        .getRootName(), resource.getRoot(), resource.isUsePhysicalCodeSource())));
+                        .getRootName(), root, resource.isUsePhysicalCodeSource())));
             } else {
                 final MultiplePathFilterBuilder filterBuilder = PathFilters.multiplePathFilterBuilder(true);
                 for (final FilterSpecification filter : resource.getExportFilters()) {
                     filterBuilder.addFilter(filter.getPathFilter(), filter.isInclude());
                 }
                 specBuilder.addResourceRoot(ResourceLoaderSpec.createResourceLoaderSpec(new VFSResourceLoader(resource
-                        .getRootName(), resource.getRoot(), resource.isUsePhysicalCodeSource()), filterBuilder.create()));
+                        .getRootName(), root, resource.isUsePhysicalCodeSource()), filterBuilder.create()));
             }
+            permFactories.add(new ImmediatePermissionFactory(
+                    new VirtualFilePermission(root.getChild("-").getPathName(), VirtualFilePermission.FLAG_READ)));
         } catch (IOException e) {
             throw ServerMessages.MESSAGES.failedToCreateVFSResourceLoader(resource.getRootName(), e);
         }

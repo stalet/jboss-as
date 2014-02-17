@@ -199,6 +199,37 @@ public interface MessagingLogger extends BasicLogger {
     @Message(id = 11613, value = "Can not change the clustered attribute to false: The hornetq-server resource at %s has cluster-connection children resources and will remain clustered.")
     void canNotChangeClusteredAttribute(PathAddress address);
 
+    @LogMessage(level = WARN)
+    @Message(id = 11614, value = "Ignoring %s property that is not a known property for pooled connection factory.")
+    void unknownPooledConnectionFactoryAttribute(String name);
 
+    /**
+     * Logs an info message when a HTTP Upgrade handler is registered for the given {@code protocol}.
+     *
+     * @param name the name of the protocol that is handled
+     */
+    @LogMessage(level = INFO)
+    @Message(id = 11615, value = "Registered HTTP upgrade for %s protocol handled by %s acceptor")
+    void registeredHTTPUpgradeHandler(String name, String acceptor);
 
+    /**
+     * Logs a warning message indicating the XML element with the given {@code name}
+     * is deprecated and instead a different attribute will be used.
+     *
+     * @param name the name of the deprecated XML element
+     */
+    @LogMessage(level = WARN)
+    @Message(id = 11616, value = "Element %s is deprecated and %s will be used in its place")
+    void deprecatedXMLElement(String name, String replacement);
+
+    /**
+     * Logs a warn message when no connectors were specified for a connection factory definition
+     * and one connector was picked up to be used.
+     *
+     * @param name the name of the connection factory definition
+     * @param connectorName the name of the connector that was picked
+     */
+    @LogMessage(level = WARN)
+    @Message(id = 11617, value = "No connectors were explicitly defined for the pooled connection factory %s. Using %s as the connector.")
+    void connectorForPooledConnectionFactory(String name, String connectorName);
 }

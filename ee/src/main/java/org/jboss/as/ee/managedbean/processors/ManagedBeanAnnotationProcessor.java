@@ -35,25 +35,26 @@ import org.jboss.as.ee.component.ViewConfigurator;
 import org.jboss.as.ee.component.ViewDescription;
 import org.jboss.as.ee.component.deployers.EEResourceReferenceProcessorRegistry;
 import org.jboss.as.ee.component.interceptors.InterceptorOrder;
-import org.jboss.as.ee.managedbean.component.ManagedBeanAssociatingInterceptorFactory;
 import org.jboss.as.ee.managedbean.component.ManagedBeanComponentDescription;
-import org.jboss.as.ee.managedbean.component.ManagedBeanCreateInterceptorFactory;
-import org.jboss.as.ee.managedbean.component.ManagedBeanDestroyInterceptorFactory;
+import org.jboss.as.ee.managedbean.component.ManagedBeanCreateInterceptor;
 import org.jboss.as.ee.managedbean.component.ManagedBeanResourceReferenceProcessor;
+import org.jboss.as.ee.structure.EJBAnnotationPropertyReplacement;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.annotation.CompositeIndex;
+import org.jboss.invocation.AccessCheckingInterceptor;
 import org.jboss.invocation.ContextClassLoaderInterceptor;
 import org.jboss.invocation.ImmediateInterceptorFactory;
-import org.jboss.invocation.PrivilegedInterceptor;
+import org.jboss.invocation.PrivilegedWithCombinerInterceptor;
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.AnnotationTarget;
 import org.jboss.jandex.AnnotationValue;
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
+import org.jboss.metadata.property.PropertyReplacer;
 
 import static org.jboss.as.ee.EeLogger.ROOT_LOGGER;
 import static org.jboss.as.ee.EeMessages.MESSAGES;
@@ -81,6 +82,8 @@ public class ManagedBeanAnnotationProcessor implements DeploymentUnitProcessor {
         final EEResourceReferenceProcessorRegistry registry = deploymentUnit.getAttachment(org.jboss.as.ee.component.Attachments.RESOURCE_REFERENCE_PROCESSOR_REGISTRY);
         final EEModuleDescription moduleDescription = deploymentUnit.getAttachment(org.jboss.as.ee.component.Attachments.EE_MODULE_DESCRIPTION);
         final CompositeIndex compositeIndex = deploymentUnit.getAttachment(Attachments.COMPOSITE_ANNOTATION_INDEX);
+        final boolean replacement = deploymentUnit.getAttachment(org.jboss.as.ee.structure.Attachments.ANNOTATION_PROPERTY_REPLACEMENT);
+        final PropertyReplacer replacer = EJBAnnotationPropertyReplacement.propertyReplacer(deploymentUnit);
         if(compositeIndex == null) {
             return;
         }
@@ -103,7 +106,7 @@ public class ManagedBeanAnnotationProcessor implements DeploymentUnitProcessor {
 
             // Get the managed bean name from the annotation
             final AnnotationValue nameValue = instance.value();
-            final String beanName = nameValue == null || nameValue.asString().isEmpty() ? beanClassName : nameValue.asString();
+            final String beanName = nameValue == null || nameValue.asString().isEmpty() ? beanClassName : (replacement ? replacer.replaceProperties(nameValue.asString()) : nameValue.asString());
             final ManagedBeanComponentDescription componentDescription = new ManagedBeanComponentDescription(beanName, beanClassName, moduleDescription, deploymentUnit.getServiceName());
 
             // Add the view
@@ -111,13 +114,10 @@ public class ManagedBeanAnnotationProcessor implements DeploymentUnitProcessor {
             viewDescription.getConfigurators().addFirst(new ViewConfigurator() {
                 public void configure(final DeploymentPhaseContext context, final ComponentConfiguration componentConfiguration, final ViewDescription description, final ViewConfiguration configuration) throws DeploymentUnitProcessingException {
                     // Add MB association interceptors
-                    final Object contextKey = new Object();
-                    configuration.addClientPostConstructInterceptor(new ManagedBeanCreateInterceptorFactory(contextKey), InterceptorOrder.ClientPostConstruct.INSTANCE_CREATE);
-                    final ManagedBeanAssociatingInterceptorFactory associatingInterceptorFactory = new ManagedBeanAssociatingInterceptorFactory(contextKey);
-                    configuration.addClientInterceptor(associatingInterceptorFactory, InterceptorOrder.Client.ASSOCIATING_INTERCEPTOR);
-                    configuration.addClientPreDestroyInterceptor(new ManagedBeanDestroyInterceptorFactory(contextKey), InterceptorOrder.ClientPreDestroy.INSTANCE_DESTROY);
+                    configuration.addClientPostConstructInterceptor(ManagedBeanCreateInterceptor.FACTORY, InterceptorOrder.ClientPostConstruct.INSTANCE_CREATE);
                     final ClassLoader classLoader = componentConfiguration.getModuleClassLoader();
-                    configuration.addViewInterceptor(PrivilegedInterceptor.getFactory(), InterceptorOrder.View.PRIVILEGED_INTERCEPTOR);
+                    configuration.addViewInterceptor(PrivilegedWithCombinerInterceptor.getFactory(), InterceptorOrder.View.PRIVILEGED_INTERCEPTOR);
+                    configuration.addViewInterceptor(AccessCheckingInterceptor.getFactory(), InterceptorOrder.View.CHECKING_INTERCEPTOR);
                     configuration.addViewInterceptor(new ImmediateInterceptorFactory(new ContextClassLoaderInterceptor(classLoader)), InterceptorOrder.View.TCCL_INTERCEPTOR);
                 }
             });

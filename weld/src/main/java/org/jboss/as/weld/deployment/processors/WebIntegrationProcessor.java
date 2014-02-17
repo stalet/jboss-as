@@ -30,37 +30,60 @@ import org.jboss.as.ee.component.EEApplicationClasses;
 import org.jboss.as.ee.component.EEModuleDescription;
 import org.jboss.as.ee.structure.DeploymentType;
 import org.jboss.as.ee.structure.DeploymentTypeMarker;
+import org.jboss.as.ee.weld.WeldDeploymentMarker;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.web.common.ExpressionFactoryWrapper;
 import org.jboss.as.web.common.WarMetaData;
-import org.jboss.as.weld.WeldDeploymentMarker;
+import org.jboss.as.web.common.WebComponentDescription;
 import org.jboss.as.weld.WeldLogger;
-import org.jboss.as.weld.webtier.jsp.JspInitializationListener;
+import org.jboss.as.weld.webtier.jsp.WeldJspExpressionFactoryWrapper;
+import org.jboss.metadata.javaee.spec.ParamValueMetaData;
 import org.jboss.metadata.web.jboss.JBossWebMetaData;
+import org.jboss.metadata.web.spec.FilterMappingMetaData;
+import org.jboss.metadata.web.spec.FilterMetaData;
+import org.jboss.metadata.web.spec.FiltersMetaData;
 import org.jboss.metadata.web.spec.ListenerMetaData;
-import org.jboss.weld.servlet.WeldListener;
+import org.jboss.weld.servlet.ConversationFilter;
+import org.jboss.weld.servlet.WeldInitialListener;
+import org.jboss.weld.servlet.WeldTerminalListener;
+import org.jboss.weld.servlet.api.InitParameters;
 
 /**
  * Deployment processor that integrates weld into the web tier
  *
  * @author Stuart Douglas
- * @author Marko Luksa
  */
 public class WebIntegrationProcessor implements DeploymentUnitProcessor {
-    private final ListenerMetaData WBL;
+    private final ListenerMetaData INITIAL_LISTENER_METADATA;
+    private final ListenerMetaData TERMINAL_LISTENER_MEDATADA;
+    private final FilterMetaData conversationFilterMetadata;
 
-    private static final String WELD_LISTENER = WeldListener.class.getName();
+    private static final String WELD_INITIAL_LISTENER = WeldInitialListener.class.getName();
+    private static final String WELD_TERMINAL_LISTENER = WeldTerminalListener.class.getName();
 
     private static final String WELD_SERVLET_LISTENER = "org.jboss.weld.environment.servlet.Listener";
+
+    private static final String CONVERSATION_FILTER_CLASS = ConversationFilter.class.getName();
+    private static final String CONVERSATION_FILTER_NAME = "CDI Conversation Filter";
+
+    private static final ParamValueMetaData CONVERSATION_FILTER_INITIALIZED = new ParamValueMetaData();
 
     public WebIntegrationProcessor() {
 
         // create wbl listener
-        WBL = new ListenerMetaData();
-        WBL.setListenerClass(WELD_LISTENER);
+        INITIAL_LISTENER_METADATA = new ListenerMetaData();
+        INITIAL_LISTENER_METADATA.setListenerClass(WELD_INITIAL_LISTENER);
+        TERMINAL_LISTENER_MEDATADA = new ListenerMetaData();
+        TERMINAL_LISTENER_MEDATADA.setListenerClass(WELD_TERMINAL_LISTENER);
+        conversationFilterMetadata = new FilterMetaData();
+        conversationFilterMetadata.setFilterClass(CONVERSATION_FILTER_CLASS);
+        conversationFilterMetadata.setFilterName(CONVERSATION_FILTER_NAME);
+        conversationFilterMetadata.setAsyncSupported(true);
+        CONVERSATION_FILTER_INITIALIZED.setParamName(ConversationFilter.CONVERSATION_FILTER_REGISTERED);
+        CONVERSATION_FILTER_INITIALIZED.setParamValue(Boolean.TRUE.toString());
     }
 
     @Override
@@ -73,7 +96,7 @@ public class WebIntegrationProcessor implements DeploymentUnitProcessor {
             return; // Skip non web deployments
         }
 
-        if (!WeldDeploymentMarker.isPartOfWeldDeployment(deploymentUnit)) {
+        if (!WeldDeploymentMarker.isWeldDeployment(deploymentUnit)) {
             return; // skip non weld deployments
         }
 
@@ -105,12 +128,73 @@ public class WebIntegrationProcessor implements DeploymentUnitProcessor {
                 }
             }
         }
-        listeners.add(0, WBL);
+        listeners.add(0, INITIAL_LISTENER_METADATA);
+        listeners.add(TERMINAL_LISTENER_MEDATADA);
 
-        deploymentUnit.addToAttachmentList(ExpressionFactoryWrapper.ATTACHMENT_KEY, JspInitializationListener.INSTANCE);
+        //These listeners use resource injection, so they need to be components
+        registerAsComponent(WELD_INITIAL_LISTENER, module, deploymentUnit, applicationClasses);
+        registerAsComponent(WELD_TERMINAL_LISTENER, module, deploymentUnit, applicationClasses);
+
+        deploymentUnit.addToAttachmentList(ExpressionFactoryWrapper.ATTACHMENT_KEY, WeldJspExpressionFactoryWrapper.INSTANCE);
+
+        if (webMetaData.getContextParams() == null) {
+            webMetaData.setContextParams(new ArrayList<ParamValueMetaData>());
+        }
+        final List<ParamValueMetaData> contextParams = webMetaData.getContextParams();
+        setupWeldContextIgnores(contextParams, InitParameters.CONTEXT_IGNORE_FORWARD);
+        setupWeldContextIgnores(contextParams, InitParameters.CONTEXT_IGNORE_INCLUDE);
+
+        if (webMetaData.getFilterMappings() != null) {
+            // register ConversationFilter
+            boolean filterMappingFound = false;
+            for (FilterMappingMetaData mapping : webMetaData.getFilterMappings()) {
+                if (CONVERSATION_FILTER_NAME.equals(mapping.getFilterName())) {
+                    filterMappingFound = true;
+                    break;
+                }
+            }
+
+            if (filterMappingFound) { // otherwise WeldListener will take care of conversation context activation
+                boolean filterFound = false;
+                // register ConversationFilter
+                if (webMetaData.getFilters() == null) {
+                    webMetaData.setFilters(new FiltersMetaData());
+                }
+                for (FilterMetaData filter : webMetaData.getFilters()) {
+                    if (CONVERSATION_FILTER_CLASS.equals(filter.getFilterClass())) {
+                        filterFound = true;
+                        break;
+                    }
+                }
+                if (!filterFound) {
+                    webMetaData.getFilters().add(conversationFilterMetadata);
+                    registerAsComponent(CONVERSATION_FILTER_CLASS, module, deploymentUnit, applicationClasses);
+                    webMetaData.getContextParams().add(CONVERSATION_FILTER_INITIALIZED);
+                }
+            }
+
+        }
+    }
+
+    private void setupWeldContextIgnores(List<ParamValueMetaData> contextParams, String parameterName) {
+        for (ParamValueMetaData param : contextParams) {
+            if (parameterName.equals(param.getParamName())) {
+                return;
+            }
+        }
+        ParamValueMetaData parameter = new ParamValueMetaData();
+        parameter.setParamName(parameterName);
+        parameter.setParamValue("false");
+        contextParams.add(parameter);
     }
 
     @Override
     public void undeploy(DeploymentUnit context) {
+    }
+
+    private void registerAsComponent(String listener, EEModuleDescription module, DeploymentUnit deploymentUnit, EEApplicationClasses applicationClasses) {
+        final WebComponentDescription componentDescription = new WebComponentDescription(listener, listener, module, deploymentUnit.getServiceName(), applicationClasses);
+        module.addComponent(componentDescription);
+        deploymentUnit.addToAttachmentList(WebComponentDescription.WEB_COMPONENTS, componentDescription.getStartServiceName());
     }
 }

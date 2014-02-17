@@ -22,11 +22,10 @@
 
 package org.jboss.as.clustering.infinispan.subsystem;
 
-import javax.xml.XMLConstants;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.jboss.as.controller.AttributeDefinition;
+import javax.xml.XMLConstants;
 
 /**
  * Enumerates the attributes used in the Infinispan subsystem schema.
@@ -40,6 +39,7 @@ public enum Attribute {
     ACQUIRE_TIMEOUT(ModelKeys.ACQUIRE_TIMEOUT),
     ALIASES(ModelKeys.ALIASES),
     ASYNC_MARSHALLING(ModelKeys.ASYNC_MARSHALLING),
+    BACKUP_FAILURE_POLICY(ModelKeys.BACKUP_FAILURE_POLICY),
     BATCH_SIZE(ModelKeys.BATCH_SIZE),
     BATCHING(ModelKeys.BATCHING),
     CACHE(ModelKeys.CACHE),
@@ -50,6 +50,7 @@ public enum Attribute {
     DATASOURCE(ModelKeys.DATASOURCE),
     DEFAULT_CACHE(ModelKeys.DEFAULT_CACHE),
     @Deprecated DEFAULT_CACHE_CONTAINER("default-cache-container"),
+    DIALECT(ModelKeys.DIALECT),
     @Deprecated EAGER_LOCKING("eager-locking"),
     ENABLED(ModelKeys.ENABLED),
     EVICTION_EXECUTOR(ModelKeys.EVICTION_EXECUTOR),
@@ -87,6 +88,8 @@ public enum Attribute {
     QUEUE_SIZE(ModelKeys.QUEUE_SIZE),
     RACK(ModelKeys.RACK),
     RELATIVE_TO(ModelKeys.RELATIVE_TO),
+    REMOTE_CACHE(ModelKeys.REMOTE_CACHE),
+    REMOTE_SITE(ModelKeys.REMOTE_SITE),
     REMOTE_TIMEOUT(ModelKeys.REMOTE_TIMEOUT),
     REPLICATION_QUEUE_EXECUTOR(ModelKeys.REPLICATION_QUEUE_EXECUTOR),
     SEGMENTS(ModelKeys.SEGMENTS),
@@ -97,9 +100,12 @@ public enum Attribute {
     SOCKET_TIMEOUT(ModelKeys.SOCKET_TIMEOUT),
     STACK(ModelKeys.STACK),
     START(ModelKeys.START),
+    STATISTICS_ENABLED(ModelKeys.STATISTICS_ENABLED),
     STOP_TIMEOUT(ModelKeys.STOP_TIMEOUT),
     STRATEGY(ModelKeys.STRATEGY),
     STRIPING(ModelKeys.STRIPING),
+    TAKE_BACKUP_OFFLINE_AFTER_FAILURES(ModelKeys.TAKE_BACKUP_OFFLINE_AFTER_FAILURES),
+    TAKE_BACKUP_OFFLINE_MIN_WAIT(ModelKeys.TAKE_BACKUP_OFFLINE_MIN_WAIT),
     TCP_NO_DELAY(ModelKeys.TCP_NO_DELAY),
     THREAD_POOL_SIZE(ModelKeys.THREAD_POOL_SIZE),
     TIMEOUT(ModelKeys.TIMEOUT),
@@ -108,16 +114,9 @@ public enum Attribute {
     ;
 
     private final String name;
-    private final AttributeDefinition definition;
 
     private Attribute(final String name) {
         this.name = name;
-        this.definition = null;
-    }
-
-    private Attribute(final AttributeDefinition definition) {
-        this.name = definition.getXmlName();
-        this.definition = definition;
     }
 
     /**
@@ -126,17 +125,13 @@ public enum Attribute {
      * @return the local name
      */
     public String getLocalName() {
-        return name;
-    }
-
-    public AttributeDefinition getDefinition() {
-        return definition;
+        return this.name;
     }
 
     private static final Map<String, Attribute> attributes;
 
     static {
-        final Map<String, Attribute> map = new HashMap<String, Attribute>();
+        final Map<String, Attribute> map = new HashMap<>();
         for (Attribute attribute : values()) {
             final String name = attribute.getLocalName();
             if (name != null) map.put(name, attribute);

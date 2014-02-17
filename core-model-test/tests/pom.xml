@@ -27,50 +27,37 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-core-model-test</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-core-model-test</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-core-model-test-tests</artifactId>
-    <name>JBoss Application Server: Core Model Tests</name>
-    
+    <artifactId>wildfly-core-model-test-tests</artifactId>
+    <name>WildFly: Core Model Tests</name>
+
     <build>
        <plugins>
           <plugin>
               <groupId>org.apache.maven.plugins</groupId>
               <artifactId>maven-surefire-plugin</artifactId>
-              <executions>
-                 <execution>
-                    <id>default-test</id>
-                    <configuration>
-                       <argLine>${maven.test.jvmargs}</argLine>
-                       <forkMode>always</forkMode> 
-                    </configuration>
-                 </execution>
-              </executions>
+              <version>${version.surefire.plugin}</version>
               <configuration>
-                  <redirectTestOutputToFile>true</redirectTestOutputToFile>
-                  <enableAssertions>true</enableAssertions>
-                  <systemPropertyVariables>
-                      <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
-                      <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
-                  </systemPropertyVariables>
+                  <reuseForks>false</reuseForks>
               </configuration>
           </plugin>
        </plugins>
     </build>
-    
+
     <dependencies>
         <dependency>
-           <groupId>org.jboss.as</groupId>
-           <artifactId>jboss-as-core-model-test-framework</artifactId>
+           <groupId>org.wildfly</groupId>
+           <artifactId>wildfly-core-model-test-framework</artifactId>
         </dependency>
         <dependency>
-           <groupId>org.jboss.as</groupId>
-	        <artifactId>jboss-as-core-model-test-controller-optional</artifactId>
+           <groupId>org.wildfly</groupId>
+           <artifactId>wildfly-core-model-test-controller-optional</artifactId>
            <scope>provided</scope>
-           <optional>true</optional>   
+           <optional>true</optional>
         </dependency>
         <dependency>
            <groupId>junit</groupId>

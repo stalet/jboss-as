@@ -23,9 +23,8 @@
 package org.jboss.as.messaging;
 
 import static org.jboss.as.controller.SimpleAttributeDefinitionBuilder.create;
-import static org.jboss.as.messaging.CommonAttributes.BRIDGE_CONFIRMATION_WINDOW_SIZE;
 import static org.jboss.as.messaging.CommonAttributes.CONNECTOR_REF_STRING;
-import static org.jboss.as.messaging.CommonAttributes.HA;
+import static org.jboss.as.messaging.CommonAttributes.MESSAGING_SECURITY_DEF;
 import static org.jboss.as.messaging.CommonAttributes.STATIC_CONNECTORS;
 import static org.jboss.dmr.ModelType.BOOLEAN;
 import static org.jboss.dmr.ModelType.INT;
@@ -37,6 +36,7 @@ import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.PrimitiveListAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -69,6 +69,13 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             .setRestartAllServices()
             .build();
 
+    public static final SimpleAttributeDefinition INITIAL_CONNECT_ATTEMPTS = create("initial-connect-attempts", INT)
+            .setAllowNull(true)
+            .setDefaultValue(new ModelNode().set(HornetQDefaultConfiguration.getDefaultBridgeInitialConnectAttempts()))
+            .setAllowExpression(true)
+            .setRestartAllServices()
+            .build();
+
     public static final SimpleAttributeDefinition QUEUE_NAME = create(CommonAttributes.QUEUE_NAME, STRING)
             .setAllowExpression(true)
             .setRestartAllServices()
@@ -79,6 +86,8 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             .setAllowExpression(true)
             .setDefaultValue(new ModelNode().set(HornetQDefaultConfiguration.getDefaultClusterPassword()))
             .setRestartAllServices()
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.CREDENTIAL)
+            .addAccessConstraint(MESSAGING_SECURITY_DEF)
             .build();
 
     public static final SimpleAttributeDefinition USER = create("user", STRING)
@@ -86,6 +95,8 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             .setAllowExpression(true)
             .setDefaultValue(new ModelNode().set(HornetQDefaultConfiguration.getDefaultClusterUser()))
             .setRestartAllServices()
+            .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.CREDENTIAL)
+            .addAccessConstraint(MESSAGING_SECURITY_DEF)
             .build();
 
     public static final SimpleAttributeDefinition USE_DUPLICATE_DETECTION = create("use-duplicate-detection", BOOLEAN)
@@ -102,6 +113,13 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             .setRestartAllServices()
             .build();
 
+    public static final SimpleAttributeDefinition RECONNECT_ATTEMPTS_ON_SAME_NODE = create("reconnect-attempts-on-same-node", INT)
+            .setAllowNull(true)
+            .setDefaultValue(new ModelNode().set(HornetQDefaultConfiguration.getDefaultBridgeConnectSameNode()))
+            .setAllowExpression(true)
+            .setRestartAllServices()
+            .build();
+
     public static final SimpleAttributeDefinition FORWARDING_ADDRESS = create("forwarding-address", STRING)
             .setAllowNull(true)
             .setAllowExpression(true)
@@ -113,17 +131,21 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             CommonAttributes.FILTER, CommonAttributes.TRANSFORMER_CLASS_NAME,
             CommonAttributes.MIN_LARGE_MESSAGE_SIZE, CommonAttributes.CHECK_PERIOD, CommonAttributes.CONNECTION_TTL,
             CommonAttributes.RETRY_INTERVAL, CommonAttributes.RETRY_INTERVAL_MULTIPLIER, CommonAttributes.MAX_RETRY_INTERVAL,
+            INITIAL_CONNECT_ATTEMPTS,
             RECONNECT_ATTEMPTS,
+            RECONNECT_ATTEMPTS_ON_SAME_NODE,
+            CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN,
             USE_DUPLICATE_DETECTION, CommonAttributes.BRIDGE_CONFIRMATION_WINDOW_SIZE,
             USER, PASSWORD,
             CONNECTOR_REFS, DISCOVERY_GROUP_NAME
     };
+
     public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { QUEUE_NAME, USE_DUPLICATE_DETECTION,
             RECONNECT_ATTEMPTS, FORWARDING_ADDRESS,
-            CommonAttributes.FILTER, HA, CommonAttributes.MIN_LARGE_MESSAGE_SIZE,
+            CommonAttributes.FILTER, CommonAttributes.HA, CommonAttributes.MIN_LARGE_MESSAGE_SIZE,
             CommonAttributes.CHECK_PERIOD, CommonAttributes.CONNECTION_TTL,
             CommonAttributes.RETRY_INTERVAL, CommonAttributes.RETRY_INTERVAL_MULTIPLIER, CommonAttributes.MAX_RETRY_INTERVAL,
-            BRIDGE_CONFIRMATION_WINDOW_SIZE };
+            CommonAttributes.BRIDGE_CONFIRMATION_WINDOW_SIZE };
 
     public BridgeDefinition(final boolean registerRuntimeOnly) {
         super(PATH,
@@ -138,15 +160,17 @@ public class BridgeDefinition extends SimpleResourceDefinition {
         super.registerAttributes(registry);
         for (AttributeDefinition attr : ATTRIBUTES) {
             if (registerRuntimeOnly || !attr.getFlags().contains(AttributeAccess.Flag.STORAGE_RUNTIME)) {
-                registry.registerReadWriteAttribute(attr, null, BridgeWriteAttributeHandler.INSTANCE);
+                if (attr == CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN) {
+                    registry.registerReadWriteAttribute(attr, null, DeprecatedAttributeWriteHandler.INSTANCE);
+                } else {
+                    registry.registerReadWriteAttribute(attr, null, BridgeWriteAttributeHandler.INSTANCE);
+                }
             }
         }
 
         if (registerRuntimeOnly) {
             BridgeControlHandler.INSTANCE.registerAttributes(registry);
         }
-
-        registry.registerReadWriteAttribute(CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN, null, new DeprecatedAttributeWriteHandler(CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN.getName()));
     }
 
     @Override

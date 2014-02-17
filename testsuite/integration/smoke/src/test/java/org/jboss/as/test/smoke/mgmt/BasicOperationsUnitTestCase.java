@@ -140,7 +140,7 @@ public class BasicOperationsUnitTestCase {
             Assert.assertTrue(step.hasDefined(OP_ADDR));
             Assert.assertTrue(step.hasDefined(RESULT));
             final ModelNode stepResult = step.get(RESULT);
-            Assert.assertTrue(stepResult.getType() == ModelType.EXPRESSION || stepResult.asInt() > 0);
+            Assert.assertTrue(stepResult.getType() == ModelType.EXPRESSION || stepResult.asInt() >= 0);
         }
     }
 
@@ -205,7 +205,7 @@ public class BasicOperationsUnitTestCase {
         final List<ModelNode> steps = getSteps(result.get(RESULT));
         Assert.assertEquals(1, steps.size());
         final ModelNode httpBinding = steps.get(0);
-        Assert.assertEquals(8080, httpBinding.get(RESULT, "port").asInt());
+        Assert.assertEquals(8080, httpBinding.get(RESULT, "port").resolve().asInt());
 
     }
 

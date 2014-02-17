@@ -63,13 +63,19 @@ public class NonHaWebSessionPersistenceTestCase extends ClusterAbstractTestCase 
     }
 
     @Override
-    public void testSetup() {
+    public void beforeTestMethod() {
         // TODO rethink how this can be done faster with one less stopping (eg. make this test last)
         stop(CONTAINER_1);
         stop(CONTAINER_2);
 
         start(CONTAINER_SINGLE);
         deploy(DEPLOYMENT_1);
+    }
+
+    @Override
+    public void afterTestMethod() {
+        undeploy(DEPLOYMENT_1);
+        stop(CONTAINER_SINGLE);
     }
 
     @Test
@@ -83,14 +89,12 @@ public class NonHaWebSessionPersistenceTestCase extends ClusterAbstractTestCase 
             HttpResponse response = client.execute(new HttpGet(url));
             Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
             Assert.assertEquals(1, Integer.parseInt(response.getFirstHeader("value").getValue()));
-            Assert.assertFalse(Boolean.valueOf(response.getFirstHeader("serialized").getValue()));
             response.getEntity().getContent().close();
 
             response = client.execute(new HttpGet(url));
             Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
             Assert.assertEquals(2, Integer.parseInt(response.getFirstHeader("value").getValue()));
-            Assert.assertTrue("The session should have been serialized by now.",
-                    Boolean.valueOf(response.getFirstHeader("serialized").getValue()));
+            Assert.assertFalse(Boolean.valueOf(response.getFirstHeader("serialized").getValue()));
             response.getEntity().getContent().close();
 
             stop(CONTAINER_SINGLE);
@@ -105,8 +109,5 @@ public class NonHaWebSessionPersistenceTestCase extends ClusterAbstractTestCase 
         } finally {
             client.getConnectionManager().shutdown();
         }
-
-        undeploy(DEPLOYMENT_1);
-        stop(CONTAINER_SINGLE);
     }
 }

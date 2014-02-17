@@ -20,26 +20,29 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<project name="module-repository" basedir="." default="all">
+<project name="build-configs" basedir="." default="all-configs">
 
-    <property name="output.dir" value="target/jboss-as-${jboss.as.release.version}"/>
+    <property name="output.dir" value="../${wildfly.build.output.dir}"/>
 
-    <target name="generate-configs" description="Generate standard standalone configurations">
-    	<!-- make output file directory -->
-    	<mkdir dir="${generated.configs.standalone}"/>
-      <mkdir dir="${generated.configs.domain}"/>
-      <mkdir dir="${generated.configs.examples}"/>
-    	<delete>
-         <fileset dir="${generated.configs.standalone}">
-            <include name="**/*"/>
-         </fileset>
-         <fileset dir="${generated.configs.domain}">
-            <include name="**/*"/>
-         </fileset>
-         <fileset dir="${generated.configs.examples}">
-            <include name="**/*"/>
-         </fileset>
-    	</delete>
+    <target name="init-configs">
+        <mkdir dir="${generated.configs.standalone}"/>
+        <mkdir dir="${generated.configs.domain}"/>
+        <mkdir dir="${generated.configs.examples}"/>
+        <delete>
+            <fileset dir="${generated.configs.standalone}">
+                <include name="**/*"/>
+            </fileset>
+            <fileset dir="${generated.configs.domain}">
+                <include name="**/*"/>
+            </fileset>
+            <fileset dir="${generated.configs.examples}">
+                <include name="**/*"/>
+            </fileset>
+        </delete>
+    </target>
+
+    <target name="generate-configs" depends="init-configs" description="Generate standard standalone configurations">
+
     	
     	<!--  See src/resources/configuration/ReadMe.txt for how the configuration assembly works -->
     	
@@ -48,10 +51,6 @@
            paramTemplateFile="configuration/standalone/template.xml"
            paramSubsystemsFile="configuration/standalone/subsystems.xml"
            paramOutputFile="${generated.configs.standalone}/standalone.xml"/>
-      <generate-server-config
-           paramTemplateFile="configuration/standalone/template.xml"
-           paramSubsystemsFile="configuration/standalone/subsystems-osgi.xml"
-           paramOutputFile="${generated.configs.standalone}/standalone-osgi.xml"/>
       <generate-server-config
            paramTemplateFile="configuration/standalone/template.xml"
            paramSubsystemsFile="configuration/standalone/subsystems-full.xml"
@@ -69,17 +68,51 @@
            paramSubsystemsFile="configuration/domain/subsystems.xml"
            paramOutputFile="${generated.configs.domain}/domain.xml"/>
 
-        <!-- configuration with web subsystem instead of undertow-->
-      <generate-server-config
-                  paramTemplateFile="configuration/standalone/template.xml"
-                  paramSubsystemsFile="configuration/standalone/subsystems-jbossweb.xml"
-                  paramOutputFile="${generated.configs.standalone}/standalone-jbossweb.xml"/>
-
       <!-- Example configs -->
-      <generate-server-config 
-		   paramTemplateFile="configuration/standalone/template-osgi.xml" 
-		   paramSubsystemsFile="configuration/examples/subsystems-osgi-only.xml"
-		   paramOutputFile="${generated.configs.examples}/standalone-osgi-only.xml"/>
+      <sequential>
+          <xslt 
+                in="${generated.configs.src.dir}/configuration/standalone/subsystems-full-ha.xml" 
+                out="${project.build.directory}/generated-subsystems/examples/standalone/subsystems-ec2-full-ha.xml"
+                style="${generated.configs.src.dir}/configuration/examples/xslt/supplement-ec2.xsl"/>
+          <generate-server-config
+                paramTemplateFile="configuration/standalone/template.xml"
+                paramSubsystemsFileBaseDir="${project.build.directory}/generated-subsystems/"
+                paramSubsystemsFile="examples/standalone/subsystems-ec2-full-ha.xml"
+                paramOutputFile="${generated.configs.examples}/standalone-ec2-full-ha.xml"/>
+      </sequential>
+      <sequential>
+          <xslt
+                in="${generated.configs.src.dir}/configuration/standalone/subsystems-ha.xml"
+                out="${project.build.directory}/generated-subsystems/examples/standalone/subsystems-ec2-ha.xml"
+                style="${generated.configs.src.dir}/configuration/examples/xslt/supplement-ec2.xsl"/>
+          <generate-server-config
+                paramTemplateFile="configuration/standalone/template.xml"
+                paramSubsystemsFileBaseDir="${project.build.directory}/generated-subsystems/"
+                paramSubsystemsFile="examples/standalone/subsystems-ec2-ha.xml"
+                paramOutputFile="${generated.configs.examples}/standalone-ec2-ha.xml"/>
+      </sequential>
+      <sequential>
+          <xslt
+                in="${generated.configs.src.dir}/configuration/standalone/subsystems-full-ha.xml" 
+                out="${project.build.directory}/generated-subsystems/examples/standalone/subsystems-gossip-full-ha.xml"
+                style="${generated.configs.src.dir}/configuration/examples/xslt/supplement-gossip-discovery.xsl"/>
+          <generate-server-config
+                paramTemplateFile="configuration/standalone/template.xml"
+                paramSubsystemsFileBaseDir="${project.build.directory}/generated-subsystems/"
+                paramSubsystemsFile="examples/standalone/subsystems-gossip-full-ha.xml"
+                paramOutputFile="${generated.configs.examples}/standalone-gossip-full-ha.xml"/>
+      </sequential>
+      <sequential>
+          <xslt
+                in="${generated.configs.src.dir}/configuration/standalone/subsystems-ha.xml"
+                out="${project.build.directory}/generated-subsystems/examples/standalone/subsystems-gossip-ha.xml"
+                style="${generated.configs.src.dir}/configuration/examples/xslt/supplement-gossip-discovery.xsl"/>
+          <generate-server-config
+                paramTemplateFile="configuration/standalone/template.xml"
+                paramSubsystemsFileBaseDir="${project.build.directory}/generated-subsystems/"
+                paramSubsystemsFile="examples/standalone/subsystems-gossip-ha.xml"
+                paramOutputFile="${generated.configs.examples}/standalone-gossip-ha.xml"/>
+      </sequential>
       <generate-server-config 
            paramTemplateFile="configuration/standalone/template.xml" 
            paramSubsystemsFile="configuration/examples/subsystems-hornetq-colocated.xml"
@@ -92,21 +125,29 @@
            paramTemplateFile="configuration/standalone/template.xml" 
            paramSubsystemsFile="configuration/examples/subsystems-xts.xml"
            paramOutputFile="${generated.configs.examples}/standalone-xts.xml"/>
-    		
+      <generate-server-config 
+           paramTemplateFile="configuration/standalone/template.xml" 
+           paramSubsystemsFile="configuration/examples/subsystems-rts.xml"
+           paramOutputFile="${generated.configs.examples}/standalone-rts.xml"/>
+      <generate-server-config
+           paramTemplateFile="configuration/standalone/template.xml"
+           paramSubsystemsFile="configuration/examples/subsystems-genericjms.xml"
+           paramOutputFile="${generated.configs.examples}/standalone-genericjms.xml"/>
     </target>
 
 
-    <target name="all" depends="generate-configs"/>
+    <target name="all-configs" depends="generate-configs"/>
 
 	<macrodef name="generate-server-config">
       <attribute name="paramTemplateFile"/>
       <attribute name="paramSubsystemsFile"/>
       <attribute name="paramOutputFile"/> 
+      <attribute name="paramSubsystemsFileBaseDir" default="${generated.configs.src.dir}/"/>
 
     	<sequential>
     		<generate-configuration 
     			paramTemplateFile="@{paramTemplateFile}"
-    		   paramSubsystemsFile="@{paramSubsystemsFile}"
+    		   paramSubsystemsFile="@{paramSubsystemsFileBaseDir}@{paramSubsystemsFile}"
     		   paramOutputFile="@{paramOutputFile}"
     		   className="StandaloneMain"/>
       </sequential>
@@ -120,7 +161,7 @@
       <sequential>
          <generate-configuration 
             paramTemplateFile="@{paramTemplateFile}"
-            paramSubsystemsFile="@{paramSubsystemsFile}"
+            paramSubsystemsFile="${generated.configs.src.dir}/@{paramSubsystemsFile}"
             paramOutputFile="@{paramOutputFile}"
             className="DomainMain"/>
       </sequential>
@@ -143,7 +184,7 @@
             
             <arg value="${generated.configs.src.dir}"/>
             <arg value="${generated.configs.src.dir}/@{paramTemplateFile}"/>
-            <arg value="${generated.configs.src.dir}/@{paramSubsystemsFile}"/>
+            <arg value="@{paramSubsystemsFile}"/>
             <arg value="@{paramOutputFile}"/>
          </java>
       </sequential>

@@ -28,6 +28,7 @@ import java.util.ResourceBundle;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
@@ -47,8 +48,24 @@ import org.jboss.dmr.ModelType;
 public class SimpleListAttributeDefinition extends ListAttributeDefinition {
     private final AttributeDefinition valueType;
 
-    protected SimpleListAttributeDefinition(final String name, final String xmlName, final AttributeDefinition valueType, final boolean allowNull, final int minSize, final int maxSize, final String[] alternatives, final String[] requires, AttributeMarshaller attributeMarshaller,final boolean resourceOnly, final DeprecationData deprecated, final AttributeAccess.Flag... flags) {
-        super(name, xmlName, allowNull, false, minSize, maxSize, valueType.getValidator(), alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+    @Deprecated
+    protected SimpleListAttributeDefinition(final String name, final String xmlName, final AttributeDefinition valueType,
+                                            final boolean allowNull, final int minSize, final int maxSize,
+                                            final String[] alternatives, final String[] requires, AttributeMarshaller attributeMarshaller,
+                                            final boolean resourceOnly, final DeprecationData deprecated,
+                                            final AccessConstraintDefinition[] accessConstraints, final AttributeAccess.Flag... flags) {
+        this(name, xmlName, valueType, allowNull, minSize, maxSize, alternatives, requires,
+                attributeMarshaller, resourceOnly, deprecated, accessConstraints, null, flags);
+    }
+
+    protected SimpleListAttributeDefinition(final String name, final String xmlName, final AttributeDefinition valueType,
+                                            final boolean allowNull, final int minSize, final int maxSize,
+                                            final String[] alternatives, final String[] requires, AttributeMarshaller attributeMarshaller,
+                                            final boolean resourceOnly, final DeprecationData deprecated,
+                                            final AccessConstraintDefinition[] accessConstraints, final Boolean nullSignificant,
+                                            final AttributeAccess.Flag... flags) {
+        super(name, xmlName, allowNull, false, minSize, maxSize, valueType.getValidator(), alternatives, requires,
+                attributeMarshaller, resourceOnly, deprecated, accessConstraints, nullSignificant, flags);
         this.valueType = valueType;
     }
 
@@ -182,6 +199,7 @@ public class SimpleListAttributeDefinition extends ListAttributeDefinition {
 
     public static class Builder extends AbstractAttributeDefinitionBuilder<Builder,SimpleListAttributeDefinition>{
         private final AttributeDefinition valueType;
+        private boolean wrapXmlList = true;
 
         public Builder(final String name, final AttributeDefinition valueType) {
             super(name, ModelType.LIST);
@@ -197,24 +215,35 @@ public class SimpleListAttributeDefinition extends ListAttributeDefinition {
             return new Builder(name, valueType);
         }
 
+        public Builder setWrapXmlList(boolean wrap) {
+            this.wrapXmlList = wrap;
+            return this;
+        }
+
         public SimpleListAttributeDefinition build() {
             if (xmlName == null) xmlName = name;
             if (maxSize < 1) maxSize = Integer.MAX_VALUE;
             if (attributeMarshaller == null) {
+                final boolean wrap = wrapXmlList;
                 attributeMarshaller = new AttributeMarshaller() {
                     @Override
                     public void marshallAsElement(AttributeDefinition attribute, ModelNode resourceModel, boolean marshallDefault, XMLStreamWriter writer) throws XMLStreamException {
                         if (resourceModel.hasDefined(attribute.getName())) {
-                            writer.writeStartElement(attribute.getXmlName());
+                            if (wrap) {
+                                writer.writeStartElement(attribute.getXmlName());
+                            }
                             for (ModelNode handler : resourceModel.get(attribute.getName()).asList()) {
                                 valueType.marshallAsElement(handler, writer);
                             }
-                            writer.writeEndElement();
+                            if (wrap) {
+                                writer.writeEndElement();
+                            }
                         }
                     }
                 };
             }
-            return new SimpleListAttributeDefinition(name, xmlName, valueType, allowNull, minSize, maxSize, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+            return new SimpleListAttributeDefinition(name, xmlName, valueType, allowNull, minSize, maxSize, alternatives, requires,
+                    attributeMarshaller, resourceOnly, deprecated, accessConstraints, nullSignficant, flags);
         }
 
         /*

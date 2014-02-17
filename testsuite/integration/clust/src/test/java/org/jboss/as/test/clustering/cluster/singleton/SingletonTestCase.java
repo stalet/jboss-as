@@ -28,7 +28,6 @@ import java.net.URL;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.DefaultHttpClient;
@@ -38,10 +37,6 @@ import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.container.test.api.TargetsContainer;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.test.api.ArquillianResource;
-import org.jboss.as.test.clustering.ClusterHttpClientUtil;
-import org.jboss.as.test.clustering.ViewChangeListener;
-import org.jboss.as.test.clustering.ViewChangeListenerBean;
-import org.jboss.as.test.clustering.ViewChangeListenerServlet;
 import org.jboss.as.test.clustering.cluster.ClusterAbstractTestCase;
 import org.jboss.as.test.clustering.cluster.singleton.service.MyService;
 import org.jboss.as.test.clustering.cluster.singleton.service.MyServiceActivator;
@@ -73,23 +68,16 @@ public class SingletonTestCase extends ClusterAbstractTestCase {
     private static Archive<?> createDeployment() {
         WebArchive war = ShrinkWrap.create(WebArchive.class, "singleton.war");
         war.addPackage(MyService.class.getPackage());
-        war.addClasses(ViewChangeListener.class, ViewChangeListenerBean.class, ViewChangeListenerServlet.class);
-        war.setManifest(new StringAsset("Manifest-Version: 1.0\nDependencies: org.jboss.msc, org.jboss.as.clustering.common, org.infinispan, org.jboss.as.clustering.singleton, org.jboss.as.server, org.jboss.marshalling, org.jgroups\n"));
+        war.setManifest(new StringAsset("Manifest-Version: 1.0\nDependencies: org.jboss.as.server\n"));
         war.addAsServiceProvider(org.jboss.msc.service.ServiceActivator.class, MyServiceActivator.class);
         return war;
-    }
-
-    @Override
-    protected void setUp() {
-        super.setUp();
-        deploy(DEPLOYMENTS);
     }
 
     @Test
     public void testSingletonService(
             @ArquillianResource() @OperateOnDeployment(DEPLOYMENT_1) URL baseURL1,
             @ArquillianResource() @OperateOnDeployment(DEPLOYMENT_2) URL baseURL2)
-            throws IOException, InterruptedException, URISyntaxException {
+            throws IOException, URISyntaxException {
 
         // Needed to be able to inject ArquillianResource
         stop(CONTAINER_2);
@@ -106,8 +94,6 @@ public class SingletonTestCase extends ClusterAbstractTestCase {
         URI quorumURI2 = MyServiceServlet.createURI(baseURL2, MyService.QUORUM_SERVICE_NAME);
 
         try {
-            this.establishView(client, baseURL1, NODE_1);
-
             HttpResponse response = client.execute(new HttpGet(defaultURI1));
             try {
                 Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
@@ -125,8 +111,6 @@ public class SingletonTestCase extends ClusterAbstractTestCase {
             }
 
             start(CONTAINER_2);
-
-            this.establishView(client, baseURL1, NODE_1, NODE_2);
 
             response = client.execute(new HttpGet(defaultURI1));
             try {
@@ -162,8 +146,6 @@ public class SingletonTestCase extends ClusterAbstractTestCase {
 
             stop(CONTAINER_2);
 
-            this.establishView(client, baseURL1, NODE_1);
-
             response = client.execute(new HttpGet(defaultURI1));
             try {
                 Assert.assertEquals(HttpServletResponse.SC_OK, response.getStatusLine().getStatusCode());
@@ -180,9 +162,7 @@ public class SingletonTestCase extends ClusterAbstractTestCase {
                 HttpClientUtils.closeQuietly(response);
             }
 
-            controller.start(CONTAINER_2);
-
-            this.establishView(client, baseURL1, NODE_1, NODE_2);
+            start(CONTAINER_2);
 
             response = client.execute(new HttpGet(defaultURI1));
             try {
@@ -216,10 +196,7 @@ public class SingletonTestCase extends ClusterAbstractTestCase {
                 HttpClientUtils.closeQuietly(response);
             }
 
-
             stop(CONTAINER_1);
-
-            this.establishView(client, baseURL2, NODE_2);
 
             response = client.execute(new HttpGet(defaultURI2));
             try {
@@ -237,9 +214,7 @@ public class SingletonTestCase extends ClusterAbstractTestCase {
                 HttpClientUtils.closeQuietly(response);
             }
 
-            controller.start(CONTAINER_1);
-
-            this.establishView(client, baseURL2, NODE_1, NODE_2);
+            start(CONTAINER_1);
 
             response = client.execute(new HttpGet(defaultURI1));
             try {
@@ -274,15 +249,6 @@ public class SingletonTestCase extends ClusterAbstractTestCase {
             }
         } finally {
             HttpClientUtils.closeQuietly(client);
-
-            deployer.undeploy(DEPLOYMENT_1);
-            controller.stop(CONTAINER_1);
-            deployer.undeploy(DEPLOYMENT_2);
-            controller.stop(CONTAINER_2);
         }
-    }
-
-    private void establishView(HttpClient client, URL baseURL, String... members) throws URISyntaxException, IOException {
-        ClusterHttpClientUtil.establishView(client, baseURL, "singleton", members);
     }
 }

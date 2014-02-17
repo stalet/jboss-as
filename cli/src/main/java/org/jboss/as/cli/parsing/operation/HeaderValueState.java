@@ -23,8 +23,8 @@ package org.jboss.as.cli.parsing.operation;
 
 import org.jboss.as.cli.CommandFormatException;
 import org.jboss.as.cli.parsing.CharacterHandler;
-import org.jboss.as.cli.parsing.DefaultParsingState;
 import org.jboss.as.cli.parsing.DefaultStateWithEndCharacter;
+import org.jboss.as.cli.parsing.ExpressionBaseState;
 import org.jboss.as.cli.parsing.GlobalCharacterHandlers;
 import org.jboss.as.cli.parsing.ParsingContext;
 import org.jboss.as.cli.parsing.QuotesState;
@@ -34,7 +34,7 @@ import org.jboss.as.cli.parsing.WordCharacterHandler;
  *
  * @author Alexey Loubyansky
  */
-public class HeaderValueState extends DefaultParsingState {
+public class HeaderValueState extends ExpressionBaseState {
 
     public static final HeaderValueState INSTANCE = new HeaderValueState();
     public static final String ID = "HEADER_VALUE";

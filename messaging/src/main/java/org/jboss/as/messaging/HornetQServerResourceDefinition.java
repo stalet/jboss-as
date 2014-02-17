@@ -29,8 +29,6 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PAT
 import static org.jboss.as.messaging.CommonAttributes.ALLOW_FAILBACK;
 import static org.jboss.as.messaging.CommonAttributes.ASYNC_CONNECTION_EXECUTION_ENABLED;
 import static org.jboss.as.messaging.CommonAttributes.BACKUP;
-import static org.jboss.as.messaging.CommonAttributes.BACKUP_GROUP_NAME;
-import static org.jboss.as.messaging.CommonAttributes.CHECK_FOR_LIVE_SERVER;
 import static org.jboss.as.messaging.CommonAttributes.CONNECTION_TTL_OVERRIDE;
 import static org.jboss.as.messaging.CommonAttributes.CREATE_BINDINGS_DIR;
 import static org.jboss.as.messaging.CommonAttributes.CREATE_JOURNAL_DIR;
@@ -62,14 +60,12 @@ import static org.jboss.as.messaging.CommonAttributes.PERF_BLAST_PAGES;
 import static org.jboss.as.messaging.CommonAttributes.PERSISTENCE_ENABLED;
 import static org.jboss.as.messaging.CommonAttributes.PERSIST_DELIVERY_COUNT_BEFORE_DELIVERY;
 import static org.jboss.as.messaging.CommonAttributes.PERSIST_ID_CACHE;
-import static org.jboss.as.messaging.CommonAttributes.REMOTING_INCOMING_INTERCEPTORS;
-import static org.jboss.as.messaging.CommonAttributes.REPLICATION_CLUSTERNAME;
-import static org.jboss.as.messaging.CommonAttributes.REMOTING_OUTGOING_INTERCEPTORS;
 import static org.jboss.as.messaging.CommonAttributes.RUN_SYNC_SPEED_TEST;
 import static org.jboss.as.messaging.CommonAttributes.SECURITY_ENABLED;
 import static org.jboss.as.messaging.CommonAttributes.SECURITY_INVALIDATION_INTERVAL;
 import static org.jboss.as.messaging.CommonAttributes.SERVER_DUMP_INTERVAL;
 import static org.jboss.as.messaging.CommonAttributes.SHARED_STORE;
+import static org.jboss.as.messaging.CommonAttributes.STATISTICS_ENABLED;
 import static org.jboss.as.messaging.CommonAttributes.TRANSACTION_TIMEOUT;
 import static org.jboss.as.messaging.CommonAttributes.TRANSACTION_TIMEOUT_SCAN_PERIOD;
 import static org.jboss.as.messaging.CommonAttributes.WILD_CARD_ROUTING_ENABLED;
@@ -95,12 +91,9 @@ public class HornetQServerResourceDefinition extends SimpleResourceDefinition {
 
     public static final PathElement HORNETQ_SERVER_PATH = PathElement.pathElement(CommonAttributes.HORNETQ_SERVER);
 
-    public static final AttributeDefinition[] ATTRIBUTES_ADDED_IN_1_2_0 = { BACKUP_GROUP_NAME, CHECK_FOR_LIVE_SERVER, REPLICATION_CLUSTERNAME,
-    REMOTING_INCOMING_INTERCEPTORS, REMOTING_OUTGOING_INTERCEPTORS };
-
     public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { ASYNC_CONNECTION_EXECUTION_ENABLED, PERSISTENCE_ENABLED, SECURITY_ENABLED, SECURITY_INVALIDATION_INTERVAL,
             WILD_CARD_ROUTING_ENABLED, MANAGEMENT_ADDRESS, MANAGEMENT_NOTIFICATION_ADDRESS, JMX_MANAGEMENT_ENABLED, JMX_DOMAIN,
-            MESSAGE_COUNTER_ENABLED, MESSAGE_COUNTER_SAMPLE_PERIOD, MESSAGE_COUNTER_MAX_DAY_HISTORY,
+            STATISTICS_ENABLED, MESSAGE_COUNTER_ENABLED, MESSAGE_COUNTER_SAMPLE_PERIOD, MESSAGE_COUNTER_MAX_DAY_HISTORY,
             CONNECTION_TTL_OVERRIDE, TRANSACTION_TIMEOUT, TRANSACTION_TIMEOUT_SCAN_PERIOD,
             MESSAGE_EXPIRY_SCAN_PERIOD, MESSAGE_EXPIRY_THREAD_PRIORITY, ID_CACHE_SIZE, PERSIST_ID_CACHE,
             BACKUP, ALLOW_FAILBACK, FAILBACK_DELAY, FAILOVER_ON_SHUTDOWN,
@@ -151,15 +144,19 @@ public class HornetQServerResourceDefinition extends SimpleResourceDefinition {
      */
     @Override
     public DescriptionProvider getDescriptionProvider(ImmutableManagementResourceRegistration resourceRegistration) {
-        return new DefaultResourceDescriptionProvider(resourceRegistration, getResourceDescriptionResolver()) {
-            @Override
-            public ModelNode getModelDescription(Locale locale) {
-                ModelNode result = super.getModelDescription(locale);
-                result.get(CHILDREN, PATH, MIN_OCCURS).set(4);
-                result.get(CHILDREN, PATH, MAX_OCCURS).set(4);
-                return result;
-            }
-        };
+        if (registerRuntimeOnly) {
+            return super.getDescriptionProvider(resourceRegistration);
+        } else {
+            return new DefaultResourceDescriptionProvider(resourceRegistration, getResourceDescriptionResolver()) {
+                @Override
+                public ModelNode getModelDescription(Locale locale) {
+                    ModelNode result = super.getModelDescription(locale);
+                    result.get(CHILDREN, PATH, MIN_OCCURS).set(4);
+                    result.get(CHILDREN, PATH, MAX_OCCURS).set(4);
+                    return result;
+                }
+            };
+        }
     }
 
 

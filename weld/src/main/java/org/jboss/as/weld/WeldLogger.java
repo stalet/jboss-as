@@ -28,11 +28,12 @@ import java.net.URL;
 
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.logging.BasicLogger;
+import org.jboss.logging.Logger;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.LogMessage;
-import org.jboss.logging.Logger;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageLogger;
+import org.jboss.weld.bootstrap.spi.BeanDeploymentArchive;
 
 /**
  * Date: 05.11.2011
@@ -105,8 +106,8 @@ public interface WeldLogger extends BasicLogger {
     void beansXmlValidationError(URL file, int line , String message);
 
     @LogMessage(level = Logger.Level.WARN)
-    @Message(value = "Deployment %s contains CDI annotations but beans.xml was not found.", id = 16012)
-    void cdiAnnotationsButNoBeansXML(DeploymentUnit deploymentUnit);
+    @Message(value = "Deployment %s contains CDI annotations but no bean archive was not found. (No beans.xml nor class with bean defining annotations)", id = 16012)
+    void cdiAnnotationsButNotBeanArchive(DeploymentUnit deploymentUnit);
 
     @LogMessage(level = Logger.Level.ERROR)
     @Message(value = "Exception tearing down thread state", id = 16013)
@@ -123,4 +124,12 @@ public interface WeldLogger extends BasicLogger {
     @LogMessage(level = Logger.Level.WARN)
     @Message(value = "URL scanner does not understand the URL protocol %s, CDI beans will not be scanned.", id = 16016)
     void doNotUnderstandProtocol(URL url);
+
+    @LogMessage(level = Logger.Level.WARN)
+    @Message(value = "Found both WEB-INF/beans.xml and WEB-INF/classes/META-INF/beans.xml. It is not portable to use both locations at the same time. Weld is going to use the former location for this deployment.", id = 16017)
+    void duplicateBeansXml();
+
+    @LogMessage(level = Logger.Level.DEBUG)
+    @Message(value = "Discovered %s", id = Message.NONE)
+    void beanArchiveDiscovered(BeanDeploymentArchive bda);
 }

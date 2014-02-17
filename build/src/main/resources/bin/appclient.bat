@@ -19,13 +19,13 @@ if "x%APPCLIENT_CONF%" == "x" (
    set "APPCLIENT_CONF=%DIRNAME%appclient.conf.bat"
 )
 if exist "%APPCLIENT_CONF%" (
-   echo Calling %APPCLIENT_CONF%
+   echo Calling "%APPCLIENT_CONF%"
    call "%APPCLIENT_CONF%" %*
 ) else (
-   echo Config file not found %APPCLIENT_CONF%
+   echo Config file not found "%APPCLIENT_CONF%"
 )
 
-pushd %DIRNAME%..
+pushd "%DIRNAME%.."
 set "RESOLVED_JBOSS_HOME=%CD%"
 popd
 
@@ -37,8 +37,12 @@ pushd "%JBOSS_HOME%"
 set "SANITIZED_JBOSS_HOME=%CD%"
 popd
 
-if "%RESOLVED_JBOSS_HOME%" NEQ "%SANITIZED_JBOSS_HOME%" (
-    echo WARNING JBOSS_HOME may be pointing to a different installation - unpredictable results may occur.
+if /i "%RESOLVED_JBOSS_HOME%" NEQ "%SANITIZED_JBOSS_HOME%" (
+   echo.
+   echo   WARNING:  JBOSS_HOME may be pointing to a different installation - unpredictable results may occur.
+   echo.
+   echo       JBOSS_HOME: "%JBOSS_HOME%"
+   echo.
 )
 
 set DIRNAME=
@@ -50,7 +54,7 @@ if "%OS%" == "Windows_NT" (
 )
 
 rem Setup JBoss specific properties
-set JAVA_OPTS=-Dprogram.name=%PROGNAME% %JAVA_OPTS%
+set "JAVA_OPTS=-Dprogram.name=%PROGNAME% %JAVA_OPTS%"
 
 if "x%JAVA_HOME%" == "x" (
   set  JAVA=java
@@ -88,6 +92,6 @@ if "x%JBOSS_MODULEPATH%" == "x" (
     -jar "%JBOSS_HOME%\jboss-modules.jar" ^
     -mp "%JBOSS_MODULEPATH%" ^
      org.jboss.as.appclient ^
-    -Djboss.home.dir="%JBOSS_HOME%" ^
-    -Djboss.server.base.dir="%JBOSS_HOME%\appclient" ^
+    "-Djboss.home.dir=%JBOSS_HOME%" ^
+    "-Djboss.server.base.dir=%JBOSS_HOME%\appclient" ^
      %*

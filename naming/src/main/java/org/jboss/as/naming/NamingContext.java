@@ -53,6 +53,7 @@ import javax.naming.spi.ResolveResult;
 import org.jboss.as.naming.JndiPermission.Action;
 import org.jboss.as.naming.context.ObjectFactoryBuilder;
 import org.jboss.as.naming.util.NameParser;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Naming context implementation which proxies calls to a {@code NamingStore} instance.  This context is
@@ -62,10 +63,11 @@ import org.jboss.as.naming.util.NameParser;
  */
 public class NamingContext implements EventContext {
 
+    private static final RuntimePermission SET_ACTIVE_NAMING_STORE = new RuntimePermission("org.jboss.as.naming.SET_ACTIVE_NAMING_STORE");
     /*
      * The active naming store to use for any context created without a name store.
      */
-    private static NamingStore ACTIVE_NAMING_STORE = new InMemoryNamingStore();
+    private static volatile NamingStore ACTIVE_NAMING_STORE = new InMemoryNamingStore();
 
     /**
      * Set the active naming store
@@ -73,6 +75,9 @@ public class NamingContext implements EventContext {
      * @param namingStore The naming store
      */
     public static void setActiveNamingStore(final NamingStore namingStore) {
+        if(WildFlySecurityManager.isChecking()) {
+            System.getSecurityManager().checkPermission(SET_ACTIVE_NAMING_STORE);
+        }
         ACTIVE_NAMING_STORE = namingStore;
     }
 
@@ -91,11 +96,11 @@ public class NamingContext implements EventContext {
      */
     public static void initializeNamingManager() {
         // Setup naming environment
-        final String property = SecurityActions.getSystemProperty(Context.URL_PKG_PREFIXES);
+        final String property = WildFlySecurityManager.getPropertyPrivileged(Context.URL_PKG_PREFIXES, null);
         if(property == null || property.isEmpty()) {
-            SecurityActions.setSystemProperty(Context.URL_PKG_PREFIXES, PACKAGE_PREFIXES);
+            WildFlySecurityManager.setPropertyPrivileged(Context.URL_PKG_PREFIXES, PACKAGE_PREFIXES);
         } else if(!Arrays.asList(property.split(":")).contains(PACKAGE_PREFIXES)) {
-            SecurityActions.setSystemProperty(Context.URL_PKG_PREFIXES, PACKAGE_PREFIXES + ":" + property);
+            WildFlySecurityManager.setPropertyPrivileged(Context.URL_PKG_PREFIXES, PACKAGE_PREFIXES + ":" + property);
         }
         try {
             //If we are reusing the JVM. e.g. in tests we should not set this again
@@ -113,7 +118,7 @@ public class NamingContext implements EventContext {
     private final Name prefix;
 
     /* The environment configuration */
-    private final Hashtable<String, Object> environment;
+    private final Hashtable environment;
 
     /**
      * Create a new naming context with no prefix or naming store.  This will default to a prefix of "" and
@@ -121,7 +126,7 @@ public class NamingContext implements EventContext {
      *
      * @param environment The naming environment
      */
-    public NamingContext(final Hashtable<String, Object> environment) {
+    public NamingContext(final Hashtable environment) {
         this(new CompositeName(), ACTIVE_NAMING_STORE, environment);
     }
 
@@ -132,7 +137,7 @@ public class NamingContext implements EventContext {
      * @param environment The naming environment
      * @throws NamingException if an error occurs
      */
-    public NamingContext(final Name prefix, final Hashtable<String, Object> environment) throws NamingException {
+    public NamingContext(final Name prefix, final Hashtable environment) throws NamingException {
         this(prefix, ACTIVE_NAMING_STORE, environment);
     }
 
@@ -143,7 +148,7 @@ public class NamingContext implements EventContext {
      * @param namingStore The NamingStore
      * @param environment The naming environment
      */
-    public NamingContext(final Name prefix, final NamingStore namingStore, final Hashtable<String, Object> environment) {
+    public NamingContext(final Name prefix, final NamingStore namingStore, final Hashtable environment) {
         if(prefix == null) {
             throw MESSAGES.nullVar("Naming prefix");
         }
@@ -153,9 +158,9 @@ public class NamingContext implements EventContext {
         }
         this.namingStore = namingStore;
         if(environment != null) {
-            this.environment = new Hashtable<String, Object>(environment);
+            this.environment = new Hashtable(environment);
         } else {
-            this.environment = new Hashtable<String, Object>();
+            this.environment = new Hashtable();
         }
     }
 
@@ -165,7 +170,7 @@ public class NamingContext implements EventContext {
      * @param namingStore the naming store to use
      * @param environment the environment to use
      */
-    public NamingContext(final NamingStore namingStore, final Hashtable<String, Object> environment) {
+    public NamingContext(final NamingStore namingStore, final Hashtable environment) {
         this(new CompositeName(), namingStore, environment);
     }
 
@@ -514,7 +519,7 @@ public class NamingContext implements EventContext {
         try {
             final ObjectFactoryBuilder factoryBuilder = ObjectFactoryBuilder.INSTANCE;
             final ObjectFactory objectFactory = factoryBuilder.createObjectFactory(object, environment);
-            return objectFactory.getObjectInstance(object, name, this, environment);
+            return objectFactory == null ? null : objectFactory.getObjectInstance(object, name, this, environment);
         } catch(NamingException e) {
             throw e;
         } catch(Throwable t) {
@@ -540,7 +545,7 @@ public class NamingContext implements EventContext {
 
     private void check(Name name, Action... actions) throws NamingException {
         final SecurityManager sm = System.getSecurityManager();
-        if (sm != null) {
+        if (sm != null && WildFlySecurityManager.isChecking()) {
             // build absolute name (including store's base name)
             Name absoluteName = (Name) namingStore.getBaseName().clone();
             if (name.isEmpty()) {

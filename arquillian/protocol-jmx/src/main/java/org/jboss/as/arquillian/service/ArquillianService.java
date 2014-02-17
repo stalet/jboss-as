@@ -32,13 +32,10 @@ import javax.management.MBeanServer;
 import org.jboss.arquillian.protocol.jmx.JMXTestRunner;
 import org.jboss.arquillian.testenricher.osgi.BundleContextAssociation;
 import org.jboss.as.jmx.MBeanServerService;
-import org.jboss.as.osgi.OSGiConstants;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.Phase;
 import org.jboss.as.server.deployment.SetupAction;
-import org.jboss.as.util.security.GetContextClassLoaderAction;
-import org.jboss.as.util.security.SetContextClassLoaderAction;
 import org.jboss.logging.Logger;
 import org.jboss.modules.Module;
 import org.jboss.msc.service.AbstractServiceListener;
@@ -52,12 +49,10 @@ import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
-import org.jboss.osgi.resolver.XBundleRevision;
+import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
-import static java.lang.System.getSecurityManager;
-import static java.lang.Thread.currentThread;
-import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.server.deployment.Services.JBOSS_DEPLOYMENT;
 
 /**
@@ -223,9 +218,9 @@ public class ArquillianService implements Service<ArquillianService> {
         private ContextManager initializeContextManager(final ArquillianConfig config, final Map<String, Object> properties) {
             final ContextManagerBuilder builder = new ContextManagerBuilder();
             final DeploymentUnit depUnit = config.getDeploymentUnit();
-            final XBundleRevision brev = depUnit.getAttachment(OSGiConstants.BUNDLE_REVISION_KEY);
             final Module module = depUnit.getAttachment(Attachments.MODULE);
-            if (brev == null && module != null) {
+            final Bundle bundle = ArquillianConfig.getAssociatedBundle(module);
+            if (bundle == null && module != null) {
                 builder.add(new TCCLSetupAction(module.getClassLoader()));
             }
             builder.addAll(depUnit);
@@ -279,28 +274,14 @@ public class ArquillianService implements Service<ArquillianService> {
 
         @Override
         public void setup(Map<String, Object> properties) {
-            oldClassLoader.set(getTccl());
-            setTccl(classLoader);
+            oldClassLoader.set(WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader));
         }
 
         @Override
         public void teardown(Map<String, Object> properties) {
             ClassLoader old = oldClassLoader.get();
             oldClassLoader.remove();
-            setTccl(old);
-        }
-    }
-
-    private static ClassLoader getTccl() {
-        return getSecurityManager() == null ? currentThread().getContextClassLoader() : doPrivileged(GetContextClassLoaderAction.getInstance());
-    }
-
-    private static void setTccl(final ClassLoader cl) {
-        assert cl != null : "ClassLoader must be specified";
-        if (getSecurityManager() == null) {
-            currentThread().setContextClassLoader(cl);
-        } else {
-            doPrivileged(new SetContextClassLoaderAction(cl));
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(old);
         }
     }
 }

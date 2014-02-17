@@ -44,6 +44,10 @@ else
 fi
 export JBOSS_HOME
 
+if [ "x$JBOSS_MODULEPATH" = "x" ]; then
+    JBOSS_MODULEPATH="$JBOSS_HOME/modules"
+fi
+
 # Setup the JVM
 if [ "x$JAVA" = "x" ]; then
     if [ "x$JAVA_HOME" != "x" ]; then
@@ -57,6 +61,7 @@ fi
 if $cygwin; then
     JBOSS_HOME=`cygpath --path --windows "$JBOSS_HOME"`
     JAVA_HOME=`cygpath --path --windows "$JAVA_HOME"`
+    JBOSS_MODULEPATH=`cygpath --path --windows "$JBOSS_MODULEPATH"`
 fi
 
 if $darwin ; then
@@ -70,4 +75,4 @@ fi
 # Sample JPDA settings for remote socket debugging
 #JAVA_OPTS="$JAVA_OPTS -agentlib:jdwp=transport=dt_socket,address=8787,server=y,suspend=n"
 
-eval \"$JAVA\" $JAVA_OPTS \"-Dlogging.configuration=file:$JBOSS_HOME/bin/jboss-cli-logging.properties\" -jar \"$JBOSS_HOME/jboss-modules.jar\" -mp \"$JBOSS_HOME/modules\" org.jboss.as.cli '"$@"'
+eval \"$JAVA\" $JAVA_OPTS \"-Dlogging.configuration=file:$JBOSS_HOME/bin/jboss-cli-logging.properties\" -jar \"$JBOSS_HOME/jboss-modules.jar\" -mp \"${JBOSS_MODULEPATH}\" org.jboss.as.cli '"$@"'

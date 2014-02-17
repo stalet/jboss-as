@@ -22,8 +22,24 @@
 
 package org.jboss.as.ejb3.subsystem;
 
-import org.jboss.as.clustering.registry.RegistryCollector;
-import org.jboss.as.clustering.registry.RegistryCollectorService;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_ENTITY_BEAN_INSTANCE_POOL;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_ENTITY_BEAN_OPTIMISTIC_LOCKING;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_MDB_INSTANCE_POOL;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_RESOURCE_ADAPTER_NAME;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_SFSB_CACHE;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_SFSB_PASSIVATION_DISABLED_CACHE;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_SINGLETON_BEAN_ACCESS_TIMEOUT;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_SLSB_INSTANCE_POOL;
+import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_STATEFUL_BEAN_ACCESS_TIMEOUT;
+
+import java.util.List;
+
+import javax.transaction.TransactionManager;
+import javax.transaction.TransactionSynchronizationRegistry;
+import javax.transaction.UserTransaction;
+
+import com.arjuna.ats.arjuna.common.CoreEnvironmentBean;
+import com.arjuna.ats.jbossatx.jta.RecoveryManagerService;
 import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.controller.AbstractBoottimeAddStepHandler;
 import org.jboss.as.controller.OperationContext;
@@ -31,15 +47,18 @@ import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
-import org.jboss.as.controller.security.ServerSecurityManager;
-import org.jboss.as.ejb3.cache.impl.backing.clustering.ClusteredBackingCacheEntryStoreSourceService;
+import org.jboss.as.controller.registry.Resource;
+import org.jboss.as.core.security.ServerSecurityManager;
+import org.jboss.as.ejb3.cache.CacheFactoryBuilderRegistryService;
 import org.jboss.as.ejb3.component.EJBUtilities;
 import org.jboss.as.ejb3.deployment.DeploymentRepository;
 import org.jboss.as.ejb3.deployment.processors.AnnotatedEJBComponentDescriptionDeploymentUnitProcessor;
 import org.jboss.as.ejb3.deployment.processors.ApplicationExceptionAnnotationProcessor;
 import org.jboss.as.ejb3.deployment.processors.BusinessViewAnnotationProcessor;
+import org.jboss.as.ejb3.deployment.processors.CacheDependenciesProcessor;
 import org.jboss.as.ejb3.deployment.processors.DeploymentRepositoryProcessor;
 import org.jboss.as.ejb3.deployment.processors.EJBClientDescriptorMetaDataProcessor;
+import org.jboss.as.ejb3.deployment.processors.EJBDefaultPermissionsProcessor;
 import org.jboss.as.ejb3.deployment.processors.EJBDefaultSecurityDomainProcessor;
 import org.jboss.as.ejb3.deployment.processors.EjbCleanUpProcessor;
 import org.jboss.as.ejb3.deployment.processors.EjbClientContextSetupProcessor;
@@ -68,9 +87,9 @@ import org.jboss.as.ejb3.deployment.processors.dd.SessionBeanXmlDescriptorProces
 import org.jboss.as.ejb3.deployment.processors.entity.EntityBeanComponentDescriptionFactory;
 import org.jboss.as.ejb3.deployment.processors.merging.ApplicationExceptionMergingProcessor;
 import org.jboss.as.ejb3.deployment.processors.merging.CacheMergingProcessor;
-import org.jboss.as.ejb3.deployment.processors.merging.ClusteredMergingProcessor;
 import org.jboss.as.ejb3.deployment.processors.merging.ConcurrencyManagementMergingProcessor;
 import org.jboss.as.ejb3.deployment.processors.merging.DeclareRolesMergingProcessor;
+import org.jboss.as.ejb3.deployment.processors.merging.DeliveryActiveMergingProcessor;
 import org.jboss.as.ejb3.deployment.processors.merging.EjbConcurrencyMergingProcessor;
 import org.jboss.as.ejb3.deployment.processors.merging.EjbDependsOnMergingProcessor;
 import org.jboss.as.ejb3.deployment.processors.merging.EntityBeanPoolMergingProcessor;
@@ -97,20 +116,23 @@ import org.jboss.as.ejb3.iiop.RemoteObjectSubstitutionService;
 import org.jboss.as.ejb3.iiop.stub.DynamicStubFactoryFactory;
 import org.jboss.as.ejb3.remote.DefaultEjbClientContextService;
 import org.jboss.as.ejb3.remote.EJBRemoteConnectorService;
+import org.jboss.as.ejb3.remote.EJBTransactionRecoveryService;
 import org.jboss.as.ejb3.remote.LocalEjbReceiver;
+import org.jboss.as.ejb3.remote.RegistryCollector;
+import org.jboss.as.ejb3.remote.RegistryCollectorService;
 import org.jboss.as.ejb3.remote.TCCLEJBClientContextSelectorService;
-import org.jboss.as.ejb3.util.ServiceLookupValue;
 import org.jboss.as.jacorb.rmi.DelegatingStubFactoryFactory;
 import org.jboss.as.jacorb.service.CorbaPOAService;
 import org.jboss.as.naming.InitialContext;
-import org.jboss.as.network.ClientMapping;
 import org.jboss.as.remoting.RemotingServices;
 import org.jboss.as.security.service.SimpleSecurityManagerService;
 import org.jboss.as.server.AbstractDeploymentChainStep;
 import org.jboss.as.server.DeploymentProcessorTarget;
 import org.jboss.as.server.ServerEnvironment;
+import org.jboss.as.server.Services;
 import org.jboss.as.server.deployment.Phase;
 import org.jboss.as.server.deployment.jbossallxml.JBossAllXmlParserRegisteringProcessor;
+import org.jboss.as.txn.service.ArjunaRecoveryManagerService;
 import org.jboss.as.txn.service.TxnServices;
 import org.jboss.as.txn.service.UserTransactionAccessControlService;
 import org.jboss.com.sun.corba.se.impl.javax.rmi.RemoteObjectSubstitutionManager;
@@ -121,25 +143,12 @@ import org.jboss.ejb.client.naming.ejb.ejbURLContextFactory;
 import org.jboss.jca.core.spi.rar.ResourceAdapterRepository;
 import org.jboss.metadata.ejb.spec.EjbJarMetaData;
 import org.jboss.msc.service.ServiceBuilder;
+import org.jboss.msc.service.ServiceBuilder.DependencyType;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.remoting3.Endpoint;
 import org.omg.PortableServer.POA;
-
-import javax.transaction.TransactionManager;
-import javax.transaction.TransactionSynchronizationRegistry;
-import javax.transaction.UserTransaction;
-import java.util.List;
-
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_ENTITY_BEAN_INSTANCE_POOL;
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_ENTITY_BEAN_OPTIMISTIC_LOCKING;
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_MDB_INSTANCE_POOL;
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_RESOURCE_ADAPTER_NAME;
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_SFSB_CACHE;
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_SFSB_PASSIVATION_DISABLED_CACHE;
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_SINGLETON_BEAN_ACCESS_TIMEOUT;
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_SLSB_INSTANCE_POOL;
-import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_STATEFUL_BEAN_ACCESS_TIMEOUT;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Add operation handler for the EJB3 subsystem.
@@ -149,17 +158,23 @@ import static org.jboss.as.ejb3.subsystem.EJB3SubsystemModel.DEFAULT_STATEFUL_BE
 class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
 
     private final EJBDefaultSecurityDomainProcessor defaultSecurityDomainDeploymentProcessor;
+    private final EJBDefaultPermissionsProcessor ejbDefaultPermissionsProcessor;
     private final MissingMethodPermissionsDenyAccessMergingProcessor missingMethodPermissionsDenyAccessMergingProcessor;
 
-    EJB3SubsystemAdd(final EJBDefaultSecurityDomainProcessor defaultSecurityDomainDeploymentProcessor, final MissingMethodPermissionsDenyAccessMergingProcessor missingMethodPermissionsDenyAccessMergingProcessor) {
+    EJB3SubsystemAdd(final EJBDefaultSecurityDomainProcessor defaultSecurityDomainDeploymentProcessor, EJBDefaultPermissionsProcessor ejbDefaultPermissionsProcessor, final MissingMethodPermissionsDenyAccessMergingProcessor missingMethodPermissionsDenyAccessMergingProcessor) {
         this.defaultSecurityDomainDeploymentProcessor = defaultSecurityDomainDeploymentProcessor;
+        this.ejbDefaultPermissionsProcessor = ejbDefaultPermissionsProcessor;
         this.missingMethodPermissionsDenyAccessMergingProcessor = missingMethodPermissionsDenyAccessMergingProcessor;
     }
 
     @Override
-    protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
+    protected void populateModel(final OperationContext context, ModelNode operation, Resource resource) throws OperationFailedException {
+        ModelNode model = resource.getModel();
         for (SimpleAttributeDefinition attr : EJB3SubsystemRootResourceDefinition.ATTRIBUTES) {
             attr.validateAndSet(operation, model);
+        }
+        if (context.getProcessType().isServer()) {
+            context.addStep(new ValidateClusteredCacheRefHandler(), OperationContext.Stage.MODEL);
         }
     }
 
@@ -199,12 +214,17 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
         final boolean defaultMissingMethodValue = defaultMissingMethod.asBoolean();
         this.missingMethodPermissionsDenyAccessMergingProcessor.setDenyAccessByDefault(defaultMissingMethodValue);
 
+
+        final ModelNode disableDefaultPermissions = EJB3SubsystemRootResourceDefinition.DISABLE_DEFAULT_EJB_PERMISSIONS.resolveModelAttribute(context, model);
+        final boolean disableDefaultPermissionsValue = disableDefaultPermissions.asBoolean();
+        this.ejbDefaultPermissionsProcessor.setEnabled(!disableDefaultPermissionsValue);
+
         context.addStep(new AbstractDeploymentChainStep() {
             @Override
             protected void execute(DeploymentProcessorTarget processorTarget) {
 
                 //DUP's that are used even for app client deployments
-                processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_REGISTER_JBOSS_ALL_XML_PARSER, new JBossAllXmlParserRegisteringProcessor<EjbJarMetaData>(EjbJarJBossAllParser.ROOT_ELEMENT, EjbJarJBossAllParser.ATTACHMENT_KEY, new EjbJarJBossAllParser()));
+                processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_REGISTER_JBOSS_ALL_EJB, new JBossAllXmlParserRegisteringProcessor<EjbJarMetaData>(EjbJarJBossAllParser.ROOT_ELEMENT, EjbJarJBossAllParser.ATTACHMENT_KEY, new EjbJarJBossAllParser()));
                 processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_EJB_DEFAULT_DISTINCT_NAME, new EjbDefaultDistinctNameProcessor(defaultDistinctNameService));
                 processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_EJB_CONTEXT_BINDING, new EjbContextJndiBindingProcessor());
                 processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_EJB_DEPLOYMENT, new EjbJarParsingDeploymentUnitProcessor());
@@ -216,6 +236,7 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
                 processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_EJB_ASSEMBLY_DESC_DD, new AssemblyDescriptorProcessor());
                 processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_EJB_DEFAULT_SECURITY_DOMAIN, EJB3SubsystemAdd.this.defaultSecurityDomainDeploymentProcessor);
 
+                processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_EJB_PERMISSIONS, ejbDefaultPermissionsProcessor);
                 processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_EJB, new EjbDependencyDeploymentUnitProcessor());
                 processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_HOME_MERGE, new HomeViewMergingProcessor(appclient));
                 processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_REF, new EjbRefProcessor(appclient));
@@ -250,6 +271,7 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_TX_ATTR_MERGE, new TransactionAttributeMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_RUN_AS_MERGE, new RunAsMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_RESOURCE_ADAPTER_MERGE, new ResourceAdaptorMergingProcessor());
+                    processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_DELIVERY_ACTIVE_MERGE, new DeliveryActiveMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_REMOVE_METHOD, new RemoveMethodMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_STARTUP_MERGE, new StartupMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_SECURITY_DOMAIN, new SecurityDomainMergingProcessor());
@@ -262,7 +284,6 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_SESSION_BEAN, new SessionBeanMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_SECURITY_PRINCIPAL_ROLE_MAPPING_MERGE, new SecurityRolesMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_LOCAL_HOME, new SessionBeanHomeProcessor());
-                    processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_CLUSTERED, new ClusteredMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_CACHE, new CacheMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_SLSB_POOL_NAME_MERGE, new StatelessSessionBeanPoolMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EJB_MDB_POOL_NAME_MERGE, new MessageDrivenBeanPoolMergingProcessor());
@@ -273,7 +294,7 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_DEPENDS_ON_ANNOTATION, new EjbDependsOnMergingProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_DEPLOYMENT_REPOSITORY, new DeploymentRepositoryProcessor());
                     processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_EJB_MANAGEMENT_RESOURCES, new EjbManagementDeploymentUnitProcessor());
-
+                    processorTarget.addDeploymentProcessor(EJB3Extension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_CACHE_DEPENDENCIES, new CacheDependenciesProcessor());
                 }
 
             }
@@ -300,8 +321,6 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
             EJB3SubsystemDefaultCacheWriteHandler.SFSB_PASSIVATION_DISABLED_CACHE.updateCacheService(context, model, newControllers);
         }
 
-        EJB3SubsystemDefaultCacheWriteHandler.CLUSTERED_SFSB_CACHE.updateCacheService(context, model, newControllers);
-
         if (model.hasDefined(DEFAULT_RESOURCE_ADAPTER_NAME)) {
             DefaultResourceAdapterWriteHandler.INSTANCE.updateDefaultAdapterService(context, model, newControllers);
         }
@@ -324,7 +343,7 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
 
         addRemoteInvocationServices(context, newControllers, model, appclient);
         // add clustering service
-        this.addClusteringServices(context, newControllers, appclient);
+        addClusteringServices(context, newControllers, appclient);
 
         // add user transaction access control service
         final EJB3UserTransactionAccessControlService userTxAccessControlService = new EJB3UserTransactionAccessControlService();
@@ -357,7 +376,7 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
         }
     }
 
-    private void addRemoteInvocationServices(final OperationContext context, final List<ServiceController<?>> newControllers,
+    private static void addRemoteInvocationServices(final OperationContext context, final List<ServiceController<?>> newControllers,
                                              final ModelNode ejbSubsystemModel, final boolean appclient) throws OperationFailedException {
 
         final ServiceTarget serviceTarget = context.getServiceTarget();
@@ -375,25 +394,37 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
                 clientContextService).addDependency(TCCLEJBClientContextSelectorService.TCCL_BASED_EJB_CLIENT_CONTEXT_SELECTOR_SERVICE_NAME,
                 TCCLEJBClientContextSelectorService.class, clientContextService.getTCCLBasedEJBClientContextSelectorInjector());
 
+        // add the EJB remote tx recovery service
+        newControllers.add(
+                Services.addServerExecutorDependency(
+                    serviceTarget.addService(EJBTransactionRecoveryService.SERVICE_NAME, EJBTransactionRecoveryService.INSTANCE),
+                        EJBTransactionRecoveryService.INSTANCE.getExecutorInjector(), false)
+                .addDependency(ArjunaRecoveryManagerService.SERVICE_NAME, RecoveryManagerService.class, EJBTransactionRecoveryService.INSTANCE.getRecoveryManagerServiceInjector())
+                .addDependency(TxnServices.JBOSS_TXN_CORE_ENVIRONMENT, CoreEnvironmentBean.class, EJBTransactionRecoveryService.INSTANCE.getCoreEnvironmentBeanInjector())
+                .install());
+
         if (!appclient) {
             // get the node name
-            final String nodeName = SecurityActions.getSystemProperty(ServerEnvironment.NODE_NAME);
-
-            final ServiceLookupValue<Endpoint> endpointValue = new ServiceLookupValue<Endpoint>(context.getServiceRegistry(false), RemotingServices.SUBSYSTEM_ENDPOINT);
-            final ServiceLookupValue<EJBRemoteConnectorService> ejbRemoteConnectorServiceValue = new ServiceLookupValue<EJBRemoteConnectorService>(context.getServiceRegistry(false), EJBRemoteConnectorService.SERVICE_NAME);
+            final String nodeName = WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.NODE_NAME, null);
 
             //the default spec compliant EJB receiver
-            final LocalEjbReceiver byValueLocalEjbReceiver = new LocalEjbReceiver(nodeName, false, endpointValue, ejbRemoteConnectorServiceValue);
+            final LocalEjbReceiver byValueLocalEjbReceiver = new LocalEjbReceiver(nodeName, false);
             newControllers.add(serviceTarget.addService(LocalEjbReceiver.BY_VALUE_SERVICE_NAME, byValueLocalEjbReceiver)
                     .addDependency(DeploymentRepository.SERVICE_NAME, DeploymentRepository.class, byValueLocalEjbReceiver.getDeploymentRepository())
-                    .addDependency(ClusteredBackingCacheEntryStoreSourceService.CLIENT_MAPPING_REGISTRY_COLLECTOR_SERVICE_NAME, RegistryCollector.class, byValueLocalEjbReceiver.getClusterRegistryCollectorInjector())
+                    .addDependency(RegistryCollectorService.SERVICE_NAME, RegistryCollector.class, byValueLocalEjbReceiver.getClusterRegistryCollectorInjector())
+                    .addDependency(DependencyType.OPTIONAL, RemotingServices.SUBSYSTEM_ENDPOINT, Endpoint.class, byValueLocalEjbReceiver.getEndpointInjector())
+                    .addDependency(DependencyType.OPTIONAL, EJBRemoteConnectorService.SERVICE_NAME, EJBRemoteConnectorService.class, byValueLocalEjbReceiver.getRemoteConnectorServiceInjector())
+                    .setInitialMode(ServiceController.Mode.ON_DEMAND)
                     .install());
 
             //the receiver for invocations that allow pass by reference
-            final LocalEjbReceiver byReferenceLocalEjbReceiver = new LocalEjbReceiver(nodeName, true, endpointValue, ejbRemoteConnectorServiceValue);
+            final LocalEjbReceiver byReferenceLocalEjbReceiver = new LocalEjbReceiver(nodeName, true);
             newControllers.add(serviceTarget.addService(LocalEjbReceiver.BY_REFERENCE_SERVICE_NAME, byReferenceLocalEjbReceiver)
                     .addDependency(DeploymentRepository.SERVICE_NAME, DeploymentRepository.class, byReferenceLocalEjbReceiver.getDeploymentRepository())
-                    .addDependency(ClusteredBackingCacheEntryStoreSourceService.CLIENT_MAPPING_REGISTRY_COLLECTOR_SERVICE_NAME, RegistryCollector.class, byReferenceLocalEjbReceiver.getClusterRegistryCollectorInjector())
+                    .addDependency(RegistryCollectorService.SERVICE_NAME, RegistryCollector.class, byReferenceLocalEjbReceiver.getClusterRegistryCollectorInjector())
+                    .addDependency(DependencyType.OPTIONAL, RemotingServices.SUBSYSTEM_ENDPOINT, Endpoint.class, byReferenceLocalEjbReceiver.getEndpointInjector())
+                    .addDependency(DependencyType.OPTIONAL, EJBRemoteConnectorService.SERVICE_NAME, EJBRemoteConnectorService.class, byReferenceLocalEjbReceiver.getRemoteConnectorServiceInjector())
+                    .setInitialMode(ServiceController.Mode.ON_DEMAND)
                     .install());
 
             // setup the default local ejb receiver service
@@ -405,12 +436,12 @@ class EJB3SubsystemAdd extends AbstractBoottimeAddStepHandler {
         newControllers.add(clientContextServiceBuilder.install());
     }
 
-    private void addClusteringServices(final OperationContext context, final List<ServiceController<?>> newControllers, final boolean appclient) {
+    private static void addClusteringServices(final OperationContext context, final List<ServiceController<?>> newControllers, final boolean appclient) {
         if (appclient) {
             return;
         }
-        final RegistryCollectorService<String, List<ClientMapping>> registryCollectorService = new RegistryCollectorService<String, List<ClientMapping>>();
-        final ServiceController<RegistryCollector<String, List<ClientMapping>>> registryCollectorServiceController = context.getServiceTarget().addService(ClusteredBackingCacheEntryStoreSourceService.CLIENT_MAPPING_REGISTRY_COLLECTOR_SERVICE_NAME, registryCollectorService).install();
-        newControllers.add(registryCollectorServiceController);
+        ServiceTarget target = context.getServiceTarget();
+        newControllers.add(target.addService(RegistryCollectorService.SERVICE_NAME, new RegistryCollectorService<>()).setInitialMode(ServiceController.Mode.ON_DEMAND).install());
+        newControllers.add(target.addService(CacheFactoryBuilderRegistryService.SERVICE_NAME, new CacheFactoryBuilderRegistryService<>()).setInitialMode(ServiceController.Mode.ON_DEMAND).install());
     }
 }

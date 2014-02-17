@@ -22,11 +22,14 @@
 
 package org.jboss.as.security;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.jboss.as.domain.management.RealmConfigurationConstants.DIGEST_PLAIN_TEXT;
+import static org.jboss.as.domain.management.RealmConfigurationConstants.VERIFY_PASSWORD_CALLBACK_SUPPORTED;
+
 import java.io.IOException;
 import java.security.AccessController;
 import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
-import java.security.PrivilegedAction;
 import java.security.acl.Group;
 import java.util.Collection;
 import java.util.HashSet;
@@ -42,13 +45,12 @@ import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
 import javax.security.sasl.RealmCallback;
 
-import org.jboss.as.controller.security.SubjectUserInfo;
+import org.jboss.as.core.security.RealmRole;
+import org.jboss.as.core.security.RealmUser;
+import org.jboss.as.core.security.SubjectUserInfo;
 import org.jboss.as.domain.management.AuthMechanism;
 import org.jboss.as.domain.management.AuthorizingCallbackHandler;
 import org.jboss.as.domain.management.SecurityRealm;
-import org.jboss.as.domain.management.security.RealmRole;
-import org.jboss.as.domain.management.security.RealmUser;
-import org.jboss.as.domain.management.security.SecurityRealmService;
 import org.jboss.as.server.CurrentServiceContainer;
 import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
@@ -56,10 +58,8 @@ import org.jboss.sasl.callback.DigestHashCallback;
 import org.jboss.sasl.callback.VerifyPasswordCallback;
 import org.jboss.sasl.util.UsernamePasswordHashUtil;
 import org.jboss.security.SimpleGroup;
+import org.jboss.security.auth.callback.ObjectCallback;
 import org.jboss.security.auth.spi.UsernamePasswordLoginModule;
-
-import static org.jboss.as.domain.management.RealmConfigurationConstants.DIGEST_PLAIN_TEXT;
-import static org.jboss.as.domain.management.RealmConfigurationConstants.VERIFY_PASSWORD_CALLBACK_SUPPORTED;
 
 /**
  * A login module implementation to interface directly with the security realm.
@@ -84,6 +84,7 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
     private ValidationMode validationMode;
     private UsernamePasswordHashUtil hashUtil;
     private AuthorizingCallbackHandler callbackHandler;
+    private DigestCredential digestCredential;
 
     @Override
     public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState, Map<String, ?> options) {
@@ -92,7 +93,7 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
 
         final String realm = options.containsKey(REALM_OPTION) ? (String) options.get(REALM_OPTION) : DEFAULT_REALM;
 
-        final ServiceController<?> controller = currentServiceContainer().getService(SecurityRealmService.BASE_SERVICE_NAME.append(realm));
+        final ServiceController<?> controller = currentServiceContainer().getService(SecurityRealm.ServiceUtil.createServiceName(realm));
         if (controller != null) {
             securityRealm = (SecurityRealm) controller.getValue();
         }
@@ -131,6 +132,19 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
                 validationMode = ValidationMode.PASSWORD;
             }
         }
+    }
+
+    @Override
+    public boolean login() throws LoginException {
+        if ((digestCredential = getDigestCredential()) != null && validationMode == ValidationMode.VALIDATION) {
+
+            /*
+             * Override the validation mode to digest as this is the only mode compatible if a DigestCredential is supplied.
+             */
+            validationMode = ValidationMode.DIGEST;
+        }
+
+        return super.login();
     }
 
     @Override
@@ -189,6 +203,10 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
 
     @Override
     protected boolean validatePassword(String inputPassword, String expectedPassword) {
+        if (digestCredential != null) {
+            return digestCredential.verifyHA1(expectedPassword.getBytes(UTF_8));
+        }
+
         switch (validationMode) {
             case DIGEST:
                 String inputHashed = hashUtil.generateHashedHexURP(getUsername(), securityRealm.getName(),
@@ -214,6 +232,31 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
         }
     }
 
+    private DigestCredential getDigestCredential() {
+        ObjectCallback oc = new ObjectCallback("Credential:");
+
+        try {
+            super.callbackHandler.handle(new Callback[] { oc });
+        } catch (IOException | UnsupportedCallbackException e) {
+            return null;
+        }
+
+        Object credential = oc.getCredential();
+        if (credential instanceof DigestCredential) {
+            /*
+             * This change is an intermediate change to allow the use of a DigestCredential until we are ready to switch to
+             * JAAS.
+             *
+             * However we only wish to accept trusted implementations so perform this final check.
+             */
+            if (credential.getClass().getName().equals("org.wildfly.extension.undertow.security.DigestCredentialImpl")) {
+                return (DigestCredential) credential;
+            }
+        }
+
+        return null;
+    }
+
     @Override
     protected Group[] getRoleSets() throws LoginException {
         Collection<Principal> principalCol = new HashSet<Principal>();
@@ -236,17 +279,31 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
     }
 
     private enum ValidationMode {
-        DIGEST, PASSWORD, VALIDATION
+        /**
+         * A DigestCallback will be used with the realm to obtain the pre-prepared hash of the username, realm, password
+         * combination.
+         */
+        DIGEST,
+
+        /**
+         * A PasswordCallback will be used with the realm to obtain the users plain text password.
+         */
+
+        PASSWORD,
+
+        /**
+         * The realm being delegated to will be passed a ValidatePasswordCallback to allow the realm to validate the password
+         * directly.
+         */
+        VALIDATION
     }
 
     ;
 
     private static ServiceContainer currentServiceContainer() {
-        return AccessController.doPrivileged(new PrivilegedAction<ServiceContainer>() {
-            @Override
-            public ServiceContainer run() {
-                return CurrentServiceContainer.getServiceContainer();
-            }
-        });
+        if(System.getSecurityManager() == null) {
+            return CurrentServiceContainer.getServiceContainer();
+        }
+        return AccessController.doPrivileged(CurrentServiceContainer.GET_ACTION);
     }
 }

@@ -22,7 +22,6 @@
 
 package org.jboss.as.clustering.infinispan.affinity;
 
-import java.security.AccessController;
 import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,12 +32,14 @@ import org.infinispan.affinity.KeyAffinityService;
 import org.infinispan.affinity.KeyAffinityServiceImpl;
 import org.infinispan.affinity.KeyGenerator;
 import org.infinispan.remoting.transport.Address;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
-import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.threads.JBossThreadFactory;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Key affinity service factory that will only generates keys for use by the local node.
@@ -66,10 +67,10 @@ public class KeyAffinityServiceFactoryService implements Service<KeyAffinityServ
     }
 
     @Override
-    public void start(StartContext context) throws StartException {
+    public void start(StartContext context) {
         final ThreadGroup threadGroup = new ThreadGroup("KeyAffinityService ThreadGroup");
         final String namePattern = "KeyAffinityService Thread Pool -- %t";
-        final ThreadFactory threadFactory = new JBossThreadFactory(threadGroup, Boolean.FALSE, null, namePattern, null, null, AccessController.getContext());
+        final ThreadFactory threadFactory = new JBossThreadFactory(threadGroup, Boolean.FALSE, null, namePattern, null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
 
         this.executor = Executors.newCachedThreadPool(threadFactory);
     }
@@ -81,8 +82,8 @@ public class KeyAffinityServiceFactoryService implements Service<KeyAffinityServ
 
     @Override
     public <K> KeyAffinityService<K> createService(Cache<K, ?> cache, KeyGenerator<K> generator) {
-        boolean distributed = cache.getCacheConfiguration().clustering().cacheMode().isDistributed();
-        return distributed ? new KeyAffinityServiceImpl<K>(this.executor, cache, generator, this.bufferSize, Collections.singleton(cache.getCacheManager().getAddress()), false) : new SimpleKeyAffinityService<K>(generator);
+        boolean clustered = cache.getCacheConfiguration().clustering().cacheMode().isClustered();
+        return clustered ? new KeyAffinityServiceImpl<>(this.executor, cache, generator, this.bufferSize, Collections.singleton(cache.getCacheManager().getAddress()), false) : new SimpleKeyAffinityService<>(generator);
     }
 
     private static class SimpleKeyAffinityService<K> implements KeyAffinityService<K> {

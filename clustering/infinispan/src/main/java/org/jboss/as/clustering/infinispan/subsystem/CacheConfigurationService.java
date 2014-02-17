@@ -22,22 +22,32 @@
 
 package org.jboss.as.clustering.infinispan.subsystem;
 
+import java.util.ServiceLoader;
+
 import javax.transaction.TransactionManager;
 import javax.transaction.TransactionSynchronizationRegistry;
 
 import org.infinispan.configuration.cache.ConfigurationBuilder;
+import org.infinispan.configuration.cache.GroupsConfigurationBuilder;
+import org.infinispan.distribution.group.Grouper;
 import org.infinispan.manager.EmbeddedCacheManager;
 import org.jboss.as.clustering.infinispan.TransactionManagerProvider;
 import org.jboss.as.clustering.infinispan.TransactionSynchronizationRegistryProvider;
+import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
 import org.jboss.modules.ModuleLoader;
+import org.jboss.msc.service.ServiceName;
 
 /**
  * @author Paul Ferraro
  * @author Richard Achmatowicz (c) 2011 Red Hat Inc.
  */
 public class CacheConfigurationService extends AbstractCacheConfigurationService {
+
+    public static ServiceName getServiceName(String container, String cache) {
+        return CacheService.getServiceName(container, cache).append("config");
+    }
 
     interface Dependencies {
         ModuleLoader getModuleLoader();
@@ -66,7 +76,14 @@ public class CacheConfigurationService extends AbstractCacheConfigurationService
     protected ConfigurationBuilder getConfigurationBuilder() {
         if (this.moduleId != null) {
             try {
-                builder.classLoader(this.dependencies.getModuleLoader().loadModule(this.moduleId).getClassLoader());
+                Module module = this.dependencies.getModuleLoader().loadModule(this.moduleId);
+                ClassLoader loader = module.getClassLoader();
+                this.builder.classLoader(loader);
+
+                GroupsConfigurationBuilder groupsBuilder = this.builder.clustering().hash().groups();
+                for (Grouper<?> grouper: ServiceLoader.load(Grouper.class, loader)) {
+                    groupsBuilder.addGrouper(grouper);
+                }
             } catch (ModuleLoadException e) {
                 throw new IllegalArgumentException(e);
             }

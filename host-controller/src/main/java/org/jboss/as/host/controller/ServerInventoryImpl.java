@@ -22,6 +22,7 @@
 
 package org.jboss.as.host.controller;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
 import static org.jboss.as.host.controller.HostControllerLogger.ROOT_LOGGER;
 import static org.jboss.as.host.controller.HostControllerMessages.MESSAGES;
@@ -35,10 +36,10 @@ import javax.security.sasl.AuthorizeCallback;
 import javax.security.sasl.RealmCallback;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.charset.Charset;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Collection;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -80,8 +81,6 @@ import org.jboss.sasl.util.UsernamePasswordHashUtil;
  * @author Kabir Khan
  */
 public class ServerInventoryImpl implements ServerInventory {
-
-    private static final Charset UTF_8 = Charset.forName("UTF-8");
 
     /** The managed servers. */
     private final ConcurrentMap<String, ManagedServer> servers = new ConcurrentHashMap<String, ManagedServer>();
@@ -177,14 +176,16 @@ public class ServerInventoryImpl implements ServerInventory {
             // Create a new authKey
             final byte[] authKey = new byte[16];
             new Random(new SecureRandom().nextLong()).nextBytes(authKey);
+            removeNullChar(authKey);
             // Create the managed server
-            final ManagedServer newServer = createManagedServer(serverName, domainModel, authKey);
+            final ManagedServer newServer = createManagedServer(serverName, authKey);
             server = servers.putIfAbsent(serverName, newServer);
             if(server == null) {
                 server = newServer;
             }
         }
-        server.start();
+        // Start the server
+        server.start(createBootFactory(serverName, domainModel));
         synchronized (shutdownCondition) {
             shutdownCondition.notifyAll();
         }
@@ -254,14 +255,14 @@ public class ServerInventoryImpl implements ServerInventory {
             ROOT_LOGGER.existingServerWithState(serverName, existing.getState());
             return;
         }
-        final ManagedServer server = createManagedServer(serverName, domainModel, authKey);
+        final ManagedServer server = createManagedServer(serverName, authKey);
         if ((existing = servers.putIfAbsent(serverName, server)) != null) {
             ROOT_LOGGER.existingServerWithState(serverName, existing.getState());
             return;
         }
         if(running) {
             if(!stopping) {
-                 server.reconnectServerProcess();
+                 server.reconnectServerProcess(createBootFactory(serverName, domainModel));
                  // Register the server proxy at the domain controller
                  domainController.registerRunningServer(server.getProxyController());
             } else {
@@ -556,17 +557,21 @@ public class ServerInventoryImpl implements ServerInventory {
         }
     }
 
-    private ManagedServer createManagedServer(final String serverName, final ModelNode domainModel, final byte[] authKey) {
+    private ManagedServer createManagedServer(final String serverName, final byte[] authKey) {
         final String hostControllerName = domainController.getLocalHostInfo().getLocalHostName();
-        final ModelNode hostModel = domainModel.require(HOST).require(hostControllerName);
-        final ManagedServerBootCmdFactory combiner = new ManagedServerBootCmdFactory(serverName, domainModel, hostModel, environment, domainController.getExpressionResolver());
-        final ManagedServerBootConfiguration configuration = combiner.createConfiguration();
+        // final ManagedServerBootConfiguration configuration = combiner.createConfiguration();
         final Map<PathAddress, ModelVersion> subsystems = TransformerRegistry.resolveVersions(extensionRegistry);
         final ModelVersion modelVersion = ModelVersion.create(Version.MANAGEMENT_MAJOR_VERSION, Version.MANAGEMENT_MINOR_VERSION, Version.MANAGEMENT_MICRO_VERSION);
         //We don't need any transformation between host and server
         final TransformationTarget target = TransformationTargetImpl.create(extensionRegistry.getTransformerRegistry(),
                 modelVersion, subsystems, null, TransformationTarget.TransformationTargetType.SERVER, null);
-        return new ManagedServer(hostControllerName, serverName, authKey, processControllerClient, managementAddress, configuration, target);
+        return new ManagedServer(hostControllerName, serverName, authKey, processControllerClient, managementAddress, target);
+    }
+
+    private ManagedServerBootCmdFactory createBootFactory(final String serverName, final ModelNode domainModel) {
+        final String hostControllerName = domainController.getLocalHostInfo().getLocalHostName();
+        final ModelNode hostModel = domainModel.require(HOST).require(hostControllerName);
+        return new ManagedServerBootCmdFactory(serverName, domainModel, hostModel, environment, domainController.getExpressionResolver());
     }
 
     @Override
@@ -627,7 +632,7 @@ public class ServerInventoryImpl implements ServerInventory {
                         ((PasswordCallback) current).setPassword(password.toCharArray());
                     } else if (current instanceof VerifyPasswordCallback) {
                         VerifyPasswordCallback vpc = (VerifyPasswordCallback) current;
-                        vpc.setVerified(password.equals(vpc.getPassword()));
+                        vpc.setVerified(Arrays.equals(password.getBytes(UTF_8), vpc.getPassword().getBytes(UTF_8)));
                     } else if (current instanceof DigestHashCallback) {
                         DigestHashCallback dhc = (DigestHashCallback) current;
                         try {
@@ -644,6 +649,14 @@ public class ServerInventoryImpl implements ServerInventory {
 
             }
         };
+    }
+
+    static void removeNullChar(byte[] authKey) {
+        for(int i =0; i < authKey.length; i++) {
+            if(authKey[i] == 0x00) {
+                authKey[i] = 0x01;
+            }
+        }
     }
 
 }

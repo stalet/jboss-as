@@ -25,6 +25,7 @@ package org.jboss.as.server.operations;
 import org.jboss.as.controller.AbstractRemoveStepHandler;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.domain.management.access.RbacSanityCheckOperation;
 import org.jboss.as.remoting.management.ManagementRemotingServices;
 import org.jboss.as.server.mgmt.NativeManagementResourceDefinition;
 import org.jboss.dmr.ModelNode;
@@ -43,6 +44,13 @@ public class NativeManagementRemoveHandler extends AbstractRemoveStepHandler {
     }
 
     @Override
+    protected void performRemove(OperationContext context, ModelNode operation, ModelNode model)
+            throws OperationFailedException {
+        RbacSanityCheckOperation.addOperation(context);
+        super.performRemove(context, operation, model);
+    }
+
+    @Override
     protected boolean requiresRuntime(OperationContext context) {
         return true;
     }
@@ -53,15 +61,16 @@ public class NativeManagementRemoveHandler extends AbstractRemoveStepHandler {
         final ServiceName endpointName = ManagementRemotingServices.MANAGEMENT_ENDPOINT;
 
         // Remove management Channel
-        ManagementRemotingServices.removeManagementChannelServices(context, endpointName, ManagementRemotingServices.MANAGEMENT_CHANNEL);
+        // ManagementRemotingServices.removeManagementChannelServices(context, endpointName, ManagementRemotingServices.MANAGEMENT_CHANNEL);
 
         // Remove management Connector
         final ModelNode portNode = NativeManagementResourceDefinition.NATIVE_PORT.resolveModelAttribute(context, model);
         int port = portNode.isDefined() ? portNode.asInt() : 0;
         ManagementRemotingServices.removeConnectorServices(context, ManagementRemotingServices.MANAGEMENT_CONNECTOR);
 
-        // Remove endpoint
-        context.removeService(endpointName);
+        // We don't remove the endpoint or other remoting services, as it may still be in use by the HTTP upgrade handler.
+        // TODO: figure out some way of removing it if it is not in use
+        // context.removeService(endpointName);
 
     }
 

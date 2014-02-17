@@ -22,14 +22,18 @@
 
 package org.jboss.as.domain.management.security;
 
+import java.util.List;
+
 import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.registry.Resource;
+import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceName;
+import org.jboss.msc.service.ServiceRegistry;
 
 /**
  * Handler to remove security realm definitions and remove the service.
@@ -75,18 +79,15 @@ public class SecurityRealmRemoveHandler implements OperationStepHandler {
     }
 
     protected void removeServices(final OperationContext context, final String realmName, final ModelNode model) throws OperationFailedException {
-
-        // KISS -- just remove every possible service; don't analyze model to see which were configured
-        ServiceName realmServiceName = SecurityRealmService.BASE_SERVICE_NAME.append(realmName);
-        context.removeService(realmServiceName);
-        context.removeService(realmServiceName.append(SecretIdentityService.SERVICE_SUFFIX));
-        context.removeService(realmServiceName.append(ClientCertCallbackHandler.SERVICE_SUFFIX));
-        context.removeService(realmServiceName.append(SSLIdentityService.SERVICE_SUFFIX));
-        context.removeService(realmServiceName.append(FileKeystoreService.KEYSTORE_SUFFIX));
-        context.removeService(realmServiceName.append(FileKeystoreService.TRUSTSTORE_SUFFIX));
-        context.removeService(realmServiceName.append(UserDomainCallbackHandler.SERVICE_SUFFIX));
-        context.removeService(realmServiceName.append(PropertiesCallbackHandler.SERVICE_SUFFIX));
-        context.removeService(realmServiceName.append(UserLdapCallbackHandler.SERVICE_SUFFIX));
+        // KISS -- Just remove the service and all child services.
+        ServiceName realmServiceName = SecurityRealm.ServiceUtil.createServiceName(realmName);
+        ServiceRegistry serviceRegistry = context.getServiceRegistry(false);
+        List<ServiceName> allNames = serviceRegistry.getServiceNames();
+        for (ServiceName current : allNames) {
+            if (realmServiceName.isParentOf(current)) {
+                context.removeService(current);
+            }
+        }
     }
 
     protected void recoverServices(OperationContext context, final String realmName, ModelNode model) {

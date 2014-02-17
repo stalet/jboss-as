@@ -24,8 +24,10 @@ package org.jboss.as.test.clustering.single.web;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 
-import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -35,24 +37,33 @@ import javax.servlet.http.HttpSession;
 /**
  * @author Paul Ferraro
  */
-@WebServlet(urlPatterns = {"/simple"})
+@WebServlet(urlPatterns = { SimpleServlet.SERVLET_PATH })
 public class SimpleServlet extends HttpServlet {
     private static final long serialVersionUID = -592774116315946908L;
+    private static final String SERVLET_NAME = "simple";
+    static final String SERVLET_PATH = "/" + SERVLET_NAME;
     public static final String REQUEST_DURATION_PARAM = "requestduration";
     public static final String HEADER_SERIALIZED = "serialized";
-    public static final String URL = "simple";
+    public static final String VALUE_HEADER = "value";
+    public static final String SESSION_ID_HEADER = "sessionId";
+    private static final String ATTRIBUTE = "test";
+
+    public static URI createURI(URL baseURL) throws URISyntaxException {
+        return baseURL.toURI().resolve(SERVLET_NAME);
+    }
 
     @Override
-    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         HttpSession session = req.getSession(true);
-        Custom custom = (Custom) session.getAttribute("test");
+        resp.addHeader(SESSION_ID_HEADER, session.getId());
+        Mutable custom = (Mutable) session.getAttribute(ATTRIBUTE);
         if (custom == null) {
-            custom = new Custom(1);
-            session.setAttribute("test", custom);
+            custom = new Mutable(1);
+            session.setAttribute(ATTRIBUTE, custom);
         } else {
             custom.increment();
         }
-        resp.setIntHeader("value", custom.getValue());
+        resp.setIntHeader(VALUE_HEADER, custom.getValue());
         resp.setHeader(HEADER_SERIALIZED, Boolean.toString(custom.wasSerialized()));
 
         // Long running request?
@@ -67,12 +78,12 @@ public class SimpleServlet extends HttpServlet {
         resp.getWriter().write("Success");
     }
 
-    public static class Custom implements Serializable {
+    public static class Mutable implements Serializable {
         private static final long serialVersionUID = -5129400250276547619L;
         private transient boolean serialized = false;
         private int value;
 
-        public Custom(int value) {
+        public Mutable(int value) {
             this.value = value;
         }
 
@@ -82,6 +93,11 @@ public class SimpleServlet extends HttpServlet {
 
         public void increment() {
             this.value += 1;
+        }
+
+        @Override
+        public String toString() {
+            return String.valueOf(this.value);
         }
 
         public boolean wasSerialized() {

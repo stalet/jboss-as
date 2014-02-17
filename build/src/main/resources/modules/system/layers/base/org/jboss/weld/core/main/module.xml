@@ -37,19 +37,18 @@
         <module name="com.google.guava"/>
         <module name="javax.api"/>
         <module name="javax.annotation.api"/>
-        <module name="javax.el.api" />
+        <module name="javax.ejb.api" />
         <module name="javax.enterprise.api"/>
-        <module name="javax.faces.api"/>
         <module name="javax.inject.api"/>
         <module name="javax.interceptor.api"/>
         <module name="javax.persistence.api"/>
         <module name="javax.servlet.api"/>
         <module name="javax.transaction.api"/>
         <module name="javax.validation.api"/>
-        <module name="org.javassist"/>
+        <module name="org.glassfish.javax.el" />
+        <module name="org.jboss.classfilewriter"/>
         <module name="org.jboss.weld.api" />
         <module name="org.jboss.weld.spi" />
-        <module name="org.slf4j" />
-        <module name="org.slf4j.ext" />
+        <module name="org.jboss.logging" />
     </dependencies>
 </module>

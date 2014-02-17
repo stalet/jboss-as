@@ -22,7 +22,29 @@
 package org.jboss.as.ejb3.component;
 
 
-import org.jboss.as.controller.security.ServerSecurityManager;
+import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+
+import javax.ejb.EJBLocalObject;
+import javax.ejb.TimerService;
+import javax.ejb.TransactionAttributeType;
+import javax.ejb.TransactionManagementType;
+import javax.transaction.TransactionManager;
+import javax.transaction.TransactionSynchronizationRegistry;
+import javax.transaction.UserTransaction;
+import java.lang.reflect.Method;
+import java.rmi.Remote;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.jboss.as.core.security.ServerSecurityManager;
 import org.jboss.as.ee.component.Attachments;
 import org.jboss.as.ee.component.BindingConfiguration;
 import org.jboss.as.ee.component.Component;
@@ -70,39 +92,18 @@ import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.SetupAction;
 import org.jboss.as.txn.service.TxnServices;
+import org.jboss.invocation.AccessCheckingInterceptor;
 import org.jboss.invocation.ContextClassLoaderInterceptor;
 import org.jboss.invocation.ImmediateInterceptorFactory;
 import org.jboss.invocation.Interceptor;
 import org.jboss.invocation.InterceptorContext;
-import org.jboss.invocation.PrivilegedInterceptor;
+import org.jboss.invocation.PrivilegedWithCombinerInterceptor;
 import org.jboss.invocation.proxy.MethodIdentifier;
 import org.jboss.metadata.ejb.spec.EnterpriseBeanMetaData;
 import org.jboss.metadata.javaee.spec.SecurityRolesMetaData;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceName;
-
-import javax.ejb.EJBLocalObject;
-import javax.ejb.TimerService;
-import javax.ejb.TransactionAttributeType;
-import javax.ejb.TransactionManagementType;
-import javax.transaction.TransactionManager;
-import javax.transaction.TransactionSynchronizationRegistry;
-import javax.transaction.UserTransaction;
-import java.lang.reflect.Method;
-import java.rmi.Remote;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
 
 /**
  * @author <a href="mailto:cdewolf@redhat.com">Carlo de Wolf</a>
@@ -309,7 +310,8 @@ public abstract class EJBComponentDescription extends ComponentDescription {
                     }
                     configuration.addTimeoutViewInterceptor(shutDownInterceptorFactory, InterceptorOrder.View.SHUTDOWN_INTERCEPTOR);
                     final ClassLoader classLoader = configuration.getModuleClassLoader();
-                    configuration.addTimeoutViewInterceptor(PrivilegedInterceptor.getFactory(), InterceptorOrder.View.PRIVILEGED_INTERCEPTOR);
+                    configuration.addTimeoutViewInterceptor(PrivilegedWithCombinerInterceptor.getFactory(), InterceptorOrder.View.PRIVILEGED_INTERCEPTOR);
+                    configuration.addTimeoutViewInterceptor(AccessCheckingInterceptor.getFactory(), InterceptorOrder.View.CHECKING_INTERCEPTOR);
                     configuration.addTimeoutViewInterceptor(new ImmediateInterceptorFactory(new ContextClassLoaderInterceptor(classLoader)), InterceptorOrder.View.TCCL_INTERCEPTOR);
                     configuration.addTimeoutViewInterceptor(configuration.getNamespaceContextInterceptorFactory(), InterceptorOrder.View.JNDI_NAMESPACE_INTERCEPTOR);
                     configuration.addTimeoutViewInterceptor(CurrentInvocationContextInterceptor.FACTORY, InterceptorOrder.View.INVOCATION_CONTEXT_INTERCEPTOR);
@@ -403,7 +405,8 @@ public abstract class EJBComponentDescription extends ComponentDescription {
             public void configure(DeploymentPhaseContext context, ComponentConfiguration componentConfiguration, ViewDescription description, ViewConfiguration viewConfiguration) throws DeploymentUnitProcessingException {
                 viewConfiguration.addViewInterceptor(LoggingInterceptor.FACTORY, InterceptorOrder.View.EJB_EXCEPTION_LOGGING_INTERCEPTOR);
                 final ClassLoader classLoader = componentConfiguration.getModuleClassLoader();
-                viewConfiguration.addViewInterceptor(PrivilegedInterceptor.getFactory(), InterceptorOrder.View.PRIVILEGED_INTERCEPTOR);
+                viewConfiguration.addViewInterceptor(PrivilegedWithCombinerInterceptor.getFactory(), InterceptorOrder.View.PRIVILEGED_INTERCEPTOR);
+                viewConfiguration.addViewInterceptor(AccessCheckingInterceptor.getFactory(), InterceptorOrder.View.CHECKING_INTERCEPTOR);
                 viewConfiguration.addViewInterceptor(new ImmediateInterceptorFactory(new ContextClassLoaderInterceptor(classLoader)), InterceptorOrder.View.TCCL_INTERCEPTOR);
 
                 //If this is the EJB 2.x local or home view add the exception transformer interceptor
@@ -805,7 +808,7 @@ public abstract class EJBComponentDescription extends ComponentDescription {
                 @Override
                 public void configureDependency(ServiceBuilder<?> serviceBuilder, Service<Component> service) throws DeploymentUnitProcessingException {
                     final String securityDomainName = SecurityDomainDependencyConfigurator.this.ejbComponentDescription.getSecurityDomain();
-                    if (securityDomainName != null) {
+                    if (securityDomainName != null && !securityDomainName.isEmpty()) {
                         final ServiceName securityDomainServiceName = SecurityDomainService.SERVICE_NAME.append(securityDomainName);
                         serviceBuilder.addDependency(securityDomainServiceName);
                     }

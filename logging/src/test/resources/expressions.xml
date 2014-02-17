@@ -20,7 +20,10 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<subsystem xmlns="urn:jboss:domain:logging:1.2">
+<subsystem xmlns="urn:jboss:domain:logging:2.0">
+    <add-logging-api-dependencies value="${test.add.deps:true}"/>
+    <use-deployment-logging-config value="${test.use.dep.config:true}"/>
+
     <async-handler name="async">
         <queue-length value="${test.queue.length:10}"/>
         <overflow-action value="${test.overflow.action:block}"/>
@@ -41,6 +44,9 @@
     <file-handler name="anotherFile" enabled="${test.file.enabled:false}" autoflush="${test.autoflush:true}">
         <level name="${test.file.level:INFO}"/>
         <encoding value="${test.encoding:UTF-8}"/>
+        <formatter>
+            <named-formatter name="PATTERN"/>
+        </formatter>
         <file relative-to="jboss.server.log.dir" path="${test.another.filter:another.log}"/>
         <append value="${test.file.append:true}"/>
     </file-handler>
@@ -56,7 +62,7 @@
         <suffix value="${test.file.suffix:.yyyy-MM-dd}"/>
     </periodic-rotating-file-handler>
 
-    <size-rotating-file-handler name="sizeLogger" autoflush="${test.autoflush:true}">
+    <size-rotating-file-handler name="sizeLogger" autoflush="${test.autoflush:true}" rotate-on-boot="${test.rotate-on-boot:false}">
         <level name="${test.file.level:INFO}"/>
         <encoding value="${test.encoding:UTF-8}"/>
         <formatter>
@@ -97,6 +103,10 @@
         </handlers>
     </root-logger>
 
+    <formatter name="PATTERN">
+        <pattern-formatter pattern="${test.console.pattern:%K{level}%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n}" color-map="${test.console.color:info:cyan,warn:yellow,error:red}"/>
+    </formatter>
+
     <logging-profiles>
         <logging-profile name="test-profile">
 
@@ -108,6 +118,16 @@
                     <pattern-formatter pattern="${test.console.pattern:%K{level}%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n}"/>
                 </formatter>
             </console-handler>
+
+            <file-handler name="anotherFile" enabled="${test.file.enabled:false}" autoflush="${test.autoflush:true}">
+                <level name="${test.file.level:INFO}"/>
+                <encoding value="${test.encoding:UTF-8}"/>
+                <formatter>
+                    <named-formatter name="PATTERN"/>
+                </formatter>
+                <file relative-to="jboss.server.log.dir" path="${test.another.filter:anotherProfile.log}"/>
+                <append value="${test.file.append:true}"/>
+            </file-handler>
 
             <syslog-handler name="syslog" enabled="${test.syslog.enabled:false}">
                 <level name="${test.default.level:INFO}"/>
@@ -132,6 +152,10 @@
                     <handler name="CONSOLE"/>
                 </handlers>
             </root-logger>
+
+            <formatter name="PATTERN">
+                <pattern-formatter pattern="${test.console.pattern:%K{level}%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n}" color-map="${test.console.color:info:cyan,warn:yellow,error:red}"/>
+            </formatter>
         </logging-profile>
     </logging-profiles>
 </subsystem>

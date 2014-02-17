@@ -28,6 +28,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.dmr.ModelType;
@@ -49,6 +50,7 @@ public class SimpleOperationDefinitionBuilder {
     protected boolean replyAllowNull;
     protected DeprecationData deprecationData = null;
     protected AttributeDefinition[] replyParameters = new AttributeDefinition[0];
+    protected AccessConstraintDefinition[] accessConstraints;
 
     public SimpleOperationDefinitionBuilder(String name, ResourceDescriptionResolver resolver) {
         this.name = name;
@@ -64,17 +66,15 @@ public class SimpleOperationDefinitionBuilder {
     }
 
     protected SimpleOperationDefinition internalBuild(ResourceDescriptionResolver resolver, ResourceDescriptionResolver attributeResolver) {
-        return new SimpleOperationDefinition(name, resolver, attributeResolver, entryType, flags, replyType, replyValueType, replyAllowNull, deprecationData, replyParameters, parameters);
+        return new SimpleOperationDefinition(name, resolver, attributeResolver, entryType, flags, replyType, replyValueType, replyAllowNull, deprecationData, replyParameters, parameters, accessConstraints);
     }
 
     protected static EnumSet<OperationEntry.Flag> getFlagsSet(OperationEntry.Flag... vararg) {
-        if (vararg == null || vararg.length == 0) {
-            return EnumSet.noneOf(OperationEntry.Flag.class);
-        } else {
-            EnumSet<OperationEntry.Flag> result = EnumSet.noneOf(OperationEntry.Flag.class);
+        EnumSet<OperationEntry.Flag> result = EnumSet.noneOf(OperationEntry.Flag.class);
+        if (vararg != null && vararg.length > 0) {
             Collections.addAll(result, vararg);
-            return result;
         }
+        return result;
     }
 
     public SimpleOperationDefinitionBuilder setEntryType(OperationEntry.EntryType entryType) {
@@ -88,30 +88,27 @@ public class SimpleOperationDefinitionBuilder {
     }
 
     public SimpleOperationDefinitionBuilder withFlags(EnumSet<OperationEntry.Flag> flags) {
-        this.flags = flags;
+        this.flags.addAll(flags);
         return this;
     }
 
     public SimpleOperationDefinitionBuilder withFlags(OperationEntry.Flag... flags) {
-        this.flags = getFlagsSet(flags);
+        this.flags.addAll(getFlagsSet(flags));
         return this;
     }
 
     public SimpleOperationDefinitionBuilder withFlag(OperationEntry.Flag flag) {
-        this.flags = EnumSet.of(flag);
+        this.flags.add(flag);
         return this;
     }
 
     public SimpleOperationDefinitionBuilder setRuntimeOnly() {
-        this.flags = EnumSet.of(OperationEntry.Flag.RUNTIME_ONLY, flags.toArray(new OperationEntry.Flag[flags.size()]));
-        return this;
+        return withFlag(OperationEntry.Flag.RUNTIME_ONLY);
     }
 
     public SimpleOperationDefinitionBuilder setReadOnly() {
-        this.flags = EnumSet.of(OperationEntry.Flag.READ_ONLY, flags.toArray(new OperationEntry.Flag[flags.size()]));
-        return this;
+        return withFlag(OperationEntry.Flag.READ_ONLY);
     }
-
 
     public SimpleOperationDefinitionBuilder setParameters(AttributeDefinition... parameters) {
         this.parameters = parameters;
@@ -152,6 +149,21 @@ public class SimpleOperationDefinitionBuilder {
 
     public SimpleOperationDefinitionBuilder setAttributeResolver(ResourceDescriptionResolver resolver) {
         this.attributeResolver = resolver;
+        return this;
+    }
+
+    public SimpleOperationDefinitionBuilder setAccessConstraints(AccessConstraintDefinition... accessConstraints) {
+        this.accessConstraints = accessConstraints;
+        return this;
+    }
+
+    public SimpleOperationDefinitionBuilder addAccessConstraint(final AccessConstraintDefinition accessConstraint) {
+        if (accessConstraints == null) {
+            accessConstraints = new AccessConstraintDefinition[] {accessConstraint};
+        } else {
+            accessConstraints = Arrays.copyOf(accessConstraints, accessConstraints.length + 1);
+            accessConstraints[accessConstraints.length - 1] = accessConstraint;
+        }
         return this;
     }
 }

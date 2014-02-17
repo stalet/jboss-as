@@ -37,7 +37,9 @@ import java.util.concurrent.TimeoutException;
 import javax.net.ssl.SSLContext;
 import javax.security.auth.callback.CallbackHandler;
 
+import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.controller.remote.TransactionalProtocolClient;
 import org.jboss.as.domain.controller.SlaveRegistrationException;
 import org.jboss.as.domain.management.CallbackHandlerFactory;
 import org.jboss.as.domain.management.SecurityRealm;
@@ -62,6 +64,7 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.remoting3.Channel;
 import org.jboss.remoting3.Connection;
 import org.jboss.threads.AsyncFuture;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A connection to a remote domain controller. Once successfully connected this {@code ManagementClientChannelStrategy}
@@ -78,7 +81,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
     static {
         long interval = -1;
         try {
-            interval = Long.parseLong(SecurityActions.getSystemProperty("jboss.as.domain.ping.interval", "15000"));
+            interval = Long.parseLong(WildFlySecurityManager.getPropertyPrivileged("jboss.as.domain.ping.interval", "15000"));
         } catch (Exception e) {
             // TODO log
         } finally {
@@ -86,7 +89,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
         }
         long timeout = -1;
         try {
-            timeout = Long.parseLong(SecurityActions.getSystemProperty("jboss.as.domain.ping.timeout", "30000"));
+            timeout = Long.parseLong(WildFlySecurityManager.getPropertyPrivileged("jboss.as.domain.ping.timeout", "30000"));
         } catch (Exception e) {
             // TODO log
         } finally {
@@ -106,6 +109,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
     private final ScheduledExecutorService scheduledExecutorService;
     private final ManagementPongRequestHandler pongHandler = new ManagementPongRequestHandler();
     private final List<DiscoveryOption> discoveryOptions;
+    private final RunningMode runningMode;
     private URI uri;
 
     RemoteDomainConnection(final String localHostName, final ModelNode localHostInfo,
@@ -113,7 +117,8 @@ class RemoteDomainConnection extends FutureManagementChannel {
                            final String username, final List<DiscoveryOption> discoveryOptions,
                            final ExecutorService executorService,
                            final ScheduledExecutorService scheduledExecutorService,
-                           final HostRegistrationCallback callback) {
+                           final HostRegistrationCallback callback,
+                           final RunningMode runningMode) {
         this.callback = callback;
         this.localHostName = localHostName;
         this.localHostInfo = localHostInfo;
@@ -124,6 +129,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
         this.executorService = executorService;
         this.channelHandler = new ManagementChannelHandler(this, executorService);
         this.scheduledExecutorService = scheduledExecutorService;
+        this.runningMode = runningMode;
         this.connectionManager = ProtocolConnectionManager.create(new InitialConnectTask());
     }
 
@@ -162,21 +168,19 @@ class RemoteDomainConnection extends FutureManagementChannel {
 
     @Override
     public void close() throws IOException {
-        synchronized (this) {
-            try {
-                if(isConnected()) {
-                    try {
-                        channelHandler.executeRequest(new UnregisterModelControllerRequest(), null).getResult().await();
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            } finally {
+        try {
+            if(prepareClose() && isConnected()) {
                 try {
-                    connectionManager.shutdown();
-                } finally {
-                    super.close();
+                    channelHandler.executeRequest(new UnregisterModelControllerRequest(), null).getResult().await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
+            }
+        } finally {
+            try {
+                super.close();
+            } finally {
+                connectionManager.shutdown();
             }
         }
     }
@@ -218,8 +222,13 @@ class RemoteDomainConnection extends FutureManagementChannel {
             channel.receiveMessage(channelHandler.getReceiver());
             channel.addCloseHandler(channelHandler);
             try {
-                // Start the registration process
-                channelHandler.executeRequest(new RegisterHostControllerRequest(), null).getResult().get();
+                if (runningMode == RunningMode.ADMIN_ONLY) {
+                    // Fetch the domain configuration
+                    channelHandler.executeRequest(new FetchDomainConfigurationRequest(), null).getResult().get();
+                } else {
+                    // Start the registration process
+                    channelHandler.executeRequest(new RegisterHostControllerRequest(), null).getResult().get();
+                }
             } catch (Exception e) {
                 if(e.getCause() instanceof IOException) {
                     throw (IOException) e.getCause();
@@ -234,6 +243,8 @@ class RemoteDomainConnection extends FutureManagementChannel {
     }
 
     protected Future<Connection> reconnect() {
+        // Reset the connection state
+        channelHandler.getAttachments().removeAttachment(TransactionalProtocolClient.SEND_SUBJECT);
         return executorService.submit(new Callable<Connection>() {
             @Override
             public Connection call() throws Exception {
@@ -328,12 +339,9 @@ class RemoteDomainConnection extends FutureManagementChannel {
     /**
       * The host-controller registration request.
       */
-     private class RegisterHostControllerRequest extends AbstractManagementRequest<Void, Void> {
+     private abstract class HostControllerConnectRequest extends AbstractManagementRequest<Void, Void> {
 
-         @Override
-         public byte getOperationType() {
-             return DomainControllerProtocol.REGISTER_HOST_CONTROLLER_REQUEST;
-         }
+         abstract boolean isRegisterOnComplete();
 
          @Override
          protected void sendRequest(final ActiveOperation.ResultHandler<Void> resultHandler, final ManagementRequestContext<Void> context, final FlushableDataOutput output) throws IOException {
@@ -356,22 +364,62 @@ class RemoteDomainConnection extends FutureManagementChannel {
              }
              final ModelNode extensions = new ModelNode();
              extensions.readExternal(input);
+             // Enable the send subject
+             if (context.getRequestHeader().getVersion() != 1) {
+                 channelHandler.getAttachments().attach(TransactionalProtocolClient.SEND_SUBJECT, Boolean.TRUE);
+             }
              context.executeAsync(new ManagementRequestContext.AsyncTask<Void>() {
                  @Override
                  public void execute(ManagementRequestContext<Void> voidManagementRequestContext) throws Exception {
                      //
                      final ModelNode subsystems = resolveSubsystemVersions(extensions);
-                     channelHandler.executeRequest(context.getOperationId(), new RegisterSubsystemsRequest(subsystems));
+                     channelHandler.executeRequest(context.getOperationId(),
+                             new RegisterSubsystemsRequest(subsystems, isRegisterOnComplete()));
                  }
              });
          }
      }
 
+    /**
+     * The host-controller registration request.
+     */
+    private class RegisterHostControllerRequest extends HostControllerConnectRequest {
+
+        @Override
+        public byte getOperationType() {
+            return DomainControllerProtocol.REGISTER_HOST_CONTROLLER_REQUEST;
+        }
+
+        @Override
+        boolean isRegisterOnComplete() {
+            return true;
+        }
+    }
+
+    /**
+     * The host-controller fetch domain config request.
+     */
+    private class FetchDomainConfigurationRequest extends HostControllerConnectRequest {
+
+        @Override
+        public byte getOperationType() {
+            return DomainControllerProtocol.FETCH_DOMAIN_CONFIGURATION_REQUEST;
+        }
+
+        @Override
+        boolean isRegisterOnComplete() {
+            return false;
+        }
+    }
+
      private class RegisterSubsystemsRequest extends AbstractManagementRequest<Void, Void> {
 
          private final ModelNode subsystems;
-         private RegisterSubsystemsRequest(ModelNode subsystems) {
+         private final boolean registerOnCompletion;
+
+         private RegisterSubsystemsRequest(ModelNode subsystems, boolean registerOnCompletion) {
              this.subsystems = subsystems;
+             this.registerOnCompletion = registerOnCompletion;
          }
 
          @Override
@@ -402,12 +450,21 @@ class RemoteDomainConnection extends FutureManagementChannel {
                  public void execute(ManagementRequestContext<Void> voidManagementRequestContext) throws Exception {
                      // Apply the domain model
                      final boolean success = applyDomainModel(domainModel);
-                     if(success) {
-                         channelHandler.executeRequest(context.getOperationId(), new CompleteRegistrationRequest(DomainControllerProtocol.PARAM_OK));
+                     if (registerOnCompletion) {
+                         if(success) {
+                             channelHandler.executeRequest(context.getOperationId(), new CompleteRegistrationRequest(DomainControllerProtocol.PARAM_OK));
+                         } else {
+                             channelHandler.executeRequest(context.getOperationId(), new CompleteRegistrationRequest(DomainControllerProtocol.PARAM_ERROR));
+                             resultHandler.failed(new SlaveRegistrationException(SlaveRegistrationException.ErrorCode.UNKNOWN, ""));
+                         }
                      } else {
-                         channelHandler.executeRequest(context.getOperationId(), new CompleteRegistrationRequest(DomainControllerProtocol.PARAM_ERROR));
-                         resultHandler.failed(new SlaveRegistrationException(SlaveRegistrationException.ErrorCode.UNKNOWN, ""));
+                         if (success) {
+                             throw new UnsupportedOperationException("TODO");
+                         } else {
+                             resultHandler.failed(new SlaveRegistrationException(SlaveRegistrationException.ErrorCode.UNKNOWN, ""));
+                         }
                      }
+
                  }
              });
          }

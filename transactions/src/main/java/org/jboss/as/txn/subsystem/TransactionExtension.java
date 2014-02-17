@@ -22,7 +22,11 @@
 
 package org.jboss.as.txn.subsystem;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.txn.TransactionLogger.ROOT_LOGGER;
+
+import java.util.Map;
 
 import javax.management.MBeanServer;
 
@@ -69,14 +73,14 @@ public class TransactionExtension implements Extension {
 
     private static final String RESOURCE_NAME = TransactionExtension.class.getPackage().getName() + ".LocalDescriptions";
 
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
     private static final ServiceName MBEAN_SERVER_SERVICE_NAME = ServiceName.JBOSS.append("mbean", "server");
     static final PathElement LOG_STORE_PATH = PathElement.pathElement(LogStoreConstants.LOG_STORE, LogStoreConstants.LOG_STORE);
     static final PathElement SUBSYSTEM_PATH = PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME);
-    static final PathElement PARTECIPANT_PATH = PathElement.pathElement(LogStoreConstants.PARTICIPANTS);
+    static final PathElement PARTICIPANT_PATH = PathElement.pathElement(LogStoreConstants.PARTICIPANTS);
     static final PathElement TRANSACTION_PATH = PathElement.pathElement(LogStoreConstants.TRANSACTIONS);
 
 
@@ -134,7 +138,7 @@ public class TransactionExtension implements Extension {
             transactionChild.registerSubModel(LogStoreTransactionParticipantDefinition.INSTANCE);
         }
 
-        subsystem.registerXMLElementWriter(TransactionSubsystem13Parser.INSTANCE);
+        subsystem.registerXMLElementWriter(TransactionSubsystemXMLPersister.INSTANCE);
 
         if (context.isRegisterTransformers()) {
             // Register the model transformers
@@ -150,6 +154,8 @@ public class TransactionExtension implements Extension {
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.TRANSACTIONS_1_1.getUriString(), TransactionSubsystem11Parser.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.TRANSACTIONS_1_2.getUriString(), TransactionSubsystem12Parser.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.TRANSACTIONS_1_3.getUriString(), TransactionSubsystem13Parser.INSTANCE);
+        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.TRANSACTIONS_1_4.getUriString(), TransactionSubsystem14Parser.INSTANCE);
+        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.TRANSACTIONS_2_0.getUriString(), TransactionSubsystem20Parser.INSTANCE);
     }
 
     // Transformation
@@ -162,8 +168,28 @@ public class TransactionExtension implements Extension {
     private static void registerTransformers(final SubsystemRegistration subsystem) {
 
         final ResourceTransformationDescriptionBuilder subsystemRoot = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+        final ResourceTransformationDescriptionBuilder subsystemRoot120 = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+
+        //Versions < 1.3.0 assume 'true' for the hornetq-store-enable-async-io attribute (in which case it will look for the native libs
+        //and enable async io if found. The default value if not defined is 'false' though. This should only be rejected if use-hornetq-store is not false.
+        subsystemRoot120.getAttributeBuilder()
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, false, new ModelNode(false)),
+                        TransactionSubsystemRootResourceDefinition.PROCESS_ID_UUID)
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, false, new ModelNode(true)),
+                        TransactionSubsystemRootResourceDefinition.HORNETQ_STORE_ENABLE_ASYNC_IO)
+                .addRejectCheck(RejectHornetQStoreAsyncIOChecker.INSTANCE, TransactionSubsystemRootResourceDefinition.HORNETQ_STORE_ENABLE_ASYNC_IO)
+                // Legacy name for enabling/disabling statistics
+                .addRename(TransactionSubsystemRootResourceDefinition.STATISTICS_ENABLED, CommonAttributes.ENABLE_STATISTICS);
+
+
+        final ModelVersion version120 = ModelVersion.create(1, 2, 0);
+        final TransformationDescription description120 = subsystemRoot120.build();
+        TransformationDescription.Tools.register(description120, subsystem, version120);
 
         subsystemRoot.getAttributeBuilder()
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, false, new ModelNode(true)),
+                        TransactionSubsystemRootResourceDefinition.HORNETQ_STORE_ENABLE_ASYNC_IO)
+                .addRejectCheck(RejectHornetQStoreAsyncIOChecker.INSTANCE, TransactionSubsystemRootResourceDefinition.HORNETQ_STORE_ENABLE_ASYNC_IO)
                 .setDiscard(UnneededJDBCStoreChecker.INSTANCE, TransactionSubsystemRootResourceDefinition.attributes_1_2)
                 .addRejectCheck(RejectAttributeChecker.DEFINED, TransactionSubsystemRootResourceDefinition.attributes_1_2)
                 .setValueConverter(new AttributeConverter() {
@@ -178,7 +204,9 @@ public class TransactionExtension implements Extension {
                             attributeValue.set(false);
                         }
                     }
-                }, TransactionSubsystemRootResourceDefinition.PROCESS_ID_UUID);
+                }, TransactionSubsystemRootResourceDefinition.PROCESS_ID_UUID)
+                // Legacy name for enabling/disabling statistics
+                .addRename(TransactionSubsystemRootResourceDefinition.STATISTICS_ENABLED, CommonAttributes.ENABLE_STATISTICS);
 
         // Transformations to the 1.1.1 Model:
         // 1) Remove JDBC store attributes if not used
@@ -204,6 +232,8 @@ public class TransactionExtension implements Extension {
         final TransformationDescription description110 = subsystemRoot.build();
         TransformationDescription.Tools.register(description110, subsystem, version110);
     }
+
+
 
     private static class UnneededJDBCStoreChecker implements DiscardAttributeChecker {
 
@@ -247,6 +277,49 @@ public class TransactionExtension implements Extension {
             }
             return true;
         }
-
     }
+
+    private static class RejectHornetQStoreAsyncIOChecker extends RejectAttributeChecker.DefaultRejectAttributeChecker {
+        static final RejectHornetQStoreAsyncIOChecker INSTANCE = new RejectHornetQStoreAsyncIOChecker();
+
+        @Override
+        public String getRejectionLogMessage(Map<String, ModelNode> attributes) {
+            return TransactionMessages.MESSAGES.transformHornetQStoreEnableAsyncIoMustBeTrue();
+        }
+
+        @Override
+        public boolean rejectOperationParameter(PathAddress address, String attributeName, ModelNode attributeValue,
+                ModelNode operation, TransformationContext context) {
+            if (operation.get(OP).asString().equals(ADD)) {
+                return rejectCheck(address, attributeName, attributeValue, operation);
+            }
+            return rejectResourceAttribute(address, attributeName, attributeValue, context);
+        }
+
+        @Override
+        public boolean rejectResourceAttribute(PathAddress address, String attributeName, ModelNode attributeValue,
+                TransformationContext context) {
+            return rejectCheck(address, attributeName, attributeValue, context.readResourceFromRoot(address).getModel());
+        }
+
+        protected boolean rejectCheck(PathAddress address, String attributeName, ModelNode attributeValue,
+                ModelNode model) {
+            //Will not get called if it was discarded
+            if (!attributeValue.isDefined() || !attributeValue.asString().equals("true")) {
+                //If use-hornetq-store is undefined or false, don't reject
+                if (model.hasDefined(TransactionSubsystemRootResourceDefinition.USEHORNETQSTORE.getName())) {
+                    return !model.get(TransactionSubsystemRootResourceDefinition.USEHORNETQSTORE.getName()).asString().equals("false");
+                }
+            }
+            return false;
+        }
+
+        @Override
+        protected boolean rejectAttribute(PathAddress address, String attributeName, ModelNode attributeValue,
+                TransformationContext context) {
+            //will not get called since we've overridden the other methods
+            return false;
+        }
+    }
+
 }

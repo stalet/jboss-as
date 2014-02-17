@@ -11,7 +11,7 @@ DIRNAME=`dirname "$0"`
 # OS specific support (must be 'true' or 'false').
 cygwin=false;
 if  [ `uname|grep -i CYGWIN` ]; then
-    cygwin = true;
+    cygwin=true;
 fi
 
 # For Cygwin, ensure paths are in UNIX format before anything is touched
@@ -62,6 +62,8 @@ fi
 #JAVA_OPTS="$JAVA_OPTS -agentlib:jdwp=transport=dt_socket,address=8787,server=y,suspend=y"
 # Uncomment to override standalone and domain user location  
 #JAVA_OPTS="$JAVA_OPTS -Djboss.server.config.user.dir=../standalone/configuration -Djboss.domain.config.user.dir=../domain/configuration"
+
+JAVA_OPTS="$JAVA_OPTS"
 
 eval \"$JAVA\" $JAVA_OPTS \
          -jar \"$JBOSS_HOME/jboss-modules.jar\" \

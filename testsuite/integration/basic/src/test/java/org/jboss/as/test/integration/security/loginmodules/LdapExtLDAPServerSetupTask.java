@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2013, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.test.integration.security.loginmodules;
 
 import java.io.File;
@@ -12,6 +34,10 @@ import java.util.Map;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.text.StrSubstitutor;
+import org.apache.directory.api.ldap.model.entry.DefaultEntry;
+import org.apache.directory.api.ldap.model.ldif.LdifEntry;
+import org.apache.directory.api.ldap.model.ldif.LdifReader;
+import org.apache.directory.api.ldap.model.schema.SchemaManager;
 import org.apache.directory.server.annotations.CreateLdapServer;
 import org.apache.directory.server.annotations.CreateTransport;
 import org.apache.directory.server.core.annotations.AnnotationUtils;
@@ -24,10 +50,6 @@ import org.apache.directory.server.core.factory.DSAnnotationProcessor;
 import org.apache.directory.server.core.kerberos.KeyDerivationInterceptor;
 import org.apache.directory.server.factory.ServerAnnotationProcessor;
 import org.apache.directory.server.ldap.LdapServer;
-import org.apache.directory.shared.ldap.model.entry.DefaultEntry;
-import org.apache.directory.shared.ldap.model.ldif.LdifEntry;
-import org.apache.directory.shared.ldap.model.ldif.LdifReader;
-import org.apache.directory.shared.ldap.model.schema.SchemaManager;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.http.message.BasicNameValuePair;
@@ -38,7 +60,7 @@ import org.jboss.as.test.integration.security.common.AbstractSystemPropertiesSer
 import org.jboss.as.test.integration.security.common.ManagedCreateLdapServer;
 import org.jboss.as.test.integration.security.common.ManagedCreateTransport;
 import org.jboss.as.test.integration.security.common.Utils;
-import org.jboss.as.test.integration.security.loginmodules.common.servlets.RolePrintingServlet;
+import org.jboss.as.test.integration.security.common.servlets.RolePrintingServlet;
 import org.jboss.logging.Logger;
 
 /**
@@ -58,8 +80,8 @@ public class LdapExtLDAPServerSetupTask implements ServerSetupTask {
     static final int LDAP_PORT2 = 11389;
     static final int LDAPS_PORT = 10636;
 
-    static final String[] ROLE_NAMES = { "TheDuke", "Echo", "TheDuke2", "Echo2", "JBossAdmin", "jduke", "jduke2", "RG1", "RG2",
-            "RG3", "R1", "R2", "R3", "R4", "R5", "Roles", "User", "Admin", "SharedRoles" };
+    static final String[] ROLE_NAMES = { "TheDuke", "Echo", "TheDuke2", "Echo2", "JBossAdmin", "jduke", "jduke2", "RG1",
+            "RG/2", "RG3", "R1", "R2", "R3", "R4", "R5", "Roles", "User", "Admin", "SharedRoles", "RX" };
 
     static final String QUERY_ROLES;
     static {
@@ -77,7 +99,7 @@ public class LdapExtLDAPServerSetupTask implements ServerSetupTask {
 
     /**
      * Creates directory services, starts LDAP server and KDCServer
-     * 
+     *
      * @param managementClient
      * @param containerId
      * @throws Exception
@@ -149,6 +171,7 @@ public class LdapExtLDAPServerSetupTask implements ServerSetupTask {
         fixTransportAddress(createLdapServer, hostname);
         ldapServer1 = ServerAnnotationProcessor.instantiateLdapServer(createLdapServer, directoryService1);
         ldapServer1.start();
+        LOGGER.info("ldapServer1 = " + ldapServer1);
     }
 
     //@formatter:off
@@ -197,11 +220,12 @@ public class LdapExtLDAPServerSetupTask implements ServerSetupTask {
         fixTransportAddress(createLdapServer, hostname);
         ldapServer2 = ServerAnnotationProcessor.instantiateLdapServer(createLdapServer, directoryService2);
         ldapServer2.start();
+        LOGGER.info("ldapServer2 = " + ldapServer2);
     }
 
     /**
      * Fixes bind address in the CreateTransport annotation.
-     * 
+     *
      * @param createLdapServer
      */
     private void fixTransportAddress(ManagedCreateLdapServer createLdapServer, String address) {
@@ -215,7 +239,7 @@ public class LdapExtLDAPServerSetupTask implements ServerSetupTask {
 
     /**
      * Stops LDAP server and KDCServer and shuts down the directory service.
-     * 
+     *
      * @param managementClient
      * @param containerId
      * @throws Exception

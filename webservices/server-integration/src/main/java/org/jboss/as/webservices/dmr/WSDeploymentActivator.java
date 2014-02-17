@@ -30,12 +30,15 @@ import org.jboss.as.server.DeploymentProcessorTarget;
 import org.jboss.as.server.deployment.Phase;
 import org.jboss.as.webservices.deployers.AspectDeploymentProcessor;
 import org.jboss.as.webservices.deployers.JBossWebservicesDescriptorDeploymentProcessor;
+import org.jboss.as.webservices.deployers.WSClassVerificationProcessor;
 import org.jboss.as.webservices.deployers.WSDependenciesProcessor;
 import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXWS_EJB;
 import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXWS_HANDLER;
 import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXWS_JMS;
 import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXWS_POJO;
+import org.jboss.as.webservices.deployers.WSLibraryFilterProcessor;
 import org.jboss.as.webservices.deployers.WSModelDeploymentProcessor;
+import org.jboss.as.webservices.deployers.WSServiceDependenciesProcessor;
 import org.jboss.as.webservices.deployers.WebServicesContextJndiSetupProcessor;
 import org.jboss.as.webservices.deployers.WebservicesDescriptorDeploymentProcessor;
 import org.jboss.as.webservices.deployers.deployment.DeploymentAspectsProvider;
@@ -55,6 +58,7 @@ final class WSDeploymentActivator {
         processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_WS_REF_ANNOTATION, new WSRefAnnotationProcessor());
         if (!appclient) {
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_WEBSERVICES_CONTEXT_INJECTION, new WebServicesContextJndiSetupProcessor());
+            processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_WEBSERVICES_LIBRARY_FILTER, new WSLibraryFilterProcessor());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_WEBSERVICES_XML, new WebservicesDescriptorDeploymentProcessor());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JBOSS_WEBSERVICES_XML, new JBossWebservicesDescriptorDeploymentProcessor());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JAXWS_EJB_INTEGRATION, new WSIntegrationProcessorJAXWS_EJB());
@@ -63,6 +67,8 @@ final class WSDeploymentActivator {
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JAXWS_ENDPOINT_CREATE_COMPONENT_DESCRIPTIONS, new WSIntegrationProcessorJAXWS_POJO());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JAXWS_HANDLER_CREATE_COMPONENT_DESCRIPTIONS, new WSIntegrationProcessorJAXWS_HANDLER());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_WS, new WSDependenciesProcessor());
+            processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_WS_SERVICES_DEPS, new WSServiceDependenciesProcessor());
+            processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_WS_VERIFICATION, new WSClassVerificationProcessor());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_WS_UNIVERSAL_META_DATA_MODEL, new WSModelDeploymentProcessor());
             addDeploymentProcessors(processorTarget, Phase.INSTALL, Phase.INSTALL_WS_DEPLOYMENT_ASPECTS);
         }

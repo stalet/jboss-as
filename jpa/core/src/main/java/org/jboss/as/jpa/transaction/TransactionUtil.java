@@ -22,13 +22,10 @@
 
 package org.jboss.as.jpa.transaction;
 
-import static org.jboss.as.jpa.JpaLogger.JPA_LOGGER;
-import static org.jboss.as.jpa.JpaMessages.MESSAGES;
-
-import java.util.Map;
+import static org.jboss.as.jpa.messages.JpaLogger.JPA_LOGGER;
+import static org.jboss.as.jpa.messages.JpaMessages.MESSAGES;
 
 import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
 import javax.transaction.Status;
 import javax.transaction.Synchronization;
 import javax.transaction.SystemException;
@@ -36,7 +33,6 @@ import javax.transaction.Transaction;
 import javax.transaction.TransactionManager;
 import javax.transaction.TransactionSynchronizationRegistry;
 
-import org.jboss.as.jpa.container.EntityManagerUtil;
 import org.jboss.as.jpa.container.ExtendedEntityManager;
 import org.jboss.tm.TxUtils;
 
@@ -49,7 +45,6 @@ public class TransactionUtil {
 
     private static volatile TransactionSynchronizationRegistry transactionSynchronizationRegistry;
     private static volatile TransactionManager transactionManager;
-    private static final String ARJUNA_REAPER_THREAD_NAME = "Transaction Reaper Worker";
 
     public static void setTransactionManager(TransactionManager tm) {
         if (transactionManager == null) {
@@ -84,7 +79,6 @@ public class TransactionUtil {
      */
     public static void registerExtendedUnderlyingWithTransaction(String scopedPuName, EntityManager xpc, EntityManager underlyingEntityManager) {
         // xpc invoked this method, we cannot call xpc because it will recurse back to here, join with underloying em instead
-        registerSynchronization(xpc, scopedPuName, false);
         underlyingEntityManager.joinTransaction();
         putEntityManagerInTransactionRegistry(scopedPuName, xpc);
     }
@@ -99,39 +93,11 @@ public class TransactionUtil {
         return getEntityManagerInTransactionRegistry(puScopedName);
     }
 
-    /**
-     * Get current PC or create a Transactional entity manager.
-     * Only call while a transaction is active in the current thread.
-     *
-     * @param emf
-     * @param scopedPuName
-     * @param properties
-     * @return
-     */
-    public static EntityManager getOrCreateTransactionScopedEntityManager(EntityManagerFactory emf, String scopedPuName, Map properties) {
-        EntityManager entityManager = getEntityManagerInTransactionRegistry(scopedPuName);
-        if (entityManager == null) {
-            entityManager = EntityManagerUtil.createEntityManager(emf, properties);
-            if (JPA_LOGGER.isDebugEnabled())
-                JPA_LOGGER.debugf("%s: created entity manager session %s", getEntityManagerDetails(entityManager),
-                    getTransaction().toString());
-            boolean autoCloseEntityManager = true;
-            registerSynchronization(entityManager, scopedPuName, autoCloseEntityManager);
-            putEntityManagerInTransactionRegistry(scopedPuName, entityManager);
-        } else {
-            if (JPA_LOGGER.isDebugEnabled()) {
-                JPA_LOGGER.debugf("%s: reuse entity manager session already in tx %s", getEntityManagerDetails(entityManager),
-                    getTransaction().toString());
-            }
-        }
-        return entityManager;
+    public static void registerSynchronization(EntityManager entityManager, String puScopedName) {
+        getTransactionSynchronizationRegistry().registerInterposedSynchronization(new SessionSynchronization(entityManager, puScopedName));
     }
 
-    private static void registerSynchronization(EntityManager entityManager, String puScopedName, boolean closeEMAtTxEnd) {
-        getTransactionSynchronizationRegistry().registerInterposedSynchronization(new SessionSynchronization(entityManager, closeEMAtTxEnd, puScopedName));
-    }
-
-    private static Transaction getTransaction() {
+    public static Transaction getTransaction() {
         try {
             return transactionManager.getTransaction();
         } catch (SystemException e) {
@@ -148,7 +114,7 @@ public class TransactionUtil {
         return Thread.currentThread().getName();
     }
 
-    private static String getEntityManagerDetails(EntityManager manager) {
+    public static String getEntityManagerDetails(EntityManager manager) {
         String result = currentThread() + ":";  // show the thread for correlation with other modules
         if (manager instanceof ExtendedEntityManager) {
             result += manager.toString();
@@ -159,8 +125,9 @@ public class TransactionUtil {
         return result;
     }
 
+
     private static EntityManager getEntityManagerInTransactionRegistry(String scopedPuName) {
-        return (EntityManager) getTransactionSynchronizationRegistry().getResource(scopedPuName);
+        return (EntityManager)getTransactionSynchronizationRegistry().getResource(scopedPuName);
     }
 
     /**
@@ -170,18 +137,16 @@ public class TransactionUtil {
      * @param scopedPuName
      * @param entityManager
      */
-    private static void putEntityManagerInTransactionRegistry(String scopedPuName, EntityManager entityManager) {
+    public static void putEntityManagerInTransactionRegistry(String scopedPuName, EntityManager entityManager) {
         getTransactionSynchronizationRegistry().putResource(scopedPuName, entityManager);
     }
 
     private static class SessionSynchronization implements Synchronization {
         private EntityManager manager;  // the underlying entity manager
-        private boolean closeAtTxCompletion;
         private String scopedPuName;
 
-        public SessionSynchronization(EntityManager session, boolean close, String scopedPuName) {
+        public SessionSynchronization(EntityManager session, String scopedPuName) {
             this.manager = session;
-            closeAtTxCompletion = close;
             this.scopedPuName = scopedPuName;
         }
 
@@ -196,7 +161,7 @@ public class TransactionUtil {
              * referencing the EntityManager, it will be eligible for garbage collection.
              * See AS7-6586 for more details.
              */
-            if (closeAtTxCompletion && safeToClose(status)) {
+            if (safeToClose(status)) {
                 try {
                     if (JPA_LOGGER.isDebugEnabled())
                         JPA_LOGGER.debugf("%s: closing entity managersession", getEntityManagerDetails(manager));
@@ -222,14 +187,11 @@ public class TransactionUtil {
          * @return
          */
         private boolean safeToClose(int status) {
-            boolean isItSafe = true;
             if (Status.STATUS_COMMITTED != status) {
-                String currentThreadName = currentThread();
-                boolean isBackgroundReaperThread = currentThreadName != null &&
-                        currentThreadName.startsWith(ARJUNA_REAPER_THREAD_NAME);
-                isItSafe = !isBackgroundReaperThread;
+                return !TxUtils.isTransactionManagerTimeoutThread();
             }
-            return isItSafe;
+
+            return true;
         }
     }
 

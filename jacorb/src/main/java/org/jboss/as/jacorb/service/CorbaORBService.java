@@ -24,9 +24,9 @@ package org.jboss.as.jacorb.service;
 
 import java.net.InetSocketAddress;
 import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 import org.jboss.as.jacorb.JacORBLogger;
 import org.jboss.as.jacorb.JacORBSubsystemConstants;
@@ -44,6 +44,7 @@ import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.omg.CORBA.ORB;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * <p>
@@ -87,8 +88,8 @@ public class CorbaORBService implements Service<ORB> {
             // set the ORBClass and ORBSingleton class as system properties.
             properties.setProperty(JacORBSubsystemConstants.ORB_CLASS, JacORBSubsystemConstants.JACORB_ORB_CLASS);
             properties.setProperty(JacORBSubsystemConstants.ORB_SINGLETON_CLASS, JacORBSubsystemConstants.JacORB_ORB_SINGLETON_CLASS);
-            SecurityActions.setSystemProperty(JacORBSubsystemConstants.ORB_CLASS, JacORBSubsystemConstants.JACORB_ORB_CLASS);
-            SecurityActions.setSystemProperty(JacORBSubsystemConstants.ORB_SINGLETON_CLASS, JacORBSubsystemConstants.JacORB_ORB_SINGLETON_CLASS);
+            WildFlySecurityManager.setPropertyPrivileged(JacORBSubsystemConstants.ORB_CLASS, JacORBSubsystemConstants.JACORB_ORB_CLASS);
+            WildFlySecurityManager.setPropertyPrivileged(JacORBSubsystemConstants.ORB_SINGLETON_CLASS, JacORBSubsystemConstants.JacORB_ORB_SINGLETON_CLASS);
 
             // set the JacORB IIOP and IIOP/SSL ports from the respective socket bindings.
             if (this.jacORBSocketBindingInjector.getValue() != null) {
@@ -118,15 +119,15 @@ public class CorbaORBService implements Service<ORB> {
             }
 
             // initialize the ORB - the thread context classloader needs to be adjusted as the ORB classes are loaded via reflection.
-            ClassLoader loader = SecurityActions.getThreadContextClassLoader();
+            ClassLoader loader = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
             try {
-                SecurityActions.setThreadContextClassLoader(SecurityActions.getClassLoader(this.getClass()));
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(WildFlySecurityManager.getClassLoaderPrivileged(this.getClass()));
                 this.orb = ORB.init(new String[0], properties);
                 // initialize the ORBSingleton.
                 ORB.init();
             } finally {
                 // restore the thread context classloader.
-                SecurityActions.setThreadContextClassLoader(loader);
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(loader);
             }
 
             // start the ORB in a separate thread.
@@ -149,9 +150,14 @@ public class CorbaORBService implements Service<ORB> {
     public void stop(StopContext context) {
         JacORBLogger.ROOT_LOGGER.debugServiceStop(context.getController().getName().getCanonicalName());
         // stop the ORB asynchronously.
-        context.asynchronous();
-        ORBDestroyer destroyer = new ORBDestroyer(this.orb, context);
-        executorInjector.getValue().execute(destroyer);
+        final ORBDestroyer destroyer = new ORBDestroyer(this.orb, context);
+        try {
+            executorInjector.getValue().execute(destroyer);
+        } catch (RejectedExecutionException e) {
+            destroyer.run();
+        } finally {
+            context.asynchronous();
+        }
     }
 
     @Override
@@ -264,11 +270,9 @@ public class CorbaORBService implements Service<ORB> {
 
 
     private static ServiceContainer currentServiceContainer() {
-        return AccessController.doPrivileged(new PrivilegedAction<ServiceContainer>() {
-            @Override
-            public ServiceContainer run() {
-                return CurrentServiceContainer.getServiceContainer();
-            }
-        });
+        if(System.getSecurityManager() == null) {
+            return CurrentServiceContainer.getServiceContainer();
+        }
+        return AccessController.doPrivileged(CurrentServiceContainer.GET_ACTION);
     }
 }

@@ -22,19 +22,20 @@
 package org.jboss.as.clustering.jgroups.subsystem;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
-import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
-import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
+import org.jboss.as.controller.access.AuthorizationResult;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
 import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.ModelType;
 import org.jboss.dmr.Property;
 
 /**
@@ -56,14 +57,21 @@ public class JGroupsSubsystemDescribe implements OperationStepHandler {
     @Override
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
         final ModelNode result = new ModelNode();
-        final PathAddress rootAddress = PathAddress.pathAddress(PathAddress.pathAddress(
-                operation.require(ModelDescriptionConstants.OP_ADDR)).getLastElement());
+        PathAddress opAddress = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
+
+        AuthorizationResult authResult = context.authorize(operation, GenericSubsystemDescribeHandler.DESCRIBE_EFFECTS);
+        if (authResult.getDecision() != AuthorizationResult.Decision.PERMIT) {
+            throw ControllerMessages.MESSAGES.unauthorized(operation.require(OP).asString(),
+                    opAddress, authResult.getExplanation());
+        }
+
+        final PathAddress rootAddress = PathAddress.pathAddress(opAddress.getLastElement());
         final ModelNode subModel = Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS));
 
         result.add(JGroupsSubsystemAdd.createOperation(rootAddress.toModelNode(), subModel));
 
         if (subModel.hasDefined(ModelKeys.STACK)) {
-            for (final Property stack : subModel.get(ModelKeys.STACK).asPropertyList()) {
+            for (final Property stack: subModel.get(ModelKeys.STACK).asPropertyList()) {
                 // process one stack
                 final ModelNode stackAddress = rootAddress.toModelNode();
                 stackAddress.add(ModelKeys.STACK, stack.getName());
@@ -77,18 +85,34 @@ public class JGroupsSubsystemDescribe implements OperationStepHandler {
                     ModelNode transportAddress = stackAddress.clone();
                     transportAddress.add(ModelKeys.TRANSPORT, ModelKeys.TRANSPORT_NAME);
                     // no optional transport:add parameters will be present, so use attributes list
-                    result.add(createOperation(transportAddress, transport,TransportResource.TRANSPORT_ATTRIBUTES));
+                    result.add(createOperation(transportAddress, transport, TransportResourceDefinition.TRANSPORT_ATTRIBUTES));
                     addProtocolPropertyCommands(transport, transportAddress, result);
                 }
                 // protocol=*
                 if (stack.getValue().get(ModelKeys.PROTOCOL).isDefined()) {
                     for (Property protocol : ProtocolStackAdd.getOrderedProtocolPropertyList(stack.getValue())) {
                         // no optional transport:add parameters will be present, so use attributes list
-                        result.add(createProtocolOperation(ProtocolResource.PROTOCOL_ATTRIBUTES, stackAddress,
+                        result.add(createProtocolOperation(ProtocolResourceDefinition.PROTOCOL_ATTRIBUTES, stackAddress,
                                 protocol.getValue()));
                         ModelNode protocolAddress = stackAddress.clone();
                         protocolAddress.add(ModelKeys.PROTOCOL, protocol.getName());
                         addProtocolPropertyCommands(protocol.getValue(), protocolAddress, result);
+                    }
+                }
+                // relay=RELAY
+                if (stack.getValue().get(ModelKeys.RELAY, ModelKeys.RELAY_NAME).isDefined()) {
+                    ModelNode relay = stack.getValue().get(ModelKeys.RELAY, ModelKeys.RELAY_NAME);
+                    ModelNode relayAddress = stackAddress.clone();
+                    relayAddress.add(ModelKeys.RELAY, ModelKeys.RELAY_NAME);
+                    result.add(createOperation(relayAddress, relay, RelayResource.ATTRIBUTES));
+                    addProtocolPropertyCommands(relay, relayAddress, result);
+                    // remote-site=*
+                    if (relay.get(ModelKeys.REMOTE_SITE).isDefined()) {
+                        for (final Property remoteSite: relay.get(ModelKeys.REMOTE_SITE).asPropertyList()) {
+                            ModelNode remoteSiteAddress = relayAddress.clone().add(ModelKeys.REMOTE_SITE, remoteSite.getName());
+                            // no optional transport:add parameters will be present, so use attributes list
+                            result.add(createOperation(remoteSiteAddress, remoteSite.getValue(), RemoteSiteResource.ATTRIBUTES));
+                        }
                     }
                 }
             }
@@ -102,7 +126,7 @@ public class JGroupsSubsystemDescribe implements OperationStepHandler {
         if (protocol.hasDefined(ModelKeys.PROPERTY)) {
             for (Property property : protocol.get(ModelKeys.PROPERTY).asPropertyList()) {
                 ModelNode propertyAddress = address.clone().add(ModelKeys.PROPERTY, property.getName());
-                result.add(createOperation(propertyAddress, property.getValue(),PropertyResource.VALUE));
+                result.add(createOperation(propertyAddress, property.getValue(), PropertyResourceDefinition.VALUE));
             }
         }
     }
@@ -122,10 +146,4 @@ public class JGroupsSubsystemDescribe implements OperationStepHandler {
         }
         return operation;
     }
-
-    /*
-     * Description provider for the subsystem describe handler
-     */
-    static OperationDefinition DEFINITON = new SimpleOperationDefinitionBuilder(ModelDescriptionConstants.DESCRIBE, null)
-            .setPrivateEntry().setReplyType(ModelType.LIST).setReplyValueType(ModelType.OBJECT).build();
 }

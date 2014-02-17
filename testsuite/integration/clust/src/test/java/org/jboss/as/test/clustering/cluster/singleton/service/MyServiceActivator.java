@@ -24,15 +24,14 @@ package org.jboss.as.test.clustering.cluster.singleton.service;
 
 import static org.jboss.as.test.clustering.ClusteringTestConstants.NODE_2;
 
-import org.jboss.as.clustering.singleton.SingletonService;
-import org.jboss.as.clustering.singleton.election.NamePreference;
-import org.jboss.as.clustering.singleton.election.PreferredSingletonElectionPolicy;
-import org.jboss.as.clustering.singleton.election.SimpleSingletonElectionPolicy;
+import org.wildfly.clustering.singleton.SingletonServiceBuilderFactory;
+import org.wildfly.clustering.singleton.election.NamePreference;
+import org.wildfly.clustering.singleton.election.PreferredSingletonElectionPolicy;
+import org.wildfly.clustering.singleton.election.SimpleSingletonElectionPolicy;
 import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.ServerEnvironmentService;
 import org.jboss.msc.service.ServiceActivator;
 import org.jboss.msc.service.ServiceActivatorContext;
-import org.jboss.logging.Logger;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.value.InjectedValue;
@@ -42,22 +41,25 @@ import org.jboss.msc.value.InjectedValue;
  */
 public class MyServiceActivator implements ServiceActivator {
 
-    private static final Logger log = Logger.getLogger(MyServiceActivator.class);
-
+    private static final String CONTAINER_NAME = "server";
+    private static final String CACHE_NAME = "default";
     public static final String PREFERRED_NODE = NODE_2;
 
     @Override
     public void activate(ServiceActivatorContext context) {
-        this.install(MyService.DEFAULT_SERVICE_NAME, 1, context);
-        this.install(MyService.QUORUM_SERVICE_NAME, 2, context);
+        install(MyService.DEFAULT_SERVICE_NAME, 1, context);
+        install(MyService.QUORUM_SERVICE_NAME, 2, context);
     }
 
-    private void install(ServiceName name, int quorum, ServiceActivatorContext context) {
-        InjectedValue<ServerEnvironment> env = new InjectedValue<ServerEnvironment>();
+    private static void install(ServiceName name, int quorum, ServiceActivatorContext context) {
+        InjectedValue<ServerEnvironment> env = new InjectedValue<>();
         MyService service = new MyService(env);
-        SingletonService<Environment> singleton = new SingletonService<Environment>(service, name, quorum);
-        singleton.setElectionPolicy(new PreferredSingletonElectionPolicy(new SimpleSingletonElectionPolicy(), new NamePreference(PREFERRED_NODE + "/" + SingletonService.DEFAULT_CONTAINER)));
-        singleton.build(context.getServiceTarget())
+        ServiceController<?> factoryService = context.getServiceRegistry().getRequiredService(SingletonServiceBuilderFactory.SERVICE_NAME.append(CONTAINER_NAME, CACHE_NAME));
+        SingletonServiceBuilderFactory factory = (SingletonServiceBuilderFactory) factoryService.getValue();
+        factory.createSingletonServiceBuilder(name, service)
+            .electionPolicy(new PreferredSingletonElectionPolicy(new SimpleSingletonElectionPolicy(), new NamePreference(PREFERRED_NODE + "/" + CONTAINER_NAME)))
+            .requireQuorum(quorum)
+            .build(context.getServiceTarget())
                 .addDependency(ServerEnvironmentService.SERVICE_NAME, ServerEnvironment.class, env)
                 .setInitialMode(ServiceController.Mode.ACTIVE)
                 .install()

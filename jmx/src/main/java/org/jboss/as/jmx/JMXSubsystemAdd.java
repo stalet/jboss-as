@@ -29,6 +29,8 @@ import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
+import org.jboss.as.controller.access.management.JmxAuthorizer;
+import org.jboss.as.controller.audit.ManagedAuditLogger;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
@@ -40,21 +42,27 @@ import org.jboss.msc.service.ServiceController;
  */
 class JMXSubsystemAdd extends AbstractAddStepHandler {
 
-    static final JMXSubsystemAdd INSTANCE = new JMXSubsystemAdd();
+    private final ManagedAuditLogger auditLoggerInfo;
+    private final JmxAuthorizer authorizer;
 
-    private JMXSubsystemAdd() {
-        //
+    JMXSubsystemAdd(ManagedAuditLogger auditLoggerInfo, JmxAuthorizer authorizer) {
+        this.auditLoggerInfo = auditLoggerInfo;
+        this.authorizer = authorizer;
     }
 
-    protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
-        model.setEmptyObject();
+    @Override
+    protected void populateModel(OperationContext context, ModelNode operation, Resource resource)
+            throws OperationFailedException {
+        ModelNode model = resource.getModel();
+        JMXSubsystemRootResource.CORE_MBEAN_SENSITIVITY.validateAndSet(operation, model);
     }
 
     protected void performRuntime(OperationContext context, ModelNode operation, ModelNode model, ServiceVerificationHandler verificationHandler, List<ServiceController<?>> newControllers) throws OperationFailedException {
-        launchServices(context, model, verificationHandler, newControllers);
+        launchServices(context, model, verificationHandler, auditLoggerInfo, authorizer, newControllers);
     }
 
-    void launchServices(OperationContext context, ModelNode model, ServiceVerificationHandler verificationHandler, List<ServiceController<?>> newControllers) throws OperationFailedException {
+    static void launchServices(OperationContext context, ModelNode model, ServiceVerificationHandler verificationHandler,
+                               ManagedAuditLogger auditLoggerInfo, JmxAuthorizer authorizer, List<ServiceController<?>> newControllers) throws OperationFailedException {
         ModelNode recursiveModel = Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS));
         // Add the MBean service
         String resolvedDomain = getDomainName(context, recursiveModel, CommonAttributes.RESOLVED);
@@ -63,16 +71,19 @@ class JMXSubsystemAdd extends AbstractAddStepHandler {
         if (model.hasDefined(CommonAttributes.PROPER_PROPERTY_FORMAT)) {
             legacyWithProperPropertyFormat = ExposeModelResourceExpression.DOMAIN_NAME.resolveModelAttribute(context, recursiveModel).asBoolean();
         }
+        boolean coreMBeanSensitivity = JMXSubsystemRootResource.CORE_MBEAN_SENSITIVITY.resolveModelAttribute(context, recursiveModel).asBoolean();
 
         ServiceController<?> controller = verificationHandler != null ?
-                MBeanServerService.addService(context.getServiceTarget(), resolvedDomain, expressionsDomain, legacyWithProperPropertyFormat, verificationHandler) :
-                    MBeanServerService.addService(context.getServiceTarget(), resolvedDomain, expressionsDomain, legacyWithProperPropertyFormat);
+                MBeanServerService.addService(context.getServiceTarget(), resolvedDomain, expressionsDomain, legacyWithProperPropertyFormat,
+                        coreMBeanSensitivity, auditLoggerInfo, authorizer, verificationHandler) :
+                    MBeanServerService.addService(context.getServiceTarget(), resolvedDomain, expressionsDomain, legacyWithProperPropertyFormat,
+                            coreMBeanSensitivity, auditLoggerInfo, authorizer);
         if (newControllers != null) {
             newControllers.add(controller);
         }
     }
 
-    private String getDomainName(OperationContext context, ModelNode model, String child) throws OperationFailedException {
+    private static String getDomainName(OperationContext context, ModelNode model, String child) throws OperationFailedException {
         if (!model.hasDefined(CommonAttributes.EXPOSE_MODEL)) {
             return null;
         }

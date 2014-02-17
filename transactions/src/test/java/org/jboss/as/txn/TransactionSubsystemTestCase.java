@@ -32,6 +32,7 @@ import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinit
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.DEFAULT_TIMEOUT;
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.ENABLE_STATISTICS;
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.ENABLE_TSM_STATUS;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.HORNETQ_STORE_ENABLE_ASYNC_IO;
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.NODE_IDENTIFIER;
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.OBJECT_STORE_PATH;
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.OBJECT_STORE_RELATIVE_TO;
@@ -40,25 +41,31 @@ import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinit
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.PROCESS_ID_SOCKET_MAX_PORTS;
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.RECOVERY_LISTENER;
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.RELATIVE_TO;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.STATISTICS_ENABLED;
 import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.STATUS_BINDING;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 
+import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.transform.OperationTransformer;
 import org.jboss.as.model.test.FailedOperationTransformationConfig;
+import org.jboss.as.model.test.ModelFixer;
 import org.jboss.as.model.test.ModelTestControllerVersion;
 import org.jboss.as.model.test.ModelTestUtils;
+import org.jboss.as.model.test.SingleClassFilter;
 import org.jboss.as.subsystem.test.AbstractSubsystemBaseTest;
 import org.jboss.as.subsystem.test.AdditionalInitialization;
 import org.jboss.as.subsystem.test.KernelServices;
 import org.jboss.as.subsystem.test.KernelServicesBuilder;
 import org.jboss.as.txn.subsystem.TransactionExtension;
+import org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition;
 import org.jboss.dmr.ModelNode;
 import org.junit.Assert;
 import org.junit.Test;
@@ -80,7 +87,8 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
 
     @Override
     protected void compareXml(String configId, String original, String marshalled) throws Exception {
-        super.compareXml(configId, original, marshalled, true);
+        String transformed = ModelTestUtils.normalizeXML(original.replace("enable-statistics", "statistics-enabled"));
+        super.compareXml(configId, transformed, marshalled, true);
     }
 
     @Test
@@ -114,46 +122,27 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
     }
 
     @Test
-    public void testTransformers110() throws Exception {
-        String subsystemXml = readResource("subsystem.xml");
-        ModelVersion modelVersion = ModelVersion.create(1, 1, 0);
-        //Use the non-runtime version of the extension which will happen on the HC
-        KernelServicesBuilder builder = createKernelServicesBuilder(AdditionalInitialization.MANAGEMENT)
-                .setSubsystemXml(subsystemXml);
-
-        // Add legacy subsystems
-        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_2_FINAL, modelVersion)
-            .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.2.Final");
-
-        KernelServices mainServices = builder.build();
-        KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
-        Assert.assertNotNull(legacyServices);
-
-        checkSubsystemModelTransformation(mainServices, modelVersion);
+    public void testParser_1_3() throws Exception {
+        standardSubsystemTest("full-1.3.xml");
     }
 
     @Test
-    public void testTransformers111() throws Exception {
-        String subsystemXml = readResource("subsystem.xml");
-        ModelVersion modelVersion = ModelVersion.create(1, 1, 1);
-        //Use the non-runtime version of the extension which will happen on the HC
-        KernelServicesBuilder builder = createKernelServicesBuilder(AdditionalInitialization.MANAGEMENT)
-                .setSubsystemXml(subsystemXml);
-
-        // Add legacy subsystems
-        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_3_FINAL, modelVersion)
-                .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.3.Final");
-
-        KernelServices mainServices = builder.build();
-        KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
-        Assert.assertNotNull(legacyServices);
-
-        checkSubsystemModelTransformation(mainServices, modelVersion);
+    public void testAsyncIOExpressions() throws Exception {
+        standardSubsystemTest("async-io-expressions.xml");
     }
 
 
     @Test
-    public void testTransformersFull110() throws Exception {
+    public void testTransformersFullAS712() throws Exception {
+        testTransformersFull110(ModelTestControllerVersion.V7_1_2_FINAL);
+    }
+
+    @Test
+    public void testTransformersFullEAP600() throws Exception {
+        testTransformersFull110(ModelTestControllerVersion.EAP_6_0_0);
+    }
+
+    private void testTransformersFull110(ModelTestControllerVersion controllerVersion) throws Exception {
         String subsystemXml = readResource("full.xml");
         ModelVersion modelVersion = ModelVersion.create(1, 1, 0);
         //Use the non-runtime version of the extension which will happen on the HC
@@ -161,8 +150,10 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
                 .setSubsystemXml(subsystemXml);
 
         // Add legacy subsystems
-        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_2_FINAL, modelVersion)
-            .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.2.Final");
+        builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
+            .addMavenResourceURL("org.jboss.as:jboss-as-transactions:" + controllerVersion.getMavenGavVersion())
+            .configureReverseControllerCheck(AdditionalInitialization.MANAGEMENT, ADD_REMOVED_HORNETQ_STORE_ENABLE_ASYNC_IO)
+            .excludeFromParent(SingleClassFilter.createFilter(TransactionLogger.class));
 
         KernelServices mainServices = builder.build();
         KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
@@ -179,23 +170,47 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
         final OperationTransformer.TransformedOperation op = mainServices.transformOperation(modelVersion, writeAttribute);
         Assert.assertNotNull(op);
         Assert.assertNotNull(op.getTransformedOperation());
-
     }
 
 
     @Test
-    public void testTransformersFull111() throws Exception {
+    public void testTransformersFull713() throws Exception {
+        testTransformersFull(ModelTestControllerVersion.V7_1_3_FINAL, ModelVersion.create(1, 1, 1));
+    }
+
+    @Test
+    public void testTransformersEAP601() throws Exception {
+        testTransformersFull(ModelTestControllerVersion.EAP_6_0_1, ModelVersion.create(1, 1, 1));
+    }
+
+    @Test
+    public void testTransformersFull720() throws Exception {
+        testTransformersFull(ModelTestControllerVersion.V7_2_0_FINAL, ModelVersion.create(1, 2, 0));
+    }
+
+    @Test
+    public void testTransformersFullEAP610() throws Exception {
+        testTransformersFull(ModelTestControllerVersion.EAP_6_1_0, ModelVersion.create(1, 2, 0));
+    }
+
+    @Test
+    public void testTransformersFullEAP611() throws Exception {
+        testTransformersFull(ModelTestControllerVersion.EAP_6_1_1, ModelVersion.create(1, 2, 0));
+    }
+
+    private void testTransformersFull(ModelTestControllerVersion controllerVersion, ModelVersion modelVersion) throws Exception {
         String subsystemXml = readResource("full-expressions.xml");
-        ModelVersion modelVersion = ModelVersion.create(1, 1, 1);
         //Use the non-runtime version of the extension which will happen on the HC
         KernelServicesBuilder builder = createKernelServicesBuilder(AdditionalInitialization.MANAGEMENT)
                 .setSubsystemXml(subsystemXml);
 
         final PathAddress subsystemAddress = PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, mainSubsystemName));
         // Add legacy subsystems
-        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_3_FINAL, modelVersion)
-                .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.3.Final")
-                .addOperationValidationResolve(ADD, subsystemAddress);
+        builder.createLegacyKernelServicesBuilder(null, controllerVersion, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-transactions:" + controllerVersion.getMavenGavVersion())
+                .addOperationValidationResolve(ADD, subsystemAddress)
+                .configureReverseControllerCheck(AdditionalInitialization.MANAGEMENT, ADD_REMOVED_HORNETQ_STORE_ENABLE_ASYNC_IO)
+                .excludeFromParent(SingleClassFilter.createFilter(TransactionLogger.class));
 
         KernelServices mainServices = builder.build();
         KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
@@ -206,57 +221,130 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
     }
 
     @Test
-    public void testRejectTransformers110() throws Exception {
-        KernelServicesBuilder builder = createKernelServicesBuilder(createAdditionalInitialization());
-
-        // Add legacy subsystems
-        ModelVersion version_1_1 = ModelVersion.create(1, 1, 0);
-        builder.createLegacyKernelServicesBuilder(createAdditionalInitialization(), ModelTestControllerVersion.V7_1_2_FINAL, version_1_1)
-            .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.2.Final");
-
-        KernelServices mainServices = builder.build();
-        assertTrue(mainServices.isSuccessfulBoot());
-        KernelServices legacyServices = mainServices.getLegacyServices(version_1_1);
-        assertNotNull(legacyServices);
-        assertTrue(legacyServices.isSuccessfulBoot());
-
-        List<ModelNode> ops = builder.parseXmlResource("full-expressions.xml");
-        ModelTestUtils.checkFailedTransformedBootOperations(mainServices, version_1_1, ops, new FailedOperationTransformationConfig()
-            .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME)),
-                    new FailedOperationTransformationConfig.RejectExpressionsConfig(
-                            DEFAULT_TIMEOUT,
-                            ENABLE_STATISTICS,
-                            ENABLE_TSM_STATUS,
-                            BINDING,
-                            STATUS_BINDING,
-                            RECOVERY_LISTENER,
-                            NODE_IDENTIFIER,
-                            PATH,
-                            RELATIVE_TO,
-                            PROCESS_ID_SOCKET_BINDING,
-                            PROCESS_ID_SOCKET_MAX_PORTS,
-                            OBJECT_STORE_PATH,
-                            OBJECT_STORE_RELATIVE_TO
-                            )));
+    public void testRejectTransformersAS712() throws Exception {
+        testRejectTransformers(ModelTestControllerVersion.V7_1_2_FINAL, ModelVersion.create(1, 1, 0), get1_1_0_config());
     }
 
     @Test
-    public void testRejectTransformers111() throws Exception {
+    public void testRejectTransformerEAP600() throws Exception {
+        testRejectTransformers(ModelTestControllerVersion.EAP_6_0_0, ModelVersion.create(1, 1, 0), get1_1_0_config());
+    }
+
+    private FailedOperationTransformationConfig get1_1_0_config() {
+        return new FailedOperationTransformationConfig()
+        .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME)),
+                new FailedOperationTransformationConfig.ChainedConfig(Arrays.asList(new FailedOperationTransformationConfig.AttributesPathAddressConfig<?>[] {
+                        new FailedOperationTransformationConfig.RejectExpressionsConfig(
+                                DEFAULT_TIMEOUT,
+                                STATISTICS_ENABLED,
+                                ENABLE_STATISTICS,
+                                ENABLE_TSM_STATUS,
+                                BINDING,
+                                STATUS_BINDING,
+                                RECOVERY_LISTENER,
+                                NODE_IDENTIFIER,
+                                PATH,
+                                RELATIVE_TO,
+                                PROCESS_ID_SOCKET_BINDING,
+                                PROCESS_ID_SOCKET_MAX_PORTS,
+                                OBJECT_STORE_PATH,
+                                OBJECT_STORE_RELATIVE_TO
+                                ),
+                        new ChangeToTrueConfig(HORNETQ_STORE_ENABLE_ASYNC_IO)
+                }) ,
+                        DEFAULT_TIMEOUT,
+                        STATISTICS_ENABLED,
+                        ENABLE_STATISTICS,
+                        ENABLE_TSM_STATUS,
+                        BINDING,
+                        STATUS_BINDING,
+                        RECOVERY_LISTENER,
+                        NODE_IDENTIFIER,
+                        PATH,
+                        RELATIVE_TO,
+                        PROCESS_ID_SOCKET_BINDING,
+                        PROCESS_ID_SOCKET_MAX_PORTS,
+                        OBJECT_STORE_PATH,
+                        OBJECT_STORE_RELATIVE_TO,
+                        HORNETQ_STORE_ENABLE_ASYNC_IO));
+    }
+
+    @Test
+    public void testRejectTransformers713() throws Exception {
+        testRejectTransformers(ModelTestControllerVersion.V7_1_3_FINAL, ModelVersion.create(1, 1, 1), new FailedOperationTransformationConfig()
+            .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME)),
+                    new ChangeToTrueConfig(HORNETQ_STORE_ENABLE_ASYNC_IO)));
+
+    }
+
+    @Test
+    public void testRejectTransformers720() throws Exception {
+        testRejectTransformers(ModelTestControllerVersion.V7_1_3_FINAL, ModelVersion.create(1, 2, 0), new FailedOperationTransformationConfig()
+            .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME)),
+                    new ChangeToTrueConfig(HORNETQ_STORE_ENABLE_ASYNC_IO)));
+    }
+
+    @Test
+    public void testRejectTransformersEAP610() throws Exception {
+        testRejectTransformers(ModelTestControllerVersion.EAP_6_1_0, ModelVersion.create(1, 2, 0), new FailedOperationTransformationConfig()
+            .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME)),
+                    new ChangeToTrueConfig(HORNETQ_STORE_ENABLE_ASYNC_IO)));
+    }
+
+    @Test
+    public void testRejectTransformersEAP611() throws Exception {
+        testRejectTransformers(ModelTestControllerVersion.EAP_6_1_1, ModelVersion.create(1, 2, 0), new FailedOperationTransformationConfig()
+            .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME)),
+                    new ChangeToTrueConfig(HORNETQ_STORE_ENABLE_ASYNC_IO)));
+    }
+
+    private void testRejectTransformers(ModelTestControllerVersion controllerVersion, ModelVersion modelVersion, FailedOperationTransformationConfig config) throws Exception {
         KernelServicesBuilder builder = createKernelServicesBuilder(createAdditionalInitialization());
 
         // Add legacy subsystems
-        ModelVersion version_1_1_1 = ModelVersion.create(1, 1, 1);
-        builder.createLegacyKernelServicesBuilder(createAdditionalInitialization(), ModelTestControllerVersion.V7_1_3_FINAL, version_1_1_1)
-                .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.3.Final");
+        builder.createLegacyKernelServicesBuilder(createAdditionalInitialization(), controllerVersion, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-transactions:" + controllerVersion.getMavenGavVersion())
+                .excludeFromParent(SingleClassFilter.createFilter(TransactionLogger.class));
 
         KernelServices mainServices = builder.build();
         assertTrue(mainServices.isSuccessfulBoot());
-        KernelServices legacyServices = mainServices.getLegacyServices(version_1_1_1);
+        KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
         assertNotNull(legacyServices);
         assertTrue(legacyServices.isSuccessfulBoot());
 
-        List<ModelNode> ops = builder.parseXmlResource("full-expressions.xml");
-        ModelTestUtils.checkFailedTransformedBootOperations(mainServices, version_1_1_1, ops, new FailedOperationTransformationConfig());
+        List<ModelNode> ops = builder.parseXmlResource("full-expressions-reject.xml");
+        ModelTestUtils.checkFailedTransformedBootOperations(mainServices, modelVersion, ops, config);
     }
 
+    private static ModelFixer ADD_REMOVED_HORNETQ_STORE_ENABLE_ASYNC_IO = new ModelFixer() {
+
+        @Override
+        public ModelNode fixModel(ModelNode modelNode) {
+            modelNode.get(TransactionSubsystemRootResourceDefinition.HORNETQ_STORE_ENABLE_ASYNC_IO.getName()).set(true);
+            return modelNode;
+        }
+    };
+
+    private static final class ChangeToTrueConfig extends FailedOperationTransformationConfig.AttributesPathAddressConfig<ChangeToTrueConfig>{
+
+        public ChangeToTrueConfig(AttributeDefinition...attributeDefinitions) {
+            super(convert(attributeDefinitions));
+        }
+
+        @Override
+        protected boolean isAttributeWritable(String attributeName) {
+            return true;
+        }
+
+        @Override
+        protected boolean checkValue(String attrName, ModelNode attribute, boolean isWriteAttribute) {
+            return !attribute.asString().equals("true");
+        }
+
+        @Override
+        protected ModelNode correctValue(ModelNode toResolve, boolean isWriteAttribute) {
+            return new ModelNode(true);
+        }
+
+    }
 }

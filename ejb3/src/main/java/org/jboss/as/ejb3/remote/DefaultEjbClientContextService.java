@@ -90,7 +90,7 @@ public class DefaultEjbClientContextService implements Service<EJBClientContext>
 
     @Override
     public synchronized void start(final StartContext context) throws StartException {
-        final EJBClientContext clientContext = EJBClientContext.create(new LocalOnlyEjbClientConfiguration());
+        final EJBClientContext clientContext = EJBClientContext.create(new LocalOnlyEjbClientConfiguration(), this.getClass().getClassLoader());
         // register the default local EJB receiver (if present - app clients don't have local EJB receivers)
         final LocalEjbReceiver localEjbReceiver = this.defaultLocalEJBReceiver.getOptionalValue();
         if (localEjbReceiver != null) {
@@ -189,11 +189,6 @@ public class DefaultEjbClientContextService implements Service<EJBClientContext>
         @Override
         public Iterator<RemotingConnectionConfiguration> getConnectionConfigurations() {
             // This client configuration will *not* be used for auto creating connections to remote servers.
-            return Collections.EMPTY_SET.iterator();
-        }
-
-        @Override
-        public Iterator<ClusterConfiguration> getClusterConfigurations() {
             return Collections.EMPTY_SET.iterator();
         }
 

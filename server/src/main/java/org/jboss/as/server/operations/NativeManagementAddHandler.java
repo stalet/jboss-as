@@ -22,8 +22,6 @@
 
 package org.jboss.as.server.operations;
 
-import org.jboss.as.protocol.ProtocolChannelClient;
-import org.jboss.as.remoting.management.ManagementChannelRegistryService;
 import static org.jboss.as.server.mgmt.NativeManagementResourceDefinition.ATTRIBUTE_DEFINITIONS;
 import static org.jboss.as.server.mgmt.NativeManagementResourceDefinition.INTERFACE;
 import static org.jboss.as.server.mgmt.NativeManagementResourceDefinition.NATIVE_PORT;
@@ -39,22 +37,18 @@ import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.remote.ModelControllerClientOperationHandlerFactoryService;
-import org.jboss.as.domain.management.security.SecurityRealmService;
 import org.jboss.as.network.SocketBinding;
-import org.jboss.as.remoting.EndpointService;
 import org.jboss.as.remoting.RemotingServices;
 import org.jboss.as.remoting.management.ManagementRemotingServices;
 import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.ServerLogger;
 import org.jboss.as.server.ServerMessages;
-import org.jboss.as.server.Services;
 import org.jboss.as.server.services.net.NetworkInterfaceService;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
-import org.jboss.remoting3.RemotingOptions;
+import org.wildfly.security.manager.WildFlySecurityManager;
 import org.xnio.OptionMap;
 
 /**
@@ -68,8 +62,6 @@ public class NativeManagementAddHandler extends AbstractAddStepHandler {
     public static final NativeManagementAddHandler INSTANCE = new NativeManagementAddHandler();
     public static final String OPERATION_NAME = ModelDescriptionConstants.ADD;
 
-    private static final int WINDOW_SIZE = ProtocolChannelClient.Configuration.WINDOW_SIZE;
-    private static final OptionMap options = OptionMap.create(RemotingOptions.RECEIVE_WINDOW_SIZE, WINDOW_SIZE);
 
     protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
         for (AttributeDefinition definition : ATTRIBUTE_DEFINITIONS) {
@@ -89,18 +81,9 @@ public class NativeManagementAddHandler extends AbstractAddStepHandler {
         final ServiceTarget serviceTarget = context.getServiceTarget();
 
         final ServiceName endpointName = ManagementRemotingServices.MANAGEMENT_ENDPOINT;
-        final String hostName = SecurityActions.getSystemProperty(ServerEnvironment.NODE_NAME);
-        ManagementRemotingServices.installRemotingEndpoint(serviceTarget, ManagementRemotingServices.MANAGEMENT_ENDPOINT, hostName, EndpointService.EndpointType.MANAGEMENT, options, verificationHandler, newControllers);
+        final String hostName = WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.NODE_NAME, null);
+        NativeManagementServices.installRemotingServicesIfNotInstalled(serviceTarget, hostName, verificationHandler, newControllers, context.getServiceRegistry(false));
         installNativeManagementConnector(context, model, endpointName, serviceTarget, verificationHandler, newControllers);
-
-        ManagementChannelRegistryService.addService(serviceTarget, endpointName);
-        ManagementRemotingServices.installManagementChannelServices(serviceTarget,
-                endpointName,
-                new ModelControllerClientOperationHandlerFactoryService(),
-                Services.JBOSS_SERVER_CONTROLLER,
-                ManagementRemotingServices.MANAGEMENT_CHANNEL,
-                verificationHandler,
-                newControllers);
     }
 
     // TODO move this kind of logic into AttributeDefinition itself
@@ -166,16 +149,16 @@ public class NativeManagementAddHandler extends AbstractAddStepHandler {
             port = NATIVE_PORT.resolveModelAttribute(context, model).asInt();
         }
 
-        ServiceName realmSvcName = null;
+        String securityRealm = null;
         final ModelNode realmNode = SECURITY_REALM.resolveModelAttribute(context, model);
         if (realmNode.isDefined()) {
-            realmSvcName = SecurityRealmService.BASE_SERVICE_NAME.append(realmNode.asString());
+            securityRealm = realmNode.asString();
         } else {
             ServerLogger.ROOT_LOGGER.nativeManagementInterfaceIsUnsecured();
         }
 
         ServiceName tmpDirPath = ServiceName.JBOSS.append("server", "path", "jboss.server.temp.dir");
-        RemotingServices.installSecurityServices(serviceTarget, ManagementRemotingServices.MANAGEMENT_CONNECTOR, realmSvcName, null, tmpDirPath, verificationHandler, newControllers);
+        RemotingServices.installSecurityServices(serviceTarget, ManagementRemotingServices.MANAGEMENT_CONNECTOR, securityRealm, null, tmpDirPath, verificationHandler, newControllers);
 //        final OptionMap options = OptionMap.builder().set(RemotingOptions.HEARTBEAT_INTERVAL, 30000).set(Options.READ_TIMEOUT, 65000).getMap();
         final OptionMap options = OptionMap.EMPTY;
         if (socketBindingServiceName == null) {
@@ -186,6 +169,7 @@ public class NativeManagementAddHandler extends AbstractAddStepHandler {
                     ManagementRemotingServices.MANAGEMENT_CONNECTOR,
                     socketBindingServiceName, options, verificationHandler, newControllers);
         }
+
     }
 
 }

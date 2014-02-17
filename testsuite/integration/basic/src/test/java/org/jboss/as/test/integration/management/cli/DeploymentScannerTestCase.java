@@ -22,6 +22,7 @@
 package org.jboss.as.test.integration.management.cli;
 
 import org.jboss.as.test.integration.management.base.AbstractCliTestBase;
+
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -36,6 +37,7 @@ import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.test.integration.common.HttpRequest;
 import org.jboss.as.test.integration.management.util.CLIOpResult;
 import org.jboss.as.test.integration.management.util.SimpleServlet;
+import org.jboss.as.test.shared.TestSuiteEnvironment;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
@@ -54,8 +56,7 @@ import org.junit.runner.RunWith;
 @RunAsClient
 public class DeploymentScannerTestCase extends AbstractCliTestBase {
 
-    private static final String tempDir = System.getProperty("java.io.tmpdir");
-    private static WebArchive war;
+    private static final String tempDir = TestSuiteEnvironment.getTmpDir();
     private static File warFile;
     private static File deployDir;
 
@@ -93,7 +94,7 @@ public class DeploymentScannerTestCase extends AbstractCliTestBase {
 
     private void addDeploymentScanner() throws Exception {
 
-        war = ShrinkWrap.create(WebArchive.class, "SimpleServlet.war");
+        WebArchive war = ShrinkWrap.create(WebArchive.class, "SimpleServlet.war");
         war.addClass(SimpleServlet.class);
         warFile = new File(deployDir.getAbsolutePath() + File.separator + "SimpleServlet.war");
         new ZipExporterImpl(war).exportTo(warFile, true);
@@ -101,7 +102,7 @@ public class DeploymentScannerTestCase extends AbstractCliTestBase {
         // add deployment scanner
         String path =  deployDir.getAbsolutePath();
         path = path.replaceAll("\\\\", "/");
-        cli.sendLine("/subsystem=deployment-scanner/scanner=testScanner:add(scan-interval=2000,path=\"" + path +"\")");
+        cli.sendLine("/subsystem=deployment-scanner/scanner=testScanner:add(scan-interval=1000,path=\"" + path +"\")");
 
         // wait for deployment
         Thread.sleep(2000);

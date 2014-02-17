@@ -85,6 +85,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set("MyNewDs");
         operation.get("jndi-name").set("java:jboss/datasources/MyNewDs");
+        operation.get("enabled").set(false);
 
 
         operation.get("driver-name").set("h2");
@@ -132,6 +133,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set("MyNewDs");
         operation.get("jndi-name").set("java:jboss/datasources/MyNewDs");
+        operation.get("enabled").set(false);
 
         operation.get("driver-name").set("h2");
         operation.get("pool-name").set("MyNewDs_Pool");
@@ -173,6 +175,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set("MyNewDs");
         operation.get("jndi-name").set("java:jboss/datasources/MyNewDs");
+        operation.get("enabled").set(false);
 
 
         operation.get("driver-name").set("h2");
@@ -228,6 +231,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set(dsName);
         operation.get("jndi-name").set("java:jboss/datasources/" + dsName);
+        operation.get("enabled").set(false);
 
         operation.get("driver-name").set("h2");
         operation.get("pool-name").set(dsName + "_Pool");
@@ -266,6 +270,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set(dsName);
         operation.get("jndi-name").set("java:jboss/datasources/" + jndiDsName);
+        operation.get("enabled").set(false);
 
 
         operation.get("driver-name").set("h2");
@@ -297,6 +302,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set(dsName);
         operation.get("jndi-name").set("java:jboss/datasources/" + jndiDsName);
+        operation.get("enabled").set(false);
 
 
         operation.get("driver-name").set("h2");
@@ -352,6 +358,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set(dsName);
         operation.get("jndi-name").set("java:jboss/datasources/" + jndiDsName);
+        operation.get("enabled").set(false);
 
 
         operation.get("driver-name").set("h2");
@@ -416,6 +423,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set(dsName);
         operation.get("jndi-name").set("java:jboss/datasources/" + jndiDsName);
+        operation.get("enabled").set(false);
 
 
         operation.get("driver-name").set("h2");
@@ -500,6 +508,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set(xaDs);
         operation.get("jndi-name").set(xaDsJndi);
+        operation.get("enabled").set(false);
         operation.get("driver-name").set("h2");
         operation.get("xa-datasource-class").set("org.jboss.as.connector.subsystems.datasources.ModifiableXaDataSource");
         operation.get("pool-name").set(xaDs + "_Pool");
@@ -532,16 +541,6 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         Assert.assertNotNull("Reparsing failed:", newList);
 
-
-        try {
-            ModifiableXaDataSource jxaDS = lookup(getModelControllerClient(), xaDsJndi, ModifiableXaDataSource.class);
-
-            Assert.fail("found datasource after it was unbounded");
-        } catch (Exception e) {
-            // must be thrown NameNotFound exception - datasource is unbounded
-
-        }
-
         Assert.assertNotNull(findNodeWithProperty(newList, "jndi-name", xaDsJndi));
 
     }
@@ -566,6 +565,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
         final ModelNode operation = new ModelNode();
         operation.get(OP).set("add");
         operation.get(OP_ADDR).set(address);
+        operation.get("enabled").set(false);
 
         setOperationParams(operation, params);
         addExtensionProperties(operation);
@@ -620,6 +620,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
         final ModelNode operation = new ModelNode();
         operation.get(OP).set("add");
         operation.get(OP_ADDR).set(address);
+        operation.get("enabled").set(false);
 
         Properties params = xaDsProperties(complexXaDsJndi);
         setOperationParams(operation, params);
@@ -687,6 +688,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set(dsName);
         operation.get("jndi-name").set("java:jboss/datasources/" + jndiDsName);
+        operation.get("enabled").set(false);
 
 
         operation.get("driver-name").set("h2");
@@ -748,6 +750,7 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         operation.get("name").set("MyNewDs");
         operation.get("jndi-name").set("java:jboss/datasources/MyNewDs");
+        operation.get("enabled").set(false);
 
 
         operation.get("driver-name").set("h2");
@@ -770,15 +773,6 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
         remove(address);
         remove(propAddress);
 
-    }
-
-    private static <T> T lookup(ModelControllerClient client, String name, Class<T> expected) throws Exception {
-        //TODO Don't do this FakeJndi stuff once we have remote JNDI working
-
-        MBeanServerConnection mbeanServer = JMXConnectorFactory.connect(new JMXServiceURL("service:jmx:remoting-jmx://127.0.0.1:9999")).getMBeanServerConnection();
-        ObjectName objectName = new ObjectName("jboss:name=test,type=fakejndi");
-        Object o = mbeanServer.invoke(objectName, "lookup", new Object[]{name}, new String[]{"java.lang.String"});
-        return expected.cast(o);
     }
 
 

@@ -55,17 +55,17 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-testsuite</artifactId>
-    <version>8.0.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-testsuite</artifactId>
+    <version>8.0.1.Final-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>JBoss Application Server Test Suite: Aggregator</name>
+    <name>WildFly Test Suite: Aggregator</name>
 
     <modules>
         <module>integration</module>
@@ -87,7 +87,7 @@
 
         <!-- Used to provide an absolute location for the distribution under test. -->
         <!-- This value is overridden in modules with the correct relative pathname. -->
-        <jboss.dist>${project.basedir}/../build/target/jboss-as-${jboss.as.release.version}</jboss.dist>
+        <jboss.dist>${project.basedir}/../${wildfly.build.output.dir}</jboss.dist>
         <jboss.home>${jboss.dist}</jboss.home>
 
         <!-- Used to provide an absolute location for the XSLT scripts. -->
@@ -98,6 +98,13 @@
         <node0>127.0.0.1</node0>
         <node1>127.0.0.1</node1>
         <mcast>230.0.0.4</mcast> <!-- Default multicast address. -->
+
+        <!-- additional IP address defaults for xsite clustering tests -->
+        <node2>127.0.0.1</node2>
+        <node3>127.0.0.1</node3>
+        <mcast1>230.0.0.5</mcast1>
+        <mcast2>230.0.0.6</mcast2>
+        <mcast3>230.0.0.7</mcast3>
 
         <!-- IP stack configs. -->
         <jvm.args.ip>-Djava.net.preferIPv4Stack=true -Djava.net.preferIPv6Addresses=false</jvm.args.ip>
@@ -144,9 +151,11 @@
         <surefire.system.args>${surefire.memory.args} ${surefire.jpda.args} -Djboss.dist=${jboss.dist}</surefire.system.args>
         <surefire.forked.process.timeout>1500</surefire.forked.process.timeout>
 
+        <!-- If servers should be killed before the test suite is run-->
+        <org.wildfly.test.kill-servers-before-test>false</org.wildfly.test.kill-servers-before-test>
+
         <!-- Arquillian dependency versions -->
-        <version.arquillian_core>${version.org.jboss.arquillian.core}</version.arquillian_core>
-        <version.arquillian_as7>${project.parent.version}</version.arquillian_as7>
+        <version.arquillian_wildfly>${project.parent.version}</version.arquillian_wildfly>
         <version.saxon>8.7</version.saxon>
 
         <!-- Don't try to deploy the testsuite modules because they don't build jars -->
@@ -163,26 +172,29 @@
             <dependency>
                 <groupId>org.jboss.arquillian</groupId>
                 <artifactId>arquillian-bom</artifactId>
-                <version>${version.arquillian_core}</version>
+                <version>${version.org.jboss.arquillian.core}</version>
                 <scope>import</scope>
                 <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>com.sun</groupId>
+                <artifactId>tools</artifactId>
+                <version>1.7</version>
+                <scope>system</scope>
+                <systemPath>${java.home}/../lib/tools.jar</systemPath> <!-- since jdk7 also on MAC this is proper path -->
             </dependency>
         </dependencies>
     </dependencyManagement>
 
     <dependencies>
         <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-testsuite-shared</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-testsuite-shared</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-build</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-build</artifactId>
             <type>pom</type>
         </dependency>
         <!-- Needed for @Resource(lookup=). -->
@@ -200,14 +212,18 @@
             <artifactId>arquillian-testenricher-initialcontext</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-arquillian-container-managed</artifactId>
-            <version>${version.arquillian_as7}</version>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-arquillian-container-managed</artifactId>
+            <version>${version.arquillian_wildfly}</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.sun</groupId>
+            <artifactId>tools</artifactId>
         </dependency>
     </dependencies>
 
@@ -224,260 +240,171 @@
             </testResource>
         </testResources>
 
-        <plugins>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                   <groupId>org.apache.maven.plugins</groupId>
+                   <artifactId>maven-compiler-plugin</artifactId>
+                   <!-- Don't compile src/main/java - nothing to do. -->
+                   <executions><execution><id>default-compile</id><phase>none</phase></execution></executions>
+               </plugin>
 
-            <!-- Testsuite debugging info. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-help-plugin</artifactId>
-                <inherited>true</inherited>
-                <executions>
-                    <execution><id>help.active-profiles</id>
-                        <phase>initialize</phase>
-                        <goals><goal>active-profiles</goal></goals>
-                        <configuration><output>target/help.active-profiles.txt</output></configuration>
-                    </execution>
-                    <execution><id>help.effective-pom</id>
-                        <phase>initialize</phase>
-                        <goals><goal>effective-pom</goal></goals>
-                        <configuration><output>target/help.effective-pom.txt</output></configuration>
-                    </execution>
-                    <execution><id>help.effective-settings</id>
-                        <phase>initialize</phase>
-                        <goals><goal>effective-settings</goal></goals>
-                        <configuration><output>target/help.effective-settings.txt</output></configuration>
-                    </execution>
-                    <execution><id>help.system</id>
-                        <phase>initialize</phase>
-                        <goals><goal>system</goal></goals>
-                        <configuration><output>target/help.system.txt</output></configuration>
-                    </execution>
-                </executions>
-            </plugin>
+               <!--
+                   A build of target/jbossas which is shared by all modules.
+                   Modules and bundles are not copied as they are read-only (see surefire props).
+               -->
+               <plugin>
+                   <groupId>org.apache.maven.plugins</groupId>
+                   <artifactId>maven-resources-plugin</artifactId>
+                   <executions combine.children="append">
+                       <!-- Copy the AS into current_submodule/target/jbossas . This is executed recursively in submodules. -->
+                       <execution>
+                           <id>ts.copy-jbossas.groups</id>
+                           <inherited>true</inherited>
+                           <phase>generate-test-resources</phase>
+                           <goals><goal>copy-resources</goal></goals>
+                           <configuration>
+                               <outputDirectory>${basedir}/target/jbossas</outputDirectory>
+                               <overwrite>true</overwrite>
+                               <resources>
+                                   <resource>
+                                       <directory>${jboss.home}</directory>
+                                       <excludes>
+                                           <exclude>modules/</exclude>
+                                           <exclude>standalone/data</exclude>
+                                           <exclude>standalone/log</exclude>
+                                           <exclude>standalone/tmp</exclude>
+                                       </excludes>
+                                   </resource>
+                               </resources>
+                           </configuration>
+                       </execution>
+                   </executions>
+               </plugin>
 
-            <plugin>
-                <groupId>org.kuali.maven.plugins</groupId>
-                <artifactId>properties-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <phase>initialize</phase>
-                        <goals><goal>write-project-properties</goal></goals>
-                        <configuration><outputFile>target/help.properties.txt</outputFile></configuration>
-                    </execution>
-                </executions>
-            </plugin>
+               <!--
+                   Adjust IP addresses used in server config files.
+                -->
+               <plugin>
+                   <groupId>org.codehaus.mojo</groupId>
+                   <artifactId>xml-maven-plugin</artifactId>
+                   <executions combine.children="append">
+                       <execution>
+                           <id>ts.config-as.ip</id>
+                           <phase>process-test-resources</phase>
+                           <goals><goal>transform</goal></goals>
+                           <inherited>true</inherited>
+                           <configuration>
+                               <transformationSets>
+                                   <!-- IPs. -->
+                                   <transformationSet>
+                                       <dir>${basedir}/target/jbossas/standalone/configuration</dir>
+                                       <outputDir>${basedir}/target/jbossas/standalone/configuration</outputDir>
+                                       <stylesheet>${xslt.scripts.dir}/changeIPAddresses.xsl</stylesheet>
+                                       <includes>
+                                           <include>standalone*.xml</include>
+                                       </includes>
+                                       <parameters>
+                                           <parameter><name>managementIPAddress</name>    <value>${node0}</value></parameter>
+                                           <parameter><name>publicIPAddress</name>        <value>${node0}</value></parameter>
 
+                                           <parameter><name>udpMcastAddress</name>        <value>${mcast}</value></parameter>
+                                           <parameter><name>mpingMcastAddress</name>      <value>${mcast}</value></parameter>
+                                           <parameter><name>modclusterMcastAddress</name> <value>${mcast}</value></parameter>
+                                       </parameters>
+                                   </transformationSet>
+                               </transformationSets>
+                           </configuration>
+                       </execution>
+                       <execution>
+                           <id>ts.config-as.trace-logging</id>
+                           <phase>process-test-resources</phase>
+                           <goals><goal>transform</goal></goals>
+                           <inherited>true</inherited>
+                           <configuration>
+                               <transformationSets>
+                                   <!-- IPs. -->
+                                   <transformationSet>
+                                       <dir>${basedir}/target/jbossas/standalone/configuration</dir>
+                                       <outputDir>${basedir}/target/jbossas/standalone/configuration</outputDir>
+                                       <stylesheet>${xslt.scripts.dir}/enableTrace.xsl</stylesheet>
+                                       <includes>
+                                           <include>standalone*.xml</include>
+                                       </includes>
+                                       <parameters>
+                                           <parameter><name>trace</name>    <value>${trace}</value></parameter>
+                                       </parameters>
+                                   </transformationSet>
+                               </transformationSets>
+                           </configuration>
+                       </execution>
+                   </executions>
+               </plugin>
 
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <!-- Don't compile src/main/java - nothing to do. -->
-                <executions><execution><id>default-compile</id><phase>none</phase></execution></executions>
-            </plugin>
+                <!--
+                   Sets general surefire system properties.
+                   These can be overridden by inheriting plugin configurations.
+                -->
 
-            <!--
-                A build of target/jbossas which is shared by all modules.
-                Modules and bundles are not copied as they are read-only (see surefire props).
-            -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <executions combine.children="append">
-                    <!-- Copy the AS into current_submodule/target/jbossas . This is executed recursively in submodules. -->
-                    <execution>
-                        <id>ts.copy-jbossas.groups</id>
-                        <inherited>true</inherited>
-                        <phase>generate-test-resources</phase>
-                        <goals><goal>copy-resources</goal></goals>
-                        <configuration>
-                            <outputDirectory>${basedir}/target/jbossas</outputDirectory>
-                            <overwrite>true</overwrite>
-                            <resources>
-                                <resource>
-                                    <directory>${jboss.home}</directory>
-                                    <excludes>
-                                        <exclude>modules/</exclude>
-                                        <exclude>bundles/</exclude>
-                                        <exclude>standalone/data</exclude>
-                                        <exclude>standalone/log</exclude>
-                                        <exclude>standalone/tmp</exclude>
-                                    </excludes>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+                <plugin>
+                   <groupId>org.apache.maven.plugins</groupId>
+                   <artifactId>maven-surefire-plugin</artifactId>
+                   <configuration>
+                       <failIfNoTests>false</failIfNoTests>
+                       <redirectTestOutputToFile>${testLogToFile}</redirectTestOutputToFile>
+                       <systemPropertyVariables>
+                           <jboss.options>${surefire.system.args} ${jvm.args.jacoco}</jboss.options>
+                           <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                           <jboss.dist>${jboss.dist}</jboss.dist>
+                           <jboss.home>${basedir}/target/jbossas</jboss.home>
+                           <module.path>${jboss.dist}/modules${path.separator}${basedir}/target/modules</module.path>
+                           <org.wildfly.test.kill-servers-before-test>${org.wildfly.test.kill-servers-before-test}</org.wildfly.test.kill-servers-before-test>
+                       </systemPropertyVariables>
+                       <!-- Arquillian's config files. -->
+                       <additionalClasspathElements combine.children="append">
+                           <additionalClasspathElement>${basedir}/src/test/config/arq</additionalClasspathElement>
+                       </additionalClasspathElements>
+                   </configuration>
+               </plugin>
 
-            <!--
-                Adjust IP addresses used in server config files.
-             -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>xml-maven-plugin</artifactId>
-                <executions combine.children="append">
-                    <execution>
-                        <id>ts.config-as.ip</id>
-                        <phase>process-test-resources</phase>
-                        <goals><goal>transform</goal></goals>
-                        <inherited>true</inherited>
-                        <configuration>
-                            <transformationSets>
-                                <!-- IPs. -->
-                                <transformationSet>
-                                    <dir>${basedir}/target/jbossas/standalone/configuration</dir>
-                                    <outputDir>${basedir}/target/jbossas/standalone/configuration</outputDir>
-                                    <stylesheet>${xslt.scripts.dir}/changeIPAddresses.xsl</stylesheet>
-                                    <includes>
-                                        <include>standalone*.xml</include>
-                                    </includes>
-                                    <parameters>
-                                        <parameter><name>managementIPAddress</name>    <value>${node0}</value></parameter>
-                                        <parameter><name>publicIPAddress</name>        <value>${node0}</value></parameter>
+               <!-- Disable default site run. -->
+               <plugin>
+                   <groupId>org.apache.maven.plugins</groupId>
+                   <artifactId>maven-site-plugin</artifactId>
+                   <executions><execution><id>default-site</id><phase>none</phase></execution></executions>
+               </plugin>
 
-                                        <parameter><name>udpMcastAddress</name>        <value>${mcast}</value></parameter>
-                                        <parameter><name>mpingMcastAddress</name>      <value>${mcast}</value></parameter>
-                                        <parameter><name>modclusterMcastAddress</name> <value>${mcast}</value></parameter>
-                                    </parameters>
-                                </transformationSet>
-                            </transformationSets>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>ts.config-as.trace-logging</id>
-                        <phase>process-test-resources</phase>
-                        <goals><goal>transform</goal></goals>
-                        <inherited>true</inherited>
-                        <configuration>
-                            <transformationSets>
-                                <!-- IPs. -->
-                                <transformationSet>
-                                    <dir>${basedir}/target/jbossas/standalone/configuration</dir>
-                                    <outputDir>${basedir}/target/jbossas/standalone/configuration</outputDir>
-                                    <stylesheet>${xslt.scripts.dir}/enableTrace.xsl</stylesheet>
-                                    <includes>
-                                        <include>standalone*.xml</include>
-                                    </includes>
-                                    <parameters>
-                                        <parameter><name>trace</name>    <value>${trace}</value></parameter>
-                                    </parameters>
-                                </transformationSet>
-                            </transformationSets>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+               <!-- Don't create jars - nothing to do. -->
+               <plugin>
+                   <groupId>org.apache.maven.plugins</groupId>
+                   <artifactId>maven-jar-plugin</artifactId>
+                   <executions><execution><id>default-jar</id><phase>none</phase></execution></executions>
+               </plugin>
 
-            <!--
-                Sets general surefire system properties.
-                These can be overridden by inheriting plugin configurations.
-             -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <failIfNoTests>false</failIfNoTests>
-                    <redirectTestOutputToFile>${testLogToFile}</redirectTestOutputToFile>
-                    <systemPropertyVariables>
-                        <jboss.options>${surefire.system.args} ${jvm.args.jacoco}</jboss.options>
-                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
-                        <jboss.dist>${jboss.dist}</jboss.dist>
-                        <jboss.home>${basedir}/target/jbossas</jboss.home>
-                        <module.path>${jboss.dist}/modules${path.separator}${basedir}/target/modules</module.path>
-                        <bundle.path>${jboss.dist}/bundles</bundle.path>
-                    </systemPropertyVariables>
-                    <!-- Arquillian's config files. -->
-                    <additionalClasspathElements combine.children="append">
-                        <additionalClasspathElement>${basedir}/src/test/config/arq</additionalClasspathElement>
-                    </additionalClasspathElements>
-                </configuration>
-            </plugin>
+               <!-- Don't create source jars - nothing to do. -->
+               <plugin>
+                   <groupId>org.apache.maven.plugins</groupId>
+                   <artifactId>maven-source-plugin</artifactId>
+                   <executions><execution><id>attach-sources</id><phase>none</phase></execution></executions>
+               </plugin>
 
-            <!-- Disable default site run. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-site-plugin</artifactId>
-                <executions><execution><id>default-site</id><phase>none</phase></execution></executions>
-            </plugin>
+               <!-- Don't run checkstyle - nothing in src/java. -->
+               <plugin>
+                   <groupId>org.apache.maven.plugins</groupId>
+                   <artifactId>maven-checkstyle-plugin</artifactId>
+                   <executions><execution><id>check-style</id><phase>none</phase></execution></executions>
+               </plugin>
 
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <executions combine.self="override">
-
-                    <!-- Run the reporting tool. -->
-                    <execution>
-                        <id>reporting</id>
-                        <phase>site</phase>
-                        <goals><goal>run</goal></goals>
-                        <inherited>false</inherited>
-                        <configuration>
-                            <target>
-                                <ant dir="${basedir}" antfile="${basedir}/tools/reporting/buildReports.xml">
-                                    <!-- Defaults.
-                                    <property name="reporting.dir" value="${basedir}/tools/reporting"/>
-                                    <property name="reports.dest.dir" value="${basedir}/target/reports"/>
-                                    <property name="reports.src.mask" value="**/target/surefire-reports/TEST-*.xml"/>
-                                    -->
-                                    <target name="reports"/>
-                                </ant>
-                            </target>
-                        </configuration>
-                    </execution>
-
-                    <!-- Help banner. -->
-                    <execution>
-                        <id>banner</id>
-                        <phase>initialize</phase>
-                        <goals><goal>run</goal></goals>
-                        <inherited>false</inherited>
-                        <configuration>
-                            <target>
-                                <loadfile property="help.banner" srcFile="${basedir}/tools/help-banner.txt"/>
-                                <echo>${help.banner}</echo>
-                            </target>
-                        </configuration>
-                    </execution>
-
-                </executions>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.apache.ant</groupId>
-                        <artifactId>ant-junit</artifactId>
-                        <version>${version.ant.junit}</version>
-                    </dependency>
-                </dependencies>
-            </plugin>
-
-            <!-- Don't create jars - nothing to do. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <executions><execution><id>default-jar</id><phase>none</phase></execution></executions>
-            </plugin>
-
-            <!-- Don't create source jars - nothing to do. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-source-plugin</artifactId>
-                <executions><execution><id>attach-sources</id><phase>none</phase></execution></executions>
-            </plugin>
-
-            <!-- Don't run checkstyle - nothing in src/java. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <executions><execution><id>check-style</id><phase>none</phase></execution></executions>
-            </plugin>
-
-            <!-- Don't install - nothing to do. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-install-plugin</artifactId>
-                <executions><execution><id>default-install</id><phase>none</phase></execution></executions>
-            </plugin>
-        </plugins>
+               <!-- Don't install - nothing to do. -->
+               <plugin>
+                   <groupId>org.apache.maven.plugins</groupId>
+                   <artifactId>maven-install-plugin</artifactId>
+                   <executions><execution><id>default-install</id><phase>none</phase></execution></executions>
+               </plugin>
+            </plugins>
+        </pluginManagement>
     </build>
+
 
     <profiles>
 
@@ -496,7 +423,7 @@
                 <module>domain</module>
             </modules>
         </profile>
-        
+
         <profile>
             <id>mixed-domain.module.profile</id>
             <activation><property><name>jboss.test.mixed.domain.dir</name></property></activation>
@@ -528,13 +455,13 @@
             <modules><module>integration</module></modules>
         </profile>
         <profile>
-            <id>integ-osgi.module.profile</id>
-            <activation><property><name>ts.osgi</name></property></activation>
+            <id>integ-xts.module.profile</id>
+            <activation><property><name>ts.xts</name></property></activation>
             <modules><module>integration</module></modules>
         </profile>
         <profile>
-            <id>integ-xts.module.profile</id>
-            <activation><property><name>ts.xts</name></property></activation>
+            <id>integ-rts.module.profile</id>
+            <activation><property><name>ts.rts</name></property></activation>
             <modules><module>integration</module></modules>
         </profile>
 
@@ -609,6 +536,14 @@
                 <node0>::1</node0>
                 <node1>::1</node1>
                 <mcast>ff01::1</mcast>      <!-- ff01::1  is IPv6 Node-Local scope mcast addr. -->
+
+                <!-- Override xsite IPv4 defaults from the top.  -->
+                <node2>::1</node2>
+                <node3>::1</node3>
+                <mcast1>ff01::2</mcast1>
+                <mcast2>ff01::3</mcast2>
+                <mcast3>ff01::4</mcast3>
+
             </properties>
         </profile>
         <!-- Ugly workaround for MANTRUN-172 :/   See AS7-3993. -->
@@ -626,6 +561,31 @@
             <id>ts.ipv6.dummy.mcast</id>
             <activation><property><name>mcast</name></property></activation>
             <properties><mcast>${mcast}</mcast></properties>
+        </profile>
+        <profile>
+            <id>ts.ipv6.dummy.node2</id>
+            <activation><property><name>node2</name></property></activation>
+            <properties> <node2>${node2}</node2> </properties>
+        </profile>
+        <profile>
+            <id>ts.ipv6.dummy.node3</id>
+            <activation><property><name>node3</name></property></activation>
+            <properties> <node3>${node3}</node3> </properties>
+        </profile>
+        <profile>
+            <id>ts.ipv6.dummy.mcast1</id>
+            <activation><property><name>mcast1</name></property></activation>
+            <properties><mcast1>${mcast1}</mcast1></properties>
+        </profile>
+        <profile>
+            <id>ts.ipv6.dummy.mcast2</id>
+            <activation><property><name>mcast2</name></property></activation>
+            <properties><mcast2>${mcast2}</mcast2></properties>
+        </profile>
+        <profile>
+            <id>ts.ipv6.dummy.mcast3</id>
+            <activation><property><name>mcast3</name></property></activation>
+            <properties><mcast3>${mcast3}</mcast3></properties>
         </profile>
 
 
@@ -966,6 +926,68 @@
             </properties>
         </profile>
 
+        <profile>
+            <id>test-reporting</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions combine.self="override">
+
+                            <!-- Run the reporting tool. -->
+                            <execution>
+                                <id>reporting</id>
+                                <phase>site</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <inherited>false</inherited>
+                                <configuration>
+                                    <target>
+                                        <ant dir="${basedir}" antfile="${basedir}/tools/reporting/buildReports.xml">
+                                            <!-- Defaults.
+                                            <property name="reporting.dir" value="${basedir}/tools/reporting"/>
+                                            <property name="reports.dest.dir" value="${basedir}/target/reports"/>
+                                            <property name="reports.src.mask" value="**/target/surefire-reports/TEST-*.xml"/>
+                                            -->
+                                            <target name="reports"/>
+                                        </ant>
+                                    </target>
+                                </configuration>
+                            </execution>
+
+                            <!-- Help banner. -->
+                            <execution>
+                                <id>banner</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <inherited>false</inherited>
+                                <configuration>
+                                    <target>
+                                        <loadfile property="help.banner" srcFile="${basedir}/tools/help-banner.txt"/>
+                                        <echo>${help.banner}</echo>
+                                    </target>
+                                </configuration>
+                            </execution>
+
+                        </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.apache.ant</groupId>
+                                <artifactId>ant-junit</artifactId>
+                                <version>${version.ant.junit}</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+
+                </plugins>
+
+            </build>
+        </profile>
+
 
         <!-- JaCoCo test coverage. Will set ${jvm.args.jacoco} to be used in Arquillian config. -->
         <profile>
@@ -1103,12 +1125,13 @@
                                                     -->
                                                     <fileset dir="../appclient/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../arquillian/common/src/main/java"><include name="**/*.java"/></fileset>
+                                                    <fileset dir="../arquillian/common-domain/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../arquillian/container-embedded/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../arquillian/container-managed/src/main/java"><include name="**/*.java"/></fileset>
+                                                    <fileset dir="../arquillian/container-managed-domain/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../arquillian/container-remote/src/main/java"><include name="**/*.java"/></fileset>
+                                                    <fileset dir="../arquillian/container-remote-domain/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../arquillian/protocol-jmx/src/main/java"><include name="**/*.java"/></fileset>
-                                                    <fileset dir="../arquillian/protocol-servlet/src/main/java"><include name="**/*.java"/></fileset>
-                                                    <fileset dir="../arquillian/service/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../arquillian/testenricher-msc/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../cli/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../clustering/api/src/main/java"><include name="**/*.java"/></fileset>
@@ -1122,7 +1145,7 @@
                                                     <fileset dir="../clustering/singleton/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../clustering/web-infinispan/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../clustering/web-spi/src/main/java"><include name="**/*.java"/></fileset>
-                                                    <fileset dir="../configadmin/src/main/java"><include name="**/*.java"/></fileset>
+                                                    <fileset dir="../cmp/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../config-assembly/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../connector/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../controller-client/src/main/java"><include name="**/*.java"/></fileset>
@@ -1136,6 +1159,7 @@
                                                     <fileset dir="../embedded/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../host-controller/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../jacorb/src/main/java"><include name="**/*.java"/></fileset>
+                                                    <fileset dir="../jaxr/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../jaxrs/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../jdr/jboss-as-jdr/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../jmx/src/main/java"><include name="**/*.java"/></fileset>
@@ -1153,8 +1177,6 @@
                                                     <fileset dir="../modcluster/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../naming/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../network/src/main/java"><include name="**/*.java"/></fileset>
-                                                    <fileset dir="../osgi/configadmin/src/main/java"><include name="**/*.java"/></fileset>
-                                                    <fileset dir="../osgi/service/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../platform-mbean/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../pojo/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../process-controller/src/main/java"><include name="**/*.java"/></fileset>
@@ -1172,6 +1194,7 @@
                                                     <fileset dir="../web/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../weld/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../xts/src/main/java"><include name="**/*.java"/></fileset>
+                                                    <fileset dir="../rts/src/main/java"><include name="**/*.java"/></fileset>
                                                 </sourcefiles>
                                             </structure>
                                             <html destdir ="${basedir}/target/coverage-report/html"/>
@@ -1194,6 +1217,78 @@
             </build>
         </profile>
 
+        <profile>
+            <id>help</id>
+            <activation><property><name>ts.help</name></property></activation>
+            <build>
+                <plugins>
+                    <!-- Testsuite debugging info. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-help-plugin</artifactId>
+                        <inherited>true</inherited>
+                        <executions>
+                            <execution>
+                                <id>help.active-profiles</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>active-profiles</goal>
+                                </goals>
+                                <configuration>
+                                    <output>target/help.active-profiles.txt</output>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>help.effective-pom</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>effective-pom</goal>
+                                </goals>
+                                <configuration>
+                                    <output>target/help.effective-pom.txt</output>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>help.effective-settings</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>effective-settings</goal>
+                                </goals>
+                                <configuration>
+                                    <output>target/help.effective-settings.txt</output>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>help.system</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>system</goal>
+                                </goals>
+                                <configuration>
+                                    <output>target/help.system.txt</output>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.kuali.maven.plugins</groupId>
+                        <artifactId>properties-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>write-project-properties</goal>
+                                </goals>
+                                <configuration>
+                                    <outputFile>target/help.properties.txt</outputFile>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
 
 
     </profiles>

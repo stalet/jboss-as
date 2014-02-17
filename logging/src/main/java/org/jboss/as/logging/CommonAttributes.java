@@ -36,8 +36,10 @@ import org.jboss.as.controller.ObjectTypeAttributeDefinition;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
+import org.jboss.as.controller.SimpleMapAttributeDefinition;
 import org.jboss.as.controller.operations.validation.ObjectTypeValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
+import org.jboss.as.controller.registry.AttributeAccess.Flag;
 import org.jboss.as.logging.correctors.FileCorrector;
 import org.jboss.as.logging.resolvers.FileResolver;
 import org.jboss.as.logging.resolvers.LevelResolver;
@@ -67,6 +69,11 @@ public interface CommonAttributes {
             .setPropertyName("autoFlush")
             .build();
 
+    SimpleAttributeDefinition CLASS = SimpleAttributeDefinitionBuilder.create("class", ModelType.STRING)
+            .setAllowExpression(false)
+            .setFlags(Flag.RESTART_RESOURCE_SERVICES)
+            .build();
+
     PropertyAttributeDefinition ENABLED = PropertyAttributeDefinition.Builder.of("enabled", ModelType.BOOLEAN, true)
             .setAllowExpression(true)
             .setDefaultValue(new ModelNode(true))
@@ -77,28 +84,30 @@ public interface CommonAttributes {
             .setAttributeMarshaller(ElementAttributeMarshaller.VALUE_ATTRIBUTE_MARSHALLER)
             .build();
 
-    PropertyAttributeDefinition FILTER_SPEC = PropertyAttributeDefinition.Builder.of("filter-spec", ModelType.STRING, true)
-            .addAlternatives("filter")
-            .setAllowExpression(true)
-            .setAttributeMarshaller(ElementAttributeMarshaller.VALUE_ATTRIBUTE_MARSHALLER)
-            .build();
-
-    PropertyAttributeDefinition FORMATTER = PropertyAttributeDefinition.Builder.of("formatter", ModelType.STRING, true)
-            .setAllowExpression(true)
+    PropertyObjectTypeAttributeDefinition FILE = PropertyObjectTypeAttributeDefinition.Builder.of("file", RELATIVE_TO, PATH)
+            .setAllowExpression(false)
             .setAttributeMarshaller(new DefaultAttributeMarshaller() {
                 @Override
                 public void marshallAsElement(final AttributeDefinition attribute, final ModelNode resourceModel, final boolean marshallDefault, final XMLStreamWriter writer) throws XMLStreamException {
                     if (isMarshallable(attribute, resourceModel, marshallDefault)) {
                         writer.writeStartElement(attribute.getXmlName());
-                        writer.writeStartElement(PATTERN_FORMATTER);
-                        final String content = resourceModel.get(attribute.getName()).asString();
-                        writer.writeAttribute(PATTERN.getXmlName(), content);
-                        writer.writeEndElement();
+                        final ModelNode file = resourceModel.get(attribute.getName());
+                        RELATIVE_TO.marshallAsAttribute(file, marshallDefault, writer);
+                        PATH.marshallAsAttribute(file, marshallDefault, writer);
                         writer.writeEndElement();
                     }
                 }
             })
-            .setDefaultValue(new ModelNode("%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"))
+            .setCorrector(FileCorrector.INSTANCE)
+            .setPropertyName("fileName")
+            .setResolver(FileResolver.INSTANCE)
+            .setValidator(new FileValidator())
+            .build();
+
+    PropertyAttributeDefinition FILTER_SPEC = PropertyAttributeDefinition.Builder.of("filter-spec", ModelType.STRING, true)
+            .addAlternatives("filter")
+            .setAllowExpression(true)
+            .setAttributeMarshaller(ElementAttributeMarshaller.VALUE_ATTRIBUTE_MARSHALLER)
             .build();
 
     SimpleAttributeDefinition HANDLER = SimpleAttributeDefinitionBuilder.create("handler", ModelType.STRING)
@@ -127,12 +136,34 @@ public interface CommonAttributes {
 
     String LOGGING_PROFILES = "logging-profiles";
 
+    SimpleAttributeDefinition MODULE = SimpleAttributeDefinitionBuilder.create("module", ModelType.STRING)
+            .setAllowExpression(false)
+            .setFlags(Flag.RESTART_RESOURCE_SERVICES)
+            .build();
+
     SimpleAttributeDefinition NAME = SimpleAttributeDefinitionBuilder.create("name", ModelType.STRING, true)
             .setAllowExpression(false)
             .setDeprecated(ModelVersion.create(1, 2, 0))
             .build();
 
-    String PATTERN_FORMATTER = "pattern-formatter";
+    SimpleMapAttributeDefinition PROPERTIES = new SimpleMapAttributeDefinition.Builder("properties", true)
+            .setAllowExpression(true)
+            .setAttributeMarshaller(new DefaultAttributeMarshaller() {
+                @Override
+                public void marshallAsElement(AttributeDefinition attribute, ModelNode resourceModel, boolean marshallDefault, XMLStreamWriter writer) throws XMLStreamException {
+                    resourceModel = resourceModel.get(attribute.getName());
+                    if (resourceModel.isDefined()) {
+                        writer.writeStartElement(attribute.getName());
+                        for (ModelNode property : resourceModel.asList()) {
+                            writer.writeEmptyElement(Element.PROPERTY.getLocalName());
+                            writer.writeAttribute("name", property.asProperty().getName());
+                            writer.writeAttribute("value", property.asProperty().getValue().asString());
+                        }
+                        writer.writeEndElement();
+                    }
+                }
+            })
+            .build();
 
     /**
      * The name of the root logger.
@@ -156,24 +187,8 @@ public interface CommonAttributes {
             .setDefaultValue(new ModelNode(true))
             .build();
 
-    PropertyObjectTypeAttributeDefinition FILE = PropertyObjectTypeAttributeDefinition.Builder.of("file", RELATIVE_TO, PATH)
+    SimpleAttributeDefinition FILTER_PATTERN = SimpleAttributeDefinitionBuilder.create("pattern", ModelType.STRING)
             .setAllowExpression(false)
-            .setAttributeMarshaller(new DefaultAttributeMarshaller() {
-                @Override
-                public void marshallAsElement(final AttributeDefinition attribute, final ModelNode resourceModel, final boolean marshallDefault, final XMLStreamWriter writer) throws XMLStreamException {
-                    if (isMarshallable(attribute, resourceModel, marshallDefault)) {
-                        writer.writeStartElement(attribute.getXmlName());
-                        final ModelNode file = resourceModel.get(attribute.getName());
-                        RELATIVE_TO.marshallAsAttribute(file, marshallDefault, writer);
-                        PATH.marshallAsAttribute(file, marshallDefault, writer);
-                        writer.writeEndElement();
-                    }
-                }
-            })
-            .setCorrector(FileCorrector.INSTANCE)
-            .setPropertyName("fileName")
-            .setResolver(FileResolver.INSTANCE)
-            .setValidator(new FileValidator())
             .build();
 
     SimpleAttributeDefinition MATCH = SimpleAttributeDefinitionBuilder.create("match", ModelType.STRING)
@@ -206,10 +221,6 @@ public interface CommonAttributes {
             .setAllowExpression(false)
             .setCorrector(CaseParameterCorrector.TO_UPPER)
             .setValidator(new LogLevelValidator(true))
-            .build();
-
-    SimpleAttributeDefinition PATTERN = SimpleAttributeDefinitionBuilder.create("pattern", ModelType.STRING)
-            .setAllowExpression(false)
             .build();
 
     SimpleAttributeDefinition REPLACEMENT = SimpleAttributeDefinitionBuilder.create("replacement", ModelType.STRING)
@@ -248,15 +259,15 @@ public interface CommonAttributes {
             })
             .build();
 
-    ObjectTypeAttributeDefinition REPLACE = ObjectTypeAttributeDefinition.Builder.of("replace", PATTERN, REPLACEMENT, REPLACE_ALL)
+    ObjectTypeAttributeDefinition REPLACE = ObjectTypeAttributeDefinition.Builder.of("replace", FILTER_PATTERN, REPLACEMENT, REPLACE_ALL)
             .setAllowExpression(false)
             .setAllowNull(true)
-            .setValidator(new ObjectTypeValidator(false, PATTERN, REPLACEMENT, REPLACE_ALL) {
+            .setValidator(new ObjectTypeValidator(false, FILTER_PATTERN, REPLACEMENT, REPLACE_ALL) {
                 @Override
                 public void validateParameter(final String parameterName, final ModelNode value) throws OperationFailedException {
                     super.validateParameter(parameterName, value);
                     final ModelNode clonedValue = value.clone();
-                    final AttributeDefinition[] allowedValues = {PATTERN, REPLACEMENT, REPLACE_ALL};
+                    final AttributeDefinition[] allowedValues = {FILTER_PATTERN, REPLACEMENT, REPLACE_ALL};
                     for (AttributeDefinition valueType : allowedValues) {
                         final ModelNode syntheticValue;
                         // Does the value the type

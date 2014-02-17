@@ -39,6 +39,7 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REA
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.READ_RESOURCE_OPERATION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RECURSIVE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REQUEST_PROPERTIES;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RUNTIME_ONLY;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.TYPE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.WRITE_ATTRIBUTE_OPERATION;
@@ -612,6 +613,12 @@ public class GlobalOperationsTestCase extends AbstractGlobalOperationsTestCase {
         assertEquals(ModelType.OBJECT, result.getType());
         assertEquals("testA1-2", result.require(OPERATION_NAME).asString());
         assertEquals(ModelType.STRING, result.require(REQUEST_PROPERTIES).require("paramA2").require(TYPE).asType());
+        assertEquals(false, result.require(RUNTIME_ONLY).asBoolean());
+
+        operation = createOperation(READ_OPERATION_DESCRIPTION_OPERATION, "profile", "profileA", "subsystem", "subsystem6");
+        operation.get(NAME).set("testA");
+        result = executeForResult(operation);
+        assertEquals(true, result.require(RUNTIME_ONLY).asBoolean());
     }
 
     @Test
@@ -784,11 +791,15 @@ public class GlobalOperationsTestCase extends AbstractGlobalOperationsTestCase {
 
         operation.get(OP_ADDR).setEmptyList().add("profile", "profileA").add("subsystem", "subsystem1");
         result = executeForResult(operation);
-        Assert.assertEquals(1, result.keys().size());
+        Assert.assertEquals(3, result.keys().size());
         List<ModelNode> list = result.get("attr1").asList();
         Assert.assertEquals(2, list.size());
         Assert.assertEquals(1, list.get(0).asInt());
         Assert.assertEquals(2, list.get(1).asInt());
+        assertTrue(result.has("read-only"));
+        assertTrue(result.has("read-write"));
+        assertFalse(result.hasDefined("read-only"));
+        assertFalse(result.hasDefined("read-write"));
 
 
         operation.get(RECURSIVE).set(true);
@@ -796,12 +807,16 @@ public class GlobalOperationsTestCase extends AbstractGlobalOperationsTestCase {
     }
 
     private void checkNonRecursiveSubsystem1(ModelNode result, boolean includeRuntime) {
-        assertEquals(includeRuntime ? 5 : 3, result.keys().size());
+        assertEquals(includeRuntime ? 7 : 5, result.keys().size());
         ModelNode content = result.require("attr1");
         List<ModelNode> list = content.asList();
         assertEquals(2, list.size());
         assertEquals(1, list.get(0).asInt());
         assertEquals(2, list.get(1).asInt());
+        assertTrue(result.has("read-only"));
+        assertTrue(result.has("read-write"));
+        assertFalse(result.hasDefined("read-only"));
+        assertFalse(result.hasDefined("read-write"));
         assertEquals(2, result.require("type1").keys().size());
         assertTrue(result.require("type1").has("thing1"));
         assertFalse(result.require("type1").get("thing1").isDefined());
@@ -817,11 +832,15 @@ public class GlobalOperationsTestCase extends AbstractGlobalOperationsTestCase {
     }
 
     private void checkRecursiveSubsystem1(ModelNode result) {
-        assertEquals(3, result.keys().size());
+        assertEquals(5, result.keys().size());
         List<ModelNode> list = result.require("attr1").asList();
         assertEquals(2, list.size());
         assertEquals(1, list.get(0).asInt());
         assertEquals(2, list.get(1).asInt());
+        assertTrue(result.has("read-only"));
+        assertTrue(result.has("read-write"));
+        assertFalse(result.hasDefined("read-only"));
+        assertFalse(result.hasDefined("read-write"));
         assertEquals("Name11", result.require("type1").require("thing1").require("name").asString());
         assertEquals(201, result.require("type1").require("thing1").require("value").asInt());
         assertEquals("Name12", result.require("type1").require("thing2").require("name").asString());

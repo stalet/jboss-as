@@ -51,7 +51,12 @@ public class ArgumentState extends DefaultParsingState {
         final NameValueSeparatorState nvSep = new NameValueSeparatorState(valueState);
         enterState('=', nvSep);
         //setLeaveOnWhitespace(true);
-        setDefaultHandler(WordCharacterHandler.IGNORE_LB_ESCAPE_ON);
+        setDefaultHandler(new CharacterHandler(){
+            @Override
+            public void handle(ParsingContext ctx) throws CommandFormatException {
+                ctx.resolveExpression(true, true);
+                WordCharacterHandler.IGNORE_LB_ESCAPE_ON.handle(ctx);
+            }});
         setWhitespaceHandler(new EnterStateCharacterHandler(new WhitespaceState()));
         setReturnHandler(new CharacterHandler(){
             @Override

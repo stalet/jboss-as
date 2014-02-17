@@ -35,32 +35,34 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_
 /**
  * Operation handler responsible for disabling an existing data-source.
  *
- * @author tefano Maestri
+ * @author Stefano Maestri
  */
 public class RaActivate implements OperationStepHandler {
     static final RaActivate INSTANCE = new RaActivate();
 
     public void execute(OperationContext context, ModelNode operation)  throws OperationFailedException {
 
-        final ModelNode model = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS).getModel();
         final ModelNode address = operation.require(OP_ADDR);
-        final String raName = PathAddress.pathAddress(address).getLastElement().getValue();
+        final String idName = PathAddress.pathAddress(address).getLastElement().getValue();
+        final String raName = context.readResource(PathAddress.EMPTY_ADDRESS).getModel().get("archive").asString();
+
         if (context.isNormalServer()) {
             context.addStep(new OperationStepHandler() {
                 public void execute(final OperationContext context, ModelNode operation) throws OperationFailedException {
                     final ServiceVerificationHandler svh = new ServiceVerificationHandler();
 
-                    ServiceName restartedServiceName = RaOperationUtil.restartIfPresent(context, raName, svh);
+
+                    ServiceName restartedServiceName = RaOperationUtil.restartIfPresent(context, raName, idName, svh);
 
                     if (restartedServiceName == null) {
-                        RaOperationUtil.activate(context, raName, svh);
+                        RaOperationUtil.activate(context, idName, svh);
                     }
                     context.addStep(svh, OperationContext.Stage.VERIFY);
                     context.completeStep(new OperationContext.RollbackHandler() {
                         @Override
                         public void handleRollback(OperationContext context, ModelNode operation) {
                             try {
-                                RaOperationUtil.removeIfActive(context, raName);
+                                RaOperationUtil.removeIfActive(context, raName, idName);
                             } catch (OperationFailedException e) {
 
                             }

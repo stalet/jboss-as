@@ -28,26 +28,22 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-jpa-parent</artifactId>
-    <version>8.0.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-jpa-parent</artifactId>
+    <version>8.0.1.Final-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>JBoss Application Server: JPA Subsystem</name>
+    <name>WildFly: JPA Subsystem</name>
 
     <modules>
         <module>core</module>
         <module>util</module>
-        <module>spi</module>
-        <module>hibernate4</module>
-        <module>hibernate3</module>
-        <module>openjpa</module>
     </modules>
 
     <dependencies>
@@ -58,7 +54,19 @@
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
+            <artifactId>jboss-logging-annotations</artifactId>
+            <!-- This is a compile-time dependency of this project, but is not needed at compile or runtime by other
+                  projects that depend on this project.-->
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.logging</groupId>
             <artifactId>jboss-logging-processor</artifactId>
+            <!-- This is a compile-time dependency of this project, but is not needed at compile or runtime by other
+                  projects that depend on this project.-->
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>

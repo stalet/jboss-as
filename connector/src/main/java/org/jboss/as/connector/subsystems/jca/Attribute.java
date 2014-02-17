@@ -52,9 +52,17 @@ public enum Attribute {
 
     ERROR("error"),
 
+    IGNORE_UNKNOWN_CONNECHIONS("ignore-unknown-connections"),
+
     NAME("name"),
 
-    WORKMANAGER("workmanager");
+    WORKMANAGER("workmanager"),
+
+    JGROUPS_STACK("jgroups-stack"),
+
+    JGROUPS_CLUSTER("jgroups-cluster"),
+
+    REQUEST_TIMEOUT("request-timeout");
 
     private final String name;
 

@@ -25,8 +25,6 @@ package org.jboss.as.clustering.infinispan.subsystem;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.jboss.as.controller.AttributeDefinition;
-
 /**
  * Enumerates the elements used in the Infinispan subsystem schema.
  *
@@ -39,6 +37,9 @@ public enum Element {
     UNKNOWN((String)null),
 
     ALIAS(ModelKeys.ALIAS),
+    BACKUP(ModelKeys.BACKUP),
+    BACKUP_FOR(ModelKeys.BACKUP_FOR),
+    BACKUPS(ModelKeys.BACKUPS),
     BINARY_KEYED_TABLE(ModelKeys.BINARY_KEYED_TABLE),
     @Deprecated BUCKET_TABLE(ModelKeys.BUCKET_TABLE),
     CACHE_CONTAINER(ModelKeys.CACHE_CONTAINER),
@@ -65,6 +66,7 @@ public enum Element {
     STATE_TRANSFER(ModelKeys.STATE_TRANSFER),
     STORE(ModelKeys.STORE),
     STRING_KEYED_TABLE(ModelKeys.STRING_KEYED_TABLE),
+    TAKE_OFFLINE("take-offline"),
     TIMESTAMP_COLUMN(ModelKeys.TIMESTAMP_COLUMN),
     TRANSACTION(ModelKeys.TRANSACTION),
     TRANSPORT(ModelKeys.TRANSPORT),
@@ -72,16 +74,9 @@ public enum Element {
     ;
 
     private final String name;
-    private final AttributeDefinition definition;
 
     Element(final String name) {
         this.name = name;
-        this.definition = null;
-    }
-
-    Element(final AttributeDefinition definition) {
-        this.name = definition.getXmlName();
-        this.definition = definition;
     }
 
     /**
@@ -90,17 +85,13 @@ public enum Element {
      * @return the local name
      */
     public String getLocalName() {
-        return name;
-    }
-
-    public AttributeDefinition getDefinition() {
-        return definition;
+        return this.name;
     }
 
     private static final Map<String, Element> elements;
 
     static {
-        final Map<String, Element> map = new HashMap<String, Element>();
+        final Map<String, Element> map = new HashMap<>();
         for (Element element : values()) {
             final String name = element.getLocalName();
             if (name != null) map.put(name, element);

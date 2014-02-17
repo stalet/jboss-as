@@ -24,6 +24,8 @@ import org.jboss.as.controller.CompositeOperationHandler;
 import org.jboss.as.controller.ControlledProcessState;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ProcessType;
+import org.jboss.as.controller.access.management.DelegatingConfigurableAuthorizer;
+import org.jboss.as.controller.audit.ManagedAuditLogger;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
 import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.operations.common.ValidateOperationHandler;
@@ -70,8 +72,9 @@ public class HostModelUtil {
 
     public static void createRootRegistry(final ManagementResourceRegistration root, final HostControllerEnvironment environment,
                                           final IgnoredDomainResourceRegistry ignoredDomainResourceRegistry,
-                                          final HostModelRegistrar hostModelRegistrar, ProcessType processType) {
-
+                                          final HostModelRegistrar hostModelRegistrar,
+                                          final ProcessType processType,
+                                          final DelegatingConfigurableAuthorizer authorizer) {
         // Add of the host itself
         final HostModelRegistrationHandler hostModelRegistratorHandler = new HostModelRegistrationHandler(environment, ignoredDomainResourceRegistry, hostModelRegistrar);
         root.registerOperationHandler(HostModelRegistrationHandler.DEFINITION, hostModelRegistratorHandler);
@@ -82,7 +85,7 @@ public class HostModelUtil {
         if (root.getOperationEntry(PathAddress.EMPTY_ADDRESS, ValidateOperationHandler.DEFINITION.getName())==null){//this is hack
             root.registerOperationHandler(ValidateOperationHandler.DEFINITION, ValidateOperationHandler.INSTANCE);
         }
-        root.registerOperationHandler(WhoAmIOperation.DEFINITION, WhoAmIOperation.INSTANCE, true);
+        root.registerOperationHandler(WhoAmIOperation.DEFINITION, WhoAmIOperation.createOperation(authorizer), true);
 
         // Other root resource operations
         root.registerOperationHandler(CompositeOperationHandler.DEFINITION, CompositeOperationHandler.INSTANCE);
@@ -100,14 +103,16 @@ public class HostModelUtil {
                                           final AbstractVaultReader vaultReader,
                                           final IgnoredDomainResourceRegistry ignoredRegistry,
                                           final ControlledProcessState processState,
-                                          final PathManagerService pathManager) {
+                                          final PathManagerService pathManager,
+                                          final DelegatingConfigurableAuthorizer authorizer,
+                                          final ManagedAuditLogger auditLogger) {
         // Add of the host itself
         ManagementResourceRegistration hostRegistration = root.registerSubModel(
                 new HostResourceDefinition(hostName, configurationPersister,
                         environment, runningModeControl, localFileRepository,
                         hostControllerInfo, serverInventory, remoteFileRepository,
                         contentRepository, domainController, extensionRegistry,
-                        vaultReader, ignoredRegistry, processState, pathManager));
+                        vaultReader, ignoredRegistry, processState, pathManager, authorizer, auditLogger));
 
         //TODO See if some of all these parameters can come from domain controller
         LocalDomainControllerAddHandler localDcAddHandler = LocalDomainControllerAddHandler.getInstance(root, hostControllerInfo,

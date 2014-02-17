@@ -39,21 +39,18 @@ import org.jboss.as.test.shared.RetryTaskExecutor;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.jboss.shrinkwrap.impl.base.exporter.zip.ZipExporterImpl;
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
-import org.junit.FixMethodOrder;
 import org.junit.Test;
-import org.junit.runners.MethodSorters;
 
 /**
  *
  * @author Dominik Pospisil <dpospisi@redhat.com>
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class RolloutPlanTestCase extends AbstractCliTestBase {
 
-    private static WebArchive war;
     private static File warFile;
     private static final int TEST_PORT = 8081;
 
@@ -61,12 +58,11 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
 
     @BeforeClass
     public static void before() throws Exception {
-        war = ShrinkWrap.create(WebArchive.class, "RolloutPlanTestCase.war");
+        final WebArchive war = ShrinkWrap.create(WebArchive.class, "RolloutPlanTestCase.war");
         war.addClass(RolloutPlanTestServlet.class);
         String tempDir = System.getProperty("java.io.tmpdir");
         warFile = new File(tempDir + File.separator + "RolloutPlanTestCase.war");
         new ZipExporterImpl(war).exportTo(warFile, true);
-        war = ShrinkWrap.create(WebArchive.class, "RolloutPlanTestCase.war");
 
         AbstractCliTestBase.initCLI(DomainTestSupport.masterAddress);
 
@@ -94,6 +90,11 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
     @AfterClass
     public static void after() throws Exception {
 
+        if (warFile.exists()){
+            //noinspection ResultOfMethodCallIgnored
+            warFile.delete();
+        }
+
         // stop test-one
         cli.sendLine("/host=master/server-config=test-one:stop(blocking=true)");
         CLIOpResult res = cli.readAllAsOpResult();
@@ -109,8 +110,18 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
         AbstractCliTestBase.closeCLI();
     }
 
+    @After
+    public void afterTest() throws Exception {
+
+        // undeploy helper servlets
+        cli.sendLine("undeploy RolloutPlanTestCase.war --all-relevant-server-groups", true);
+
+        // remove socket binding
+        cli.sendLine("/socket-binding-group=standard-sockets/socket-binding=test-binding:remove", true);
+    }
+
     @Test
-    public void test1InSeriesRolloutPlan() throws Exception {
+    public void testInSeriesRolloutPlan() throws Exception {
 
         // create rollout plans
 
@@ -171,9 +182,6 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
         Assert.assertTrue(mainThreeTime > otherTwoTime);
         Assert.assertTrue(otherTwoTime > testOneTime);
 
-        // undeploy apps
-        cli.sendLine("undeploy RolloutPlanTestCase.war --all-relevant-server-groups");
-
         // remove rollout plans
         cli.sendLine("rollout-plan remove --name=testPlan");
         cli.sendLine("rollout-plan remove --name=testPlan2");
@@ -191,7 +199,7 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
      * Tests rollout plan with non-zero maxFailedServers attribute.
      */
     @Test
-    public void test2MaxFailServersRolloutPlan() throws Exception {
+    public void testMaxFailServersRolloutPlan() throws Exception {
 
         // deploy helper servlets
         cli.sendLine("deploy " + warFile.getAbsolutePath() + " --all-server-groups");
@@ -239,25 +247,18 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
         Assert.assertFalse(getServerStatus("main-two", ret));
         Assert.assertFalse(getServerStatus("main-three", ret));
         Assert.assertTrue(getServerStatus("test-one", ret));
-        ret = testRemoveConnector("maxFailOnePlan");
-        Assert.assertTrue(ret.isIsOutcomeSuccess());
-        Assert.assertFalse(getServerStatus("main-two", ret));
-        Assert.assertFalse(getServerStatus("main-three", ret));
-        Assert.assertTrue(getServerStatus("test-one", ret));
 
-        // undeploy helper servlets
-        cli.sendLine("undeploy RolloutPlanTestCase.war --all-relevant-server-groups");
+        testCleanupConnector("maxFailOnePlan");
 
-        // remove socket binding
-        cli.sendLine("/socket-binding-group=standard-sockets/socket-binding=test-binding:remove");
-
+        // remove rollout plan
+        cli.sendLine("rollout-plan remove --name=maxFailOnePlan");
     }
 
     /**
      * Tests rollout plan with non-zero maxFailurePercentage attribute.
      */
     @Test
-    public void test3MaxFailServersPercentageRolloutPlan() throws Exception {
+    public void testMaxFailServersPercentageRolloutPlan() throws Exception {
 
         // deploy helper servlets
         cli.sendLine("deploy " + warFile.getAbsolutePath() + " --all-server-groups");
@@ -298,24 +299,18 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
         Assert.assertFalse(getServerStatus("main-two", ret));
         Assert.assertFalse(getServerStatus("main-three", ret));
         Assert.assertTrue(getServerStatus("test-one", ret));
-        ret = testRemoveConnector("maxFailOnePlan");
-        Assert.assertTrue(ret.isIsOutcomeSuccess());
-        Assert.assertFalse(getServerStatus("main-two", ret));
-        Assert.assertFalse(getServerStatus("main-three", ret));
-        Assert.assertTrue(getServerStatus("test-one", ret));
 
-        // undeploy helper servlets
-        cli.sendLine("undeploy RolloutPlanTestCase.war --all-relevant-server-groups");
+        testCleanupConnector("maxFailPercPlan");
 
-        // remove socket binding
-        cli.sendLine("/socket-binding-group=standard-sockets/socket-binding=test-binding:remove");
+        // remove rollout plan
+        cli.sendLine("rollout-plan remove --name=maxFailPercPlan");
     }
 
     /**
      * Tests rollout plan with RollbackAcrossGroups set to true.
      */
     @Test
-    public void test4RollbackAcrossGroupsRolloutPlan() throws Exception {
+    public void testRollbackAcrossGroupsRolloutPlan() throws Exception {
         // deploy helper servlets
         cli.sendLine("deploy " + warFile.getAbsolutePath() + " --all-server-groups");
 
@@ -350,24 +345,40 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
         Assert.assertFalse(getServerStatus("main-three", ret));
         Assert.assertFalse(getServerStatus("test-one", ret));
 
-        // undeploy helper servlets
-        cli.sendLine("undeploy RolloutPlanTestCase.war --all-relevant-server-groups");
-
-        // remove socket binding
-        cli.sendLine("/socket-binding-group=standard-sockets/socket-binding=test-binding:remove");
+        // remove rollout plan
+        cli.sendLine("rollout-plan remove --name=groupsRollbackPlan");
     }
 
     private CLIOpResult testAddConnector(String rolloutPlanId) throws Exception {
-        cli.sendLine("/profile=default/subsystem=web/connector=test-http:add" +
-                "(socket-binding=test-binding, scheme=http, protocol=\"HTTP/1.1\", enabled=true)"
+        cli.sendLine("/profile=default/subsystem=undertow/server=default-server/http-listener="+rolloutPlanId+":add" +
+                "(socket-binding=test-binding)"
                 + "{rollout id=" + rolloutPlanId + "}", true);
         return cli.readAllAsOpResult();
     }
 
     private CLIOpResult testRemoveConnector(String rolloutPlanId) throws Exception {
-        cli.sendLine("/profile=default/subsystem=web/connector=test-http:remove" +
+        cli.sendLine("/profile=default/subsystem=undertow/server=default-server/http-listener="+rolloutPlanId+":remove" +
                 "{rollout id=" + rolloutPlanId + "; allow-resource-service-restart=true}");
         return cli.readAllAsOpResult();
+    }
+
+    private void testCleanupConnector(String rolloutPlanId) throws Exception {
+        CLIOpResult ret = testRemoveConnector(rolloutPlanId);
+        Assert.assertTrue(ret.isIsOutcomeSuccess());
+        Assert.assertTrue(getServerStatus("test-one", ret));
+        boolean gotNoResponse = false;
+        for (String server : new String[]{"main-one", "main-two", "main-three"}) {
+            try {
+                Assert.assertFalse(getServerStatus(server, ret));
+            } catch (NoResponseException e) {
+                if (gotNoResponse) {
+                    throw e;
+                }
+                gotNoResponse = true;
+            }
+        }
+        Assert.assertTrue("received no response from one server", gotNoResponse);
+
     }
 
 
@@ -387,7 +398,7 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
                 }
             }
         }
-        throw new Exception("Status of the server " + serverName + " not found in operation result.");
+        throw new NoResponseException(serverName);
     }
 
 
@@ -421,9 +432,9 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
 
     private static void waitUntilState(final String serverName, final String state) throws TimeoutException {
         final String serverHost = CLITestSuite.getServerHost(serverName);
-        RetryTaskExecutor taskExecutor = new RetryTaskExecutor();
-        taskExecutor.retryTask(new Callable() {
-            public Object call() throws Exception {
+        RetryTaskExecutor<Void> taskExecutor = new RetryTaskExecutor<Void>();
+        taskExecutor.retryTask(new Callable<Void>() {
+            public Void call() throws Exception {
                 cli.sendLine("/host=" + serverHost + "/server-config=" + serverName + ":read-attribute(name=status)");
                 CLIOpResult res = cli.readAllAsOpResult();
                 if (! res.getResult().equals(state)) throw new Exception("Server not in state.");
@@ -431,6 +442,14 @@ public class RolloutPlanTestCase extends AbstractCliTestBase {
             }
         });
 
+    }
+
+    private static class NoResponseException extends Exception {
+        private static final long serialVersionUID = 1L;
+
+        private NoResponseException(String serverName) {
+            super("Status of the server " + serverName + " not found in operation result.");
+        }
     }
 
 }

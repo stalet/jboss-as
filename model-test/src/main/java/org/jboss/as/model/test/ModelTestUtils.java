@@ -264,7 +264,6 @@ public class ModelTestUtils {
             xmlMarshalled = marshalled;
         }
 
-
         Assert.assertEquals(normalizeXML(xmlOriginal), normalizeXML(xmlMarshalled));
     }
 
@@ -435,7 +434,8 @@ public class ModelTestUtils {
                 Assert.assertNotNull(getComparePathAsString(stack) + " Attribute " + name + " is not known", aa);
                 AttributeDefinition ad = aa.getAttributeDefinition();
                 if (!value.isDefined()) {
-                    Assert.assertTrue(getComparePathAsString(stack) + " Attribute " + name + " does not allow null", ad.isAllowNull());
+                    // check if the attribute definition allows null *or* if its default value is null
+                    Assert.assertTrue(getComparePathAsString(stack) + " Attribute " + name + " does not allow null", (ad.isAllowNull() || ad.getDefaultValue() == null));
                 } else {
                    // Assert.assertEquals("Attribute '" + name + "' type mismatch", value.getType(), ad.getType()); //todo re-enable this check
                 }
@@ -468,7 +468,7 @@ public class ModelTestUtils {
                     }
                 }
             } else {
-                if (children.contains(pe.getKeyValuePair())) {
+                if (children.contains(pe.getKey()) && model.hasDefined(pe.getKey()) && model.get(pe.getKey()).hasDefined(pe.getValue())) {
                     String name = pe.getValue();
                     ModelNode value = model.get(pe.getKeyValuePair());
                     ManagementResourceRegistration sub = rr.getSubModel(PathAddress.pathAddress(pe));

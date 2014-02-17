@@ -20,6 +20,7 @@ package org.jboss.as.cli.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Container;
+import java.awt.Desktop;
 import java.awt.Image;
 import java.awt.Toolkit;
 import java.awt.Window;
@@ -47,7 +48,9 @@ import javax.swing.UIManager.LookAndFeelInfo;
 import org.jboss.as.cli.CommandContext;
 import org.jboss.as.cli.gui.component.CLIOutput;
 import org.jboss.as.cli.gui.component.ScriptMenu;
+import org.jboss.as.cli.gui.component.TabsMenu;
 import org.jboss.as.cli.gui.metacommand.DeployAction;
+import org.jboss.as.cli.gui.metacommand.OnlineHelpAction;
 import org.jboss.as.cli.gui.metacommand.UndeployAction;
 
 /**
@@ -58,7 +61,7 @@ import org.jboss.as.cli.gui.metacommand.UndeployAction;
 public class GuiMain {
     private static Image jbossIcon;
     static {
-        URL iconURL = GuiMain.class.getResource("/icon/as7_logo_32x32x32.png");
+        URL iconURL = GuiMain.class.getResource("/icon/wildfly.png");
         jbossIcon = Toolkit.getDefaultToolkit().getImage(iconURL);
         ToolTipManager.sharedInstance().setDismissDelay(15000);
     }
@@ -141,9 +144,12 @@ public class GuiMain {
     public static JMenuBar makeMenuBar(CliGuiContext cliGuiCtx) {
         JMenuBar menuBar = new JMenuBar();
         menuBar.add(makeDeploymentsMenu(cliGuiCtx));
+        menuBar.add(new TabsMenu(cliGuiCtx));
         menuBar.add(new ScriptMenu(cliGuiCtx));
         JMenu lfMenu = makeLookAndFeelMenu(cliGuiCtx);
         if (lfMenu != null) menuBar.add(lfMenu);
+        JMenu helpMenu = makeHelpMenu();
+        if (helpMenu != null) menuBar.add(helpMenu);
         return menuBar;
     }
 
@@ -199,6 +205,19 @@ public class GuiMain {
         metaCmdMenu.add(unDeploy);
 
         return metaCmdMenu;
+    }
+
+    private static JMenu makeHelpMenu() {
+        if (!Desktop.isDesktopSupported()) return null;
+        final Desktop desktop = Desktop.getDesktop();
+        if (!desktop.isSupported(Desktop.Action.BROWSE)) return null;
+
+        JMenu help = new JMenu("Help");
+        help.setMnemonic(KeyEvent.VK_H);
+        JMenuItem onlineHelp = new JMenuItem(new OnlineHelpAction());
+        help.add(onlineHelp);
+
+        return help;
     }
 
     private static JTabbedPane makeTabbedPane(CliGuiContext cliGuiCtx, JPanel output) {

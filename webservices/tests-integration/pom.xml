@@ -27,30 +27,17 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-webservices</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-webservices</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-webservices-tests-integration</artifactId>
-    <version>8.0.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-webservices-tests-integration</artifactId>
+    <version>8.0.1.Final-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>JBoss Application Server: Web Services Tests Integration Subsystem</name>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <fork>true</fork>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-
+    <name>WildFly: Web Services Tests Integration Subsystem</name>
 
     <dependencies>
         <dependency>
@@ -58,12 +45,12 @@
             <artifactId>jbossws-spi</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller-client</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller-client</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-security</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security</artifactId>
             <exclusions>
                 <exclusion>
                     <groupId>org.hornetq</groupId>
@@ -84,16 +71,24 @@
                     <groupId>org.jboss.xnio</groupId>
                     <artifactId>xnio-api</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>org.jboss.remoting3</groupId>
+                    <artifactId>jboss-remoting</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>javax.mail</groupId>
-            <artifactId>mail</artifactId>
+            <groupId>com.sun.mail</groupId>
+            <artifactId>javax.mail</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss</groupId>
             <artifactId>jboss-ejb-client</artifactId>
             <exclusions>
+                <exclusion>
+                    <groupId>org.jboss.remoting</groupId>
+                    <artifactId>jboss-remoting</artifactId>
+                </exclusion>
                 <exclusion>
                     <groupId>org.jboss.remoting3</groupId>
                     <artifactId>jboss-remoting</artifactId>
@@ -135,7 +130,7 @@
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>org.jboss.remoting3</groupId>
+            <groupId>org.jboss.remoting</groupId>
             <artifactId>jboss-remoting</artifactId>
         </dependency>
         <dependency>

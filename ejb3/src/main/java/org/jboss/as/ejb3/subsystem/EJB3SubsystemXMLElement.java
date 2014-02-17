@@ -46,6 +46,7 @@ public enum EJB3SubsystemXMLElement {
     DEFAULT_DISTINCT_NAME("default-distinct-name"),
     DEFAULT_SECURITY_DOMAIN("default-security-domain"),
     DEFAULT_MISSING_METHOD_PERMISSIONS_DENY_ACCESS(EJB3SubsystemModel.DEFAULT_MISSING_METHOD_PERMISSIONS_DENY_ACCESS),
+    DISABLE_DEFAULT_EJB_PERMISSIONS(EJB3SubsystemModel.DISABLE_DEFAULT_EJB_PERMISSIONS),
 
     FILE_DATA_STORE("file-data-store"),
 
@@ -65,9 +66,10 @@ public enum EJB3SubsystemXMLElement {
     OPTIMISTIC_LOCKING("optimistic-locking"),
     OPTION("option"),
 
+    PASSIVATION_STORE("passivation-store"),
     PASSIVATION_STORES("passivation-stores"),
-    CLUSTER_PASSIVATION_STORE("cluster-passivation-store"),
-    FILE_PASSIVATION_STORE("file-passivation-store"),
+    @Deprecated CLUSTER_PASSIVATION_STORE("cluster-passivation-store"),
+    @Deprecated FILE_PASSIVATION_STORE("file-passivation-store"),
 
     REMOTE("remote"),
     RESOURCE_ADAPTER_NAME("resource-adapter-name"),

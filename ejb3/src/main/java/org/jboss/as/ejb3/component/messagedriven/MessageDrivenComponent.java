@@ -24,7 +24,6 @@ package org.jboss.as.ejb3.component.messagedriven;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import javax.resource.ResourceException;
 import javax.resource.spi.ActivationSpec;
@@ -41,19 +40,18 @@ import org.jboss.as.ejb3.inflow.JBossMessageEndpointFactory;
 import org.jboss.as.ejb3.inflow.MessageEndpointService;
 import org.jboss.as.ejb3.pool.Pool;
 import org.jboss.as.ejb3.pool.StatelessObjectFactory;
-import org.jboss.as.naming.ManagedReference;
-import org.jboss.as.util.security.GetClassLoaderAction;
+import org.wildfly.security.manager.action.GetClassLoaderAction;
 import org.jboss.invocation.Interceptor;
-import org.jboss.invocation.InterceptorFactoryContext;
 import org.jboss.jca.core.spi.rar.Endpoint;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 import static java.security.AccessController.doPrivileged;
 import static java.util.Collections.emptyMap;
 import static javax.ejb.TransactionAttributeType.REQUIRED;
 import static org.jboss.as.ejb3.EjbLogger.ROOT_LOGGER;
-import static org.jboss.as.ejb3.component.MethodIntf.BEAN;
 
 import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+import static org.jboss.as.ejb3.component.MethodIntf.MESSAGE_ENDPOINT;
 
 /**
  * @author <a href="mailto:cdewolf@redhat.com">Carlo de Wolf</a>
@@ -67,15 +65,18 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
     private final MessageEndpointFactory endpointFactory;
     private final Class<?> messageListenerInterface;
     private final ClassLoader classLoader;
+    private volatile boolean deliveryActive;
     private ResourceAdapter resourceAdapter;
     private Endpoint endpoint;
+    private String activationName;
 
     /**
      * Construct a new instance.
      *
      * @param ejbComponentCreateService the component configuration
+     * @param deliveryActive true if the component must start delivering messages as soon as it is started
      */
-    protected MessageDrivenComponent(final MessageDrivenComponentCreateService ejbComponentCreateService, final Class<?> messageListenerInterface, final ActivationSpec activationSpec) {
+    protected MessageDrivenComponent(final MessageDrivenComponentCreateService ejbComponentCreateService, final Class<?> messageListenerInterface, final ActivationSpec activationSpec, final boolean deliveryActive) {
         super(ejbComponentCreateService);
 
         StatelessObjectFactory<MessageDrivenComponentInstance> factory = new StatelessObjectFactory<MessageDrivenComponentInstance>() {
@@ -120,7 +121,12 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
                 if(isBeanManagedTransaction())
                     return false;
                 // an MDB doesn't expose a real view
-                return getTransactionAttributeType(BEAN, method) == REQUIRED;
+                return getTransactionAttributeType(MESSAGE_ENDPOINT, method) == REQUIRED;
+            }
+
+            @Override
+            public String getActivationName() {
+                return activationName;
             }
 
             @Override
@@ -140,12 +146,13 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
                 return componentClassLoader;
             }
         };
-        this.endpointFactory = new JBossMessageEndpointFactory(componentClassLoader, service, (Class<Object>) getComponentClass());
+        this.endpointFactory = new JBossMessageEndpointFactory(componentClassLoader, service, (Class<Object>) getComponentClass(), messageListenerInterface);
+        this.deliveryActive = deliveryActive;
     }
 
     @Override
-    protected BasicComponentInstance instantiateComponentInstance(AtomicReference<ManagedReference> instanceReference, Interceptor preDestroyInterceptor, Map<Method, Interceptor> methodInterceptors, final InterceptorFactoryContext interceptorContext) {
-        return new MessageDrivenComponentInstance(this, instanceReference, preDestroyInterceptor, methodInterceptors);
+    protected BasicComponentInstance instantiateComponentInstance(Interceptor preDestroyInterceptor, Map<Method, Interceptor> methodInterceptors, Map<Object, Object> context) {
+        return new MessageDrivenComponentInstance(this, preDestroyInterceptor, methodInterceptors);
     }
 
     @Override
@@ -175,14 +182,8 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
         getShutDownInterceptorFactory().start();
         super.start();
 
-        ClassLoader oldTccl = SecurityActions.getContextClassLoader();
-        try {
-            SecurityActions.setContextClassLoader(classLoader);
-            this.endpoint.activate(endpointFactory, activationSpec);
-        } catch (ResourceException e) {
-            throw new RuntimeException(e);
-        } finally {
-            SecurityActions.setContextClassLoader(oldTccl);
+        if (deliveryActive) {
+            activate();
         }
 
         if (this.pool != null) {
@@ -193,23 +194,54 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
     @Override
     public void stop() {
 
-        ClassLoader oldTccl = SecurityActions.getContextClassLoader();
-        try {
-            SecurityActions.setContextClassLoader(classLoader);
-            endpoint.deactivate(endpointFactory, activationSpec);
-        } catch (ResourceException re) {
-            throw MESSAGES.failureDuringEndpointDeactivation(this.getComponentName(), re);
-        } finally {
-            SecurityActions.setContextClassLoader(oldTccl);
-        }
+        deactivate();
+        deliveryActive = false;
 
         getShutDownInterceptorFactory().shutdown();
         if (this.pool != null) {
             this.pool.stop();
         }
 
-
         super.stop();
+    }
+
+    private void activate() {
+        ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+        try {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
+
+            this.endpoint.activate(endpointFactory, activationSpec);
+        } catch (ResourceException e) {
+            throw new RuntimeException(e);
+        } finally {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
+        }
+    }
+
+    private void deactivate() {
+        ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+        try {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
+            endpoint.deactivate(endpointFactory, activationSpec);
+        } catch (ResourceException re) {
+            throw MESSAGES.failureDuringEndpointDeactivation(this.getComponentName(), re);
+        } finally {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
+        }
+    }
+
+    public void startDelivery() {
+        this.deliveryActive = true;
+        activate();
+    }
+
+    public void stopDelivery() {
+        this.deactivate();
+        this.deliveryActive = false;
+    }
+
+    public boolean isDeliveryActive() {
+        return deliveryActive;
     }
 
     @Override

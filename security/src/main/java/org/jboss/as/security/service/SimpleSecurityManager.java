@@ -23,7 +23,9 @@ package org.jboss.as.security.service;
 
 import static java.security.AccessController.doPrivileged;
 
+import javax.security.auth.Subject;
 import java.lang.reflect.Method;
+import java.security.AccessController;
 import java.security.CodeSource;
 import java.security.Principal;
 import java.security.PrivilegedAction;
@@ -37,10 +39,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.security.auth.Subject;
-
-import org.jboss.as.controller.security.ServerSecurityManager;
-import org.jboss.as.controller.security.SubjectUserInfo;
+import org.jboss.as.core.security.ServerSecurityManager;
+import org.jboss.as.core.security.SubjectUserInfo;
 import org.jboss.as.domain.management.security.PasswordCredential;
 import org.jboss.as.security.SecurityMessages;
 import org.jboss.as.security.remoting.RemotingConnectionCredential;
@@ -78,6 +78,21 @@ import org.jboss.security.javaee.SecurityHelperFactory;
  */
 public class SimpleSecurityManager implements ServerSecurityManager {
     private ThreadLocalStack<SecurityContext> contexts = new ThreadLocalStack<SecurityContext>();
+    /**
+     * Indicates if we propagate previous SecurityContext informations to the current one or not.
+     * This was introduced for WFLY-981 where we wanted to have a clean SecurityContext using only the Singleton EJB security
+     * configuration and not what it might have 'inherited' in the execution stack during a Postconstruct method call.
+     * @see org.jboss.as.ejb3.security.NonPropagatingSecurityContextInterceptorFactory
+     */
+    private boolean propagate = true;
+
+    public SimpleSecurityManager() {
+    }
+
+    public SimpleSecurityManager(SimpleSecurityManager delegate) {
+        this.securityManagement = delegate.securityManagement;
+        this.propagate = false;
+    }
 
     private ISecurityManagement securityManagement = null;
 
@@ -93,7 +108,7 @@ public class SimpleSecurityManager implements ServerSecurityManager {
         // Do not use SecurityFactory.establishSecurityContext, its static init is broken.
         try {
             final SecurityContext securityContext = SecurityContextFactory.createSecurityContext(securityDomain);
-            if(securityManagement == null)
+            if (securityManagement == null)
                 throw SecurityMessages.MESSAGES.securityManagementNotInjected();
             securityContext.setSecurityManagement(securityManagement);
             SecurityContextAssociation.setSecurityContext(securityContext);
@@ -103,7 +118,7 @@ public class SimpleSecurityManager implements ServerSecurityManager {
         }
     }
 
-    public void setSecurityManagement(ISecurityManagement iSecurityManagement){
+    public void setSecurityManagement(ISecurityManagement iSecurityManagement) {
         securityManagement = iSecurityManagement;
     }
 
@@ -117,7 +132,7 @@ public class SimpleSecurityManager implements ServerSecurityManager {
          */
         Principal principal = securityContext.getIncomingRunAs();
         if (principal == null)
-            principal = getPrincipal(securityContext.getSubjectInfo().getAuthenticatedSubject());
+            principal = getPrincipal(getSubjectInfo(securityContext).getAuthenticatedSubject());
         if (principal == null)
             return getUnauthenticatedIdentity().asPrincipal();
         return principal;
@@ -126,7 +141,7 @@ public class SimpleSecurityManager implements ServerSecurityManager {
     public Subject getSubject() {
         final SecurityContext securityContext = doPrivileged(securityContext());
         if (securityContext != null) {
-            return securityContext.getSubjectInfo().getAuthenticatedSubject();
+            return getSubjectInfo(securityContext).getAuthenticatedSubject();
         }
         return null;
     }
@@ -163,11 +178,10 @@ public class SimpleSecurityManager implements ServerSecurityManager {
     }
 
     /**
-     *
      * @param incommingMappedRoles The principal vs roles mapping (if any). Can be null.
-     * @param roleLinks The role link map where the key is a alias role name and the value is the collection of
-     *                  role names, that alias represents. Can be null.
-     * @param roleNames The role names for which the caller is being checked for
+     * @param roleLinks            The role link map where the key is a alias role name and the value is the collection of
+     *                             role names, that alias represents. Can be null.
+     * @param roleNames            The role names for which the caller is being checked for
      * @return true if the user is in <b>any</b> one of the <code>roleNames</code>. Else returns false
      */
     public boolean isCallerInRole(final Object incommingMappedRoles, final Map<String, Collection<String>> roleLinks,
@@ -188,7 +202,8 @@ public class SimpleSecurityManager implements ServerSecurityManager {
             AuthorizationManager am = securityContext.getAuthorizationManager();
             SecurityContextCallbackHandler scb = new SecurityContextCallbackHandler(securityContext);
 
-            roleGroup = am.getSubjectRoles(securityContext.getSubjectInfo().getAuthenticatedSubject(), scb);
+            final Subject authenticatedSubject = getSubjectInfo(securityContext).getAuthenticatedSubject();
+            roleGroup = getSubjectRoles(am, scb, authenticatedSubject);
         }
 
         List<Role> roles = roleGroup.getRoles();
@@ -254,8 +269,7 @@ public class SimpleSecurityManager implements ServerSecurityManager {
         try {
             AbstractEJBAuthorizationHelper helper = SecurityHelperFactory.getEJBAuthorizationHelper(securityContext);
             return helper.authorize(resource);
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
@@ -264,17 +278,14 @@ public class SimpleSecurityManager implements ServerSecurityManager {
      * Must be called from within a privileged action.
      *
      * @param securityDomain
-     * @param runAs
-     * @param runAsPrincipal
-     * @param extraRoles
      */
     public void push(final String securityDomain) {
         // TODO - Handle a null securityDomain here? Yes I think so.
         final SecurityContext previous = SecurityContextAssociation.getSecurityContext();
         contexts.push(previous);
         SecurityContext current = establishSecurityContext(securityDomain);
-        if (previous != null) {
-            current.setSubjectInfo(previous.getSubjectInfo());
+        if (propagate && previous != null) {
+            current.setSubjectInfo(getSubjectInfo(previous));
             current.setIncomingRunAs(previous.getOutgoingRunAs());
         }
 
@@ -322,8 +333,8 @@ public class SimpleSecurityManager implements ServerSecurityManager {
         final SecurityContext previous = SecurityContextAssociation.getSecurityContext();
         contexts.push(previous);
         SecurityContext current = establishSecurityContext(securityDomain);
-        if (previous != null) {
-            current.setSubjectInfo(previous.getSubjectInfo());
+        if (propagate &&  previous != null) {
+            current.setSubjectInfo(getSubjectInfo(previous));
             current.setIncomingRunAs(previous.getOutgoingRunAs());
         }
 
@@ -358,7 +369,7 @@ public class SimpleSecurityManager implements ServerSecurityManager {
         if (runAs != null) {
             RunAs runAsIdentity = new RunAsIdentity(runAs, runAsPrincipal, extraRoles);
             context.setOutgoingRunAs(runAsIdentity);
-        } else if (previous != null && previous.getOutgoingRunAs() != null) {
+        } else if (propagate && previous != null && previous.getOutgoingRunAs() != null) {
             // Ensure the propagation continues.
             context.setOutgoingRunAs(previous.getOutgoingRunAs());
         }
@@ -366,7 +377,7 @@ public class SimpleSecurityManager implements ServerSecurityManager {
 
     private boolean authenticate(SecurityContext context, Subject subject) {
         SecurityContextUtil util = context.getUtil();
-        SubjectInfo subjectInfo = context.getSubjectInfo();
+        SubjectInfo subjectInfo = getSubjectInfo(context);
         if (subject == null) {
             subject = new Subject();
         }
@@ -382,6 +393,8 @@ public class SimpleSecurityManager implements ServerSecurityManager {
             auditPrincipal = unauthenticatedIdentity.asPrincipal();
             subject.getPrincipals().add(auditPrincipal);
             authenticated = true;
+        } else {
+            subject.getPrincipals().add(principal);
         }
 
         if (authenticated == false) {
@@ -419,7 +432,7 @@ public class SimpleSecurityManager implements ServerSecurityManager {
      * Returns the alias role names for the passed <code>roleName</code>. Returns an empty set if the passed
      * role name doesn't have any aliases
      *
-     * @param roleName The role name
+     * @param roleName  The role name
      * @param roleLinks The role link map where the key is a alias role name and the value is the collection of
      *                  role names, that alias represents
      * @return
@@ -441,10 +454,10 @@ public class SimpleSecurityManager implements ServerSecurityManager {
 
     /**
      * Sends information to the {@code AuditManager}.
+     *
      * @param level
      * @param auditManager
      * @param userPrincipal
-     * @param entries
      */
     private void audit(String level, AuditManager auditManager, Principal userPrincipal) {
         AuditEvent auditEvent = new AuditEvent(AuditLevel.SUCCESS);
@@ -456,4 +469,29 @@ public class SimpleSecurityManager implements ServerSecurityManager {
         auditManager.audit(auditEvent);
     }
 
+    private SubjectInfo getSubjectInfo(final SecurityContext context) {
+        if (System.getSecurityManager() == null) {
+            return context.getSubjectInfo();
+        }
+        return AccessController.doPrivileged(new PrivilegedAction<SubjectInfo>() {
+            @Override
+            public SubjectInfo run() {
+                return context.getSubjectInfo();
+            }
+        });
+    }
+
+
+    private RoleGroup getSubjectRoles(final AuthorizationManager am, final SecurityContextCallbackHandler scb, final Subject authenticatedSubject) {
+
+        if (System.getSecurityManager() == null) {
+            return am.getSubjectRoles(authenticatedSubject, scb);
+        }
+        return AccessController.doPrivileged(new PrivilegedAction<RoleGroup>() {
+            @Override
+            public RoleGroup run() {
+                return am.getSubjectRoles(authenticatedSubject, scb);
+            }
+        });
+    }
 }

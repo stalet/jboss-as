@@ -107,21 +107,31 @@ public class StandardConfigsXMLValidationUnitTestCase extends AbstractValidation
         parseXml("standalone/configuration/standalone-full.xml");
     }
 
-    @Test
-    public void testStandaloneOSGi() throws Exception {
-        parseXml("docs/examples/configs/standalone-osgi-only.xml");
-    }
-
-  //TODO Leave commented out until domain-osgi-only.xml and domain-jts.xml are definitely removed from the configuration
+  //TODO Leave commented out until domain-jts.xml is definitely removed from the configuration
 //    @Test
 //    public void testDomainJTS() throws Exception {
 //        parseXml("docs/examples/configs/domain-jts.xml");
 //    }
 //
-//    @Test
-//    public void testDomainOSGiOnly() throws Exception {
-//        parseXml("docs/examples/configs/domain-osgi-only.xml");
-//    }
+    @Test
+    public void testStandaloneEC2HA() throws Exception {
+        parseXml("docs/examples/configs/standalone-ec2-ha.xml");
+    }
+
+    @Test
+    public void testStandaloneEC2FullHA() throws Exception {
+        parseXml("docs/examples/configs/standalone-ec2-full-ha.xml");
+
+    }
+    @Test
+    public void testStandaloneGossipHA() throws Exception {
+        parseXml("docs/examples/configs/standalone-gossip-ha.xml");
+    }
+
+    @Test
+    public void testStandaloneGossipFullHA() throws Exception {
+        parseXml("docs/examples/configs/standalone-gossip-full-ha.xml");
+    }
 
     @Test
     public void testHornetQColocated() throws Exception {
@@ -141,6 +151,16 @@ public class StandardConfigsXMLValidationUnitTestCase extends AbstractValidation
     @Test
     public void testStandaloneXTS() throws Exception {
         parseXml("docs/examples/configs/standalone-xts.xml");
+    }
+
+    @Test
+    public void testStandaloneRTS() throws Exception {
+        parseXml("docs/examples/configs/standalone-rts.xml");
+    }
+
+    @Test
+    public void testStandaloneGenericJMS() throws Exception {
+        parseXml("docs/examples/configs/standalone-genericjms.xml");
     }
 
     private void parseXml(String xmlName) throws ParserConfigurationException, SAXException, IOException {
@@ -183,10 +203,15 @@ public class StandardConfigsXMLValidationUnitTestCase extends AbstractValidation
     private static String fixExpressions(String line) {
         String result = line.replace("${jboss.management.native.port:9999}", "9999");
         result = result.replace("${jboss.management.http.port:9990}", "9990");
-        result = result.replace("${jboss.management.https.port:9443}", "9443");
+        result = result.replace("${jboss.management.https.port:9993}", "9993");
         result = result.replace("${jboss.domain.master.port:9999}", "9999");
         result = result.replace("${jboss.messaging.group.port:9876}", "9876");
         result = result.replace("${jboss.socket.binding.port-offset:0}", "0");
+        result = result.replace("${jboss.http.port:8080}", "8080");
+        result = result.replace("${jboss.https.port:8443}", "8443");
+        result = result.replace("${jboss.remoting.port:4447}", "4447");
+        result = result.replace("${jboss.ajp.port:8009}", "8009");
+        result = result.replace("${jboss.deployment.scanner.rollback.on.failure:false}", "false");
         return result;
     }
 }

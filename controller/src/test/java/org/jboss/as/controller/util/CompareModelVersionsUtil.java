@@ -55,7 +55,7 @@ import java.util.TreeMap;
 import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.controller.registry.AttributeAccess.Storage;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
 
@@ -71,6 +71,7 @@ import org.jboss.dmr.Property;
 public class CompareModelVersionsUtil {
 
     private final boolean compareDifferentVersions;
+    private final boolean compareRuntime;
     private final String targetVersion;
     private final ModelNode legacyModelVersions;
     private final ModelNode legacyResourceDefinitions;
@@ -78,12 +79,14 @@ public class CompareModelVersionsUtil {
     private final ModelNode currentResourceDefinitions;
 
     private CompareModelVersionsUtil(boolean compareDifferentVersions,
+            boolean compareRuntime,
             String targetVersion,
             ModelNode legacyModelVersions,
             ModelNode legacyResourceDefinitions,
             ModelNode currentModelVersions,
             ModelNode currentResourceDefinitions) throws Exception {
         this.compareDifferentVersions = compareDifferentVersions;
+        this.compareRuntime = compareRuntime;
         this.targetVersion = targetVersion;
         this.legacyModelVersions = legacyModelVersions;
         this.legacyResourceDefinitions = legacyResourceDefinitions;
@@ -95,8 +98,9 @@ public class CompareModelVersionsUtil {
 
         String version = System.getProperty("jboss.as.compare.version", null);
         String fromTgt = System.getProperty("jboss.as.compare.from.target", null);
-        String diff = System.getProperty("jboss.as.compare.different.versions", null);
+        String differentVersions = System.getProperty("jboss.as.compare.different.versions", null);
         String type = System.getProperty("jboss.as.compare.type", null);
+        String runtime = System.getProperty("jboss.as.compare.runtime", null);
 
         if (version == null) {
             System.out.print("Enter legacy AS version: ");
@@ -126,32 +130,59 @@ public class CompareModelVersionsUtil {
             fromTgt = readInput("l");
         }
 
-        final String fromDirectory;
+        final File fromDirectory;
         if (fromTgt.equals("l")) {
-            fromDirectory = "target/test-classes/legacy-models/";
+            File projectDir = Tools.getProjectDirectory();
+            File legacyModels = new File(projectDir, "target/test-classes/legacy-models".replace('/', File.separatorChar));
+            //A hack to work around the fact that IntelliJ does not copy the .dmr files to the target/test-classes/legacy-models folder,
+            //when doing a Make, and to save its poor users from having to do a maven build.
+            if (!legacyModels.exists()) {
+                legacyModels = new File(projectDir, "src/test/resources/legacy-models".replace('/', File.separatorChar));
+                if (!legacyModels.exists()) {
+                    throw new IllegalStateException("Could not find the legacy-models directory");
+                }
+            }
+            fromDirectory = legacyModels;
+
+
         } else if (fromTgt.equals("t")) {
-            fromDirectory = "target/";
+            fromDirectory = new File(Tools.getProjectDirectory(), "target");
         } else {
             throw new IllegalArgumentException("Please enter 'l' for legacy-models directory or 't' for target directory");
         }
 
-        if (diff == null) {
+        if (differentVersions == null) {
             System.out.print("Report on differences in the model when the management versions are different? y/[n]: ");
-            diff = readInput("n").toLowerCase();
+            differentVersions = readInput("n").toLowerCase();
         }
         boolean compareDifferentVersions;
-        if (diff.equals("n")) {
+        if (differentVersions.equals("n")) {
             System.out.println("Not reporting on differences in the model when the management versions are different");
             compareDifferentVersions = false;
-        } else if (diff.equals("y")) {
+        } else if (differentVersions.equals("y")) {
             System.out.println("Reporting on differences in the model when the management versions are different");
             compareDifferentVersions = true;
         } else {
             throw new IllegalArgumentException("Please enter 'y' or 'n'");
         }
 
+        if (runtime == null){
+            System.out.print("Report on differences in the model of runtime resources/attributes? y/[n]: ");
+            runtime = readInput("n").toLowerCase();
+        }
+        boolean compareRuntime;
+        if (runtime.equals("n")) {
+            System.out.println("Not reporting on differences in the model for runtime resources/attributes.");
+            compareRuntime = false;
+        } else if (differentVersions.equals("y")) {
+            System.out.println("Reporting on differences in the model for runtime resources/attributes.");
+            compareRuntime = true;
+        } else {
+            throw new IllegalArgumentException("Please enter 'y' or 'n'");
+        }
+
         System.out.println("Loading legacy model versions for " + version + "....");
-        ModelNode legacyModelVersions = Tools.loadModelNodeFromFile(new File(fromDirectory + "standalone-model-versions-" + version + ".dmr"));
+        ModelNode legacyModelVersions = Tools.loadModelNodeFromFile(new File(fromDirectory, "standalone-model-versions-" + version + ".dmr"));
         System.out.println("Loaded legacy model versions");
 
         System.out.println("Loading model versions for currently running server...");
@@ -159,18 +190,19 @@ public class CompareModelVersionsUtil {
         System.out.println("Loaded current model versions");
 
         for (ResourceType resourceType : resourceTypes) {
-            doCompare(resourceType, fromDirectory, compareDifferentVersions, version, legacyModelVersions, currentModelVersions);
+            doCompare(resourceType, fromDirectory, compareDifferentVersions, compareRuntime, version, legacyModelVersions, currentModelVersions);
         }
     }
 
     private static void doCompare(ResourceType resourceType,
-            String fromDirectory,
+            File fromDirectory,
             boolean compareDifferentVersions,
+            boolean compareRuntime,
             String targetVersion,
             ModelNode legacyModelVersions,
             ModelNode currentModelVersions) throws Exception {
         System.out.println("Loading legacy resource descriptions for " + targetVersion + "....");
-        ModelNode legacyResourceDefinitions = Tools.loadModelNodeFromFile(new File(fromDirectory + resourceType.toString().toLowerCase() + "-resource-definition-" + targetVersion + ".dmr"));
+        ModelNode legacyResourceDefinitions = Tools.loadModelNodeFromFile(new File(fromDirectory, resourceType.toString().toLowerCase() + "-resource-definition-" + targetVersion + ".dmr"));
         System.out.println("Loaded legacy resource descriptions");
 
 
@@ -185,7 +217,8 @@ public class CompareModelVersionsUtil {
         }
         System.out.println("Loaded current resource descriptions");
 
-        CompareModelVersionsUtil compareModelVersionsUtil = new CompareModelVersionsUtil(compareDifferentVersions, targetVersion, legacyModelVersions, legacyResourceDefinitions, currentModelVersions, currentResourceDefinitions);
+        CompareModelVersionsUtil compareModelVersionsUtil = new CompareModelVersionsUtil(compareDifferentVersions, compareRuntime,
+                targetVersion, legacyModelVersions, legacyResourceDefinitions, currentModelVersions, currentResourceDefinitions);
 
         System.out.println("Starting comparison of the current....\n");
         compareModelVersionsUtil.compareModels();
@@ -267,6 +300,11 @@ public class CompareModelVersionsUtil {
 
     private void compareModel(CompareContext context) {
         //System.out.println("---->  " + context.getPathAddress());
+        if (!compareRuntime) {
+            if (context.getCurrentDefinition().isRuntime() && context.getLegacyDefinition().isRuntime()) {
+                return;
+            }
+        }
         compareAttributes(context);
         compareOperations(context);
         compareChildren(context);
@@ -276,7 +314,7 @@ public class CompareModelVersionsUtil {
         Map<String, ModelNode> legacyAttributes = context.getLegacyDefinition().getAttributes();
         Map<String, ModelNode> currentAttributes = context.getCurrentDefinition().getAttributes();
 
-        compareKeySetsAndRemoveMissing(context, "attributes", currentAttributes, legacyAttributes);
+        compareKeySetsAndRemoveMissing(context, ATTRIBUTES, currentAttributes, legacyAttributes);
         //TODO compare types, expressions etc.
 
         for (Map.Entry<String, ModelNode> legacyEntry : legacyAttributes.entrySet()) {
@@ -481,16 +519,37 @@ public class CompareModelVersionsUtil {
         Set<String> extraInLegacy = getMissingNames(context, legacySet, currentSet);
         Set<String> extraInCurrent = getMissingNames(context, currentSet, legacySet);
 
+        Set<String> extraInLegacyAfterRuntime = new HashSet<String>(extraInLegacy);
+        Set<String> extraInCurrentAfterRuntime = new HashSet<String>(extraInCurrent);
         if (extraInLegacy.size() > 0 || extraInCurrent.size() > 0) {
-            context.println("Missing " + type +
-            		" in current: " + extraInLegacy + "; missing in legacy " + extraInCurrent);
-            if (extraInCurrent.size() > 0) {
-                currentSet.removeAll(extraInCurrent);
-            }
-            if (extraInLegacy.size() > 0) {
-                legacySet.removeAll(extraInLegacy);
+            if (!compareRuntime && type.equals(ATTRIBUTES)) {
+                extraInLegacyAfterRuntime = trimRuntimeAttributes(context.getLegacyDefinition().getAttributes(), extraInLegacyAfterRuntime);
+                extraInCurrentAfterRuntime = trimRuntimeAttributes(context.getCurrentDefinition().getAttributes(), extraInCurrentAfterRuntime);
             }
         }
+
+        if (extraInLegacyAfterRuntime.size() > 0 || extraInCurrentAfterRuntime.size() > 0) {
+            context.println("Missing " + type +
+            		" in current: " + extraInLegacyAfterRuntime + "; missing in legacy " + extraInCurrentAfterRuntime);
+        }
+
+        if (extraInCurrent.size() > 0) {
+            currentSet.removeAll(extraInCurrent);
+        }
+        if (extraInLegacy.size() > 0) {
+            legacySet.removeAll(extraInLegacy);
+        }
+    }
+
+    private Set<String> trimRuntimeAttributes(Map<String, ModelNode> attributes, Set<String> set) {
+        Set<String> runtime = new HashSet<String>(set);
+        for (String name : set) {
+            ModelNode desc = attributes.get(name);
+            if (desc.hasDefined(STORAGE) && desc.get(STORAGE).asString().equals(Storage.RUNTIME.toString())) {
+                runtime.remove(name);
+            }
+        }
+        return runtime;
     }
 
     private Set<String> getMissingNames(CompareContext context, Set<String> possiblyMissing, Set<String> names){
@@ -652,6 +711,13 @@ public class CompareModelVersionsUtil {
                 }
             }
             throw new IllegalArgumentException("Could not find subsystem version for " + address);
+        }
+
+        boolean isRuntime() {
+            if (description.hasDefined(STORAGE)) {
+                return description.get(STORAGE).equals("runtime");
+            }
+            return false;
         }
     }
 

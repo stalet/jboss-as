@@ -22,11 +22,14 @@
 
 package org.jboss.as.server;
 
+import static java.security.AccessController.doPrivileged;
+
 import java.io.File;
-import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
@@ -36,11 +39,14 @@ import java.util.concurrent.TimeUnit;
 import org.jboss.as.controller.AbstractControllerService;
 import org.jboss.as.controller.BootContext;
 import org.jboss.as.controller.ControlledProcessState;
+import org.jboss.as.controller.ModelControllerServiceInitialization;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.RunningModeControl;
+import org.jboss.as.controller.access.management.DelegatingConfigurableAuthorizer;
+import org.jboss.as.controller.audit.ManagedAuditLogger;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.persistence.ConfigurationPersistenceException;
@@ -50,8 +56,10 @@ import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.services.path.PathManager;
 import org.jboss.as.controller.services.path.PathManagerService;
+import org.jboss.as.domain.management.access.AccessAuthorizationResourceDefinition;
 import org.jboss.as.platform.mbean.PlatformMBeanConstants;
 import org.jboss.as.platform.mbean.RootPlatformMBeanResource;
+import org.jboss.as.remoting.HttpListenerRegistryService;
 import org.jboss.as.remoting.management.ManagementRemotingServices;
 import org.jboss.as.repository.ContentRepository;
 import org.jboss.as.server.controller.resources.ServerRootResourceDefinition;
@@ -111,6 +119,8 @@ import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.threads.JBossThreadFactory;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Service for the {@link org.jboss.as.controller.ModelController} for an AS server instance.
@@ -144,9 +154,10 @@ public final class ServerService extends AbstractControllerService {
      */
     private ServerService(final Bootstrap.Configuration configuration, final ControlledProcessState processState,
                   final OperationStepHandler prepareStep, final BootstrapListener bootstrapListener, final DelegatingResourceDefinition rootResourceDefinition,
-                  final RunningModeControl runningModeControl, final AbstractVaultReader vaultReader) {
+                  final RunningModeControl runningModeControl, final AbstractVaultReader vaultReader, final ManagedAuditLogger auditLogger,
+                  final DelegatingConfigurableAuthorizer authorizer) {
         super(getProcessType(configuration.getServerEnvironment()), runningModeControl, null, processState,
-                rootResourceDefinition, prepareStep, new RuntimeExpressionResolver(vaultReader));
+                rootResourceDefinition, prepareStep, new RuntimeExpressionResolver(vaultReader), auditLogger, authorizer);
         this.configuration = configuration;
         this.bootstrapListener = bootstrapListener;
         this.processState = processState;
@@ -180,11 +191,12 @@ public final class ServerService extends AbstractControllerService {
      */
     public static void addService(final ServiceTarget serviceTarget, final Bootstrap.Configuration configuration,
                                   final ControlledProcessState processState, final BootstrapListener bootstrapListener,
-                                  final RunningModeControl runningModeControl, final AbstractVaultReader vaultReader) {
+                                  final RunningModeControl runningModeControl, final AbstractVaultReader vaultReader, final ManagedAuditLogger auditLogger,
+                                  final DelegatingConfigurableAuthorizer authorizer) {
 
         final ThreadGroup threadGroup = new ThreadGroup("ServerService ThreadGroup");
         final String namePattern = "ServerService Thread Pool -- %t";
-        final ThreadFactory threadFactory = new JBossThreadFactory(threadGroup, Boolean.FALSE, null, namePattern, null, null, AccessController.getContext());
+        final ThreadFactory threadFactory = new JBossThreadFactory(threadGroup, Boolean.FALSE, null, namePattern, null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
 
         // TODO determine why QueuelessThreadPoolService makes boot take > 35 secs
 //        final QueuelessThreadPoolService serverExecutorService = new QueuelessThreadPoolService(Integer.MAX_VALUE, false, new TimeSpec(TimeUnit.SECONDS, 5));
@@ -195,7 +207,7 @@ public final class ServerService extends AbstractControllerService {
                 .install();
 
         DelegatingResourceDefinition rootResourceDefinition = new DelegatingResourceDefinition();
-        ServerService service = new ServerService(configuration, processState, null, bootstrapListener, rootResourceDefinition, runningModeControl, vaultReader);
+        ServerService service = new ServerService(configuration, processState, null, bootstrapListener, rootResourceDefinition, runningModeControl, vaultReader, auditLogger, authorizer);
         ServiceBuilder<?> serviceBuilder = serviceTarget.addService(Services.JBOSS_SERVER_CONTROLLER, service);
         serviceBuilder.addDependency(DeploymentMountProvider.SERVICE_NAME,DeploymentMountProvider.class, service.injectedDeploymentRepository);
         serviceBuilder.addDependency(ContentRepository.SERVICE_NAME, ContentRepository.class, service.injectedContentRepository);
@@ -229,7 +241,9 @@ public final class ServerService extends AbstractControllerService {
                             public void updateOperationID(final int operationID) {
                                 DomainServerCommunicationServices.updateOperationID(operationID);
                             }
-                        }));
+                        },
+                        authorizer,
+                        super.getAuditLogger()));
         super.start(context);
     }
 
@@ -238,12 +252,14 @@ public final class ServerService extends AbstractControllerService {
         try {
             final ServerEnvironment serverEnvironment = configuration.getServerEnvironment();
             final ServiceTarget serviceTarget = context.getServiceTarget();
-            serviceTarget.addListener(bootstrapListener);
             final File[] extDirs = serverEnvironment.getJavaExtDirs();
             final File[] newExtDirs = Arrays.copyOf(extDirs, extDirs.length + 1);
             newExtDirs[extDirs.length] = new File(serverEnvironment.getServerBaseDir(), "lib/ext");
             serviceTarget.addService(org.jboss.as.server.deployment.Services.JBOSS_DEPLOYMENT_EXTENSION_INDEX,
                     new ExtensionIndexService(newExtDirs)).setInitialMode(ServiceController.Mode.ON_DEMAND).install();
+
+            // Initialize controller extensions
+            runPerformControllerInitialization(context);
 
             final DeploymentOverlayIndexService deploymentOverlayIndexService = new DeploymentOverlayIndexService();
             context.getServiceTarget().addService(DeploymentOverlayIndexService.SERVICE_NAME, deploymentOverlayIndexService).install();
@@ -261,6 +277,7 @@ public final class ServerService extends AbstractControllerService {
                     context.removeAttachment(Attachments.SERVICE_MODULE_LOADER);
                 }
             });
+            HttpListenerRegistryService.install(serviceTarget);
 
 
             // Activate core processors for jar deployment
@@ -310,7 +327,7 @@ public final class ServerService extends AbstractControllerService {
                 // Boot but by default don't rollback on runtime failures
                 // TODO replace system property used by tests with something properly configurable for general use
                 // TODO search for uses of "jboss.unsupported.fail-boot-on-runtime-failure" in tests before changing this!!
-                boolean failOnRuntime = Boolean.valueOf(SecurityActions.getSystemProperty("jboss.unsupported.fail-boot-on-runtime-failure", "false"));
+                boolean failOnRuntime = Boolean.valueOf(WildFlySecurityManager.getPropertyPrivileged("jboss.unsupported.fail-boot-on-runtime-failure", "false"));
                 ok = boot(extensibleConfigurationPersister.load(), failOnRuntime);
                 if (ok) {
                     finishBoot();
@@ -340,18 +357,19 @@ public final class ServerService extends AbstractControllerService {
     }
 
     public void stop(final StopContext context) {
-        super.stop(context);
-
         configuration.getExtensionRegistry().clear();
         configuration.getServerEnvironment().resetProvidedProperties();
+        super.stop(context);
     }
 
     @Override
     protected void initModel(Resource rootResource, ManagementResourceRegistration rootRegistration) {
         // TODO maybe make creating of empty nodes part of the MNR description
-        rootResource.registerChild(PathElement.pathElement(ModelDescriptionConstants.CORE_SERVICE, ModelDescriptionConstants.MANAGEMENT), Resource.Factory.create());
+        Resource managementResource = Resource.Factory.create(); // TODO - Can we get a Resource direct from CoreManagementResourceDefinition?
+        rootResource.registerChild(PathElement.pathElement(ModelDescriptionConstants.CORE_SERVICE, ModelDescriptionConstants.MANAGEMENT), managementResource);
         rootResource.registerChild(PathElement.pathElement(ModelDescriptionConstants.CORE_SERVICE, ModelDescriptionConstants.SERVICE_CONTAINER), Resource.Factory.create());
         rootResource.registerChild(PathElement.pathElement(ModelDescriptionConstants.CORE_SERVICE, ModelDescriptionConstants.MODULE_LOADING), Resource.Factory.create());
+        managementResource.registerChild(AccessAuthorizationResourceDefinition.PATH_ELEMENT, AccessAuthorizationResourceDefinition.createResource(authorizer.getWritableAuthorizerConfiguration()));
         rootResource.registerChild(ServerEnvironmentResourceDescription.RESOURCE_PATH, Resource.Factory.create());
         ((PathManagerService)injectedPathManagerService.getValue()).addPathManagerResources(rootResource);
 
@@ -359,6 +377,16 @@ public final class ServerService extends AbstractControllerService {
 
         // Platform MBeans
         rootResource.registerChild(PlatformMBeanConstants.ROOT_PATH, new RootPlatformMBeanResource());
+    }
+
+    @Override
+    protected void performControllerInitialization(ServiceTarget target, Resource rootResource, ManagementResourceRegistration rootRegistration) {
+        final ServiceLoader<ModelControllerServiceInitialization> sl = ServiceLoader.load(ModelControllerServiceInitialization.class);
+        final Iterator<ModelControllerServiceInitialization> iterator = sl.iterator();
+        while(iterator.hasNext()) {
+            final ModelControllerServiceInitialization init = iterator.next();
+            init.initializeStandalone(target, rootRegistration, rootResource);
+        }
     }
 
     /** Temporary replacement for QueuelessThreadPoolService */

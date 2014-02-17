@@ -34,6 +34,7 @@
         <module name="javax.transaction.api"/>
         <module name="org.apache.commons.pool"/>
         <module name="org.infinispan"/>
+        <module name="org.infinispan.commons"/>
         <module name="org.jboss.logging"/>
     </dependencies>
 </module>

@@ -21,6 +21,12 @@
 */
 package org.jboss.as.domain.http.server;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ACCESS_MECHANISM;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
+import static org.jboss.as.domain.http.server.HttpServerLogger.ROOT_LOGGER;
+
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -31,17 +37,14 @@ import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.form.FormData;
 import io.undertow.server.handlers.form.FormData.FormValue;
 import io.undertow.server.handlers.form.FormDataParser;
+import io.undertow.server.handlers.form.FormParserFactory;
 import io.undertow.util.Headers;
-import org.jboss.as.controller.client.ModelControllerClient;
+import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.client.OperationBuilder;
+import org.jboss.as.controller.client.OperationMessageHandler;
+import org.jboss.as.core.security.AccessMechanism;
 import org.jboss.dmr.ModelNode;
 import org.xnio.IoUtils;
-import org.xnio.streams.ChannelOutputStream;
-
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
-import static org.jboss.as.domain.http.server.HttpServerLogger.ROOT_LOGGER;
 
 /**
  *
@@ -49,15 +52,17 @@ import static org.jboss.as.domain.http.server.HttpServerLogger.ROOT_LOGGER;
  */
 class DomainApiUploadHandler implements HttpHandler {
 
-    private final ModelControllerClient modelController;
+    private final ModelController modelController;
+    private final FormParserFactory formParserFactory;
 
-    public DomainApiUploadHandler(ModelControllerClient modelController) {
+    public DomainApiUploadHandler(ModelController modelController) {
         this.modelController = modelController;
+        this.formParserFactory = FormParserFactory.builder().build();
     }
 
     @Override
     public void handleRequest(HttpServerExchange exchange) throws Exception {
-        final FormDataParser parser = exchange.getAttachment(FormDataParser.ATTACHMENT_KEY);
+        final FormDataParser parser = formParserFactory.createParser(exchange);
         FormData data = parser.parseBlocking();
         for (String fieldName : data) {
             //Get all the files
@@ -73,15 +78,16 @@ class DomainApiUploadHandler implements HttpHandler {
 
                     OperationBuilder operation = new OperationBuilder(dmr);
                     operation.addInputStream(in);
-                    response = modelController.execute(operation.build());
+                    dmr.get(OPERATION_HEADERS, ACCESS_MECHANISM).set(AccessMechanism.HTTP.toString());
+                    response = modelController.execute(dmr, OperationMessageHandler.logging, ModelController.OperationTransactionControl.COMMIT, operation.build());
                     if (!response.get(OUTCOME).asString().equals(SUCCESS)){
-                        Common.sendError(exchange, false, false, response.get(FAILURE_DESCRIPTION).asString());
+                        Common.sendError(exchange, false, response);
                         return;
                     }
                 } catch (Throwable t) {
                     // TODO Consider draining input stream
                     ROOT_LOGGER.uploadError(t);
-                    Common.sendError(exchange, false, false, t.getLocalizedMessage());
+                    Common.sendError(exchange, false, t.getLocalizedMessage());
                     return;
                 } finally {
                     IoUtils.safeClose(in);
@@ -92,20 +98,20 @@ class DomainApiUploadHandler implements HttpHandler {
                 return; //Ignore later files
             }
         }
-        Common.sendError(exchange, false, false, "No file found"); //TODO i18n
+        Common.sendError(exchange, false, "No file found"); //TODO i18n
     }
 
     static void writeResponse(HttpServerExchange exchange, ModelNode response, String contentType) {
-        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, contentType  + ";" + Common.UTF_8);
+        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, contentType  + "; charset=" + Common.UTF_8);
         exchange.setResponseCode(200);
 
         //TODO Content-Length?
+        exchange.startBlocking();
 
-        PrintWriter print = new PrintWriter(new ChannelOutputStream(exchange.getResponseChannel()));
+        PrintWriter print = new PrintWriter(exchange.getOutputStream());
         try {
             response.writeJSONString(print, true);
         } finally {
-            print.flush();
             IoUtils.safeClose(print);
         }
     }

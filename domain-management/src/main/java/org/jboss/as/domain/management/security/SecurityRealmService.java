@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.security.Principal;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -41,14 +42,17 @@ import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.sasl.AuthorizeCallback;
 
-import org.jboss.as.controller.security.SubjectUserInfo;
+import org.jboss.as.core.security.RealmGroup;
+import org.jboss.as.core.security.RealmRole;
+import org.jboss.as.core.security.RealmSubjectUserInfo;
+import org.jboss.as.core.security.RealmUser;
+import org.jboss.as.core.security.SubjectUserInfo;
 import org.jboss.as.domain.management.AuthMechanism;
 import org.jboss.as.domain.management.AuthorizingCallbackHandler;
 import org.jboss.as.domain.management.CallbackHandlerFactory;
 import org.jboss.as.domain.management.SSLIdentity;
 import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.msc.service.Service;
-import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
@@ -63,7 +67,7 @@ import org.jboss.msc.value.InjectedValue;
  */
 public class SecurityRealmService implements Service<SecurityRealm>, SecurityRealm {
 
-    public static final ServiceName BASE_SERVICE_NAME = ServiceName.JBOSS.append("server", "controller", "management", "security_realm");
+    public static final String LOADED_USERNAME_KEY = SecurityRealmService.class.getName() + ".LOADED_USERNAME";
 
     private final InjectedValue<SubjectSupplementalService> subjectSupplemental = new InjectedValue<SubjectSupplementalService>();
     private final InjectedValue<SSLIdentity> sslIdentity = new InjectedValue<SSLIdentity>();
@@ -71,10 +75,12 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
     private final InjectedSetValue<CallbackHandlerService> callbackHandlerServices = new InjectedSetValue<CallbackHandlerService>();
 
     private final String name;
+    private final boolean mapGroupsToRoles;
     private final Map<AuthMechanism, CallbackHandlerService> registeredServices = new HashMap<AuthMechanism, CallbackHandlerService>();
 
-    public SecurityRealmService(String name) {
+    public SecurityRealmService(String name, boolean mapGroupsToRoles) {
         this.name = name;
+        this.mapGroupsToRoles = mapGroupsToRoles;
     }
 
     /*
@@ -176,15 +182,28 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
             public SubjectUserInfo createSubjectUserInfo(Collection<Principal> userPrincipals) throws IOException {
                 Subject subject = this.subject == null ? new Subject() : this.subject;
                 Collection<Principal> allPrincipals = subject.getPrincipals();
-                for (Principal userPrincipal : userPrincipals) {
-                    allPrincipals.add(userPrincipal);
-                    allPrincipals.add(new RealmUser(getName(), userPrincipal.getName()));
+                if (sharedState.containsKey(LOADED_USERNAME_KEY)) {
+                    allPrincipals.add(new RealmUser(getName(), (String) sharedState.get(LOADED_USERNAME_KEY)));
+                } else {
+                    for (Principal userPrincipal : userPrincipals) {
+                        allPrincipals.add(userPrincipal);
+                        allPrincipals.add(new RealmUser(getName(), userPrincipal.getName()));
+                    }
                 }
 
                 SubjectSupplementalService subjectSupplementalService = subjectSupplemental.getOptionalValue();
                 if (subjectSupplementalService != null) {
                     SubjectSupplemental subjectSupplemental = subjectSupplementalService.getSubjectSupplemental(sharedState);
                     subjectSupplemental.supplementSubject(subject);
+                }
+
+                if (mapGroupsToRoles) {
+                    Set<RealmGroup> groups = subject.getPrincipals(RealmGroup.class);
+                    Set<RealmRole> roles = new HashSet<RealmRole>(groups.size());
+                    for (RealmGroup current : groups) {
+                        roles.add(new RealmRole(current.getName()));
+                    }
+                    subject.getPrincipals().addAll(roles);
                 }
 
                 return new RealmSubjectUserInfo(subject);
@@ -239,30 +258,5 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
 
     public CallbackHandlerFactory getSecretCallbackHandlerFactory() {
         return secretCallbackFactory.getOptionalValue();
-    }
-
-    private static class RealmSubjectUserInfo implements SubjectUserInfo {
-
-        private final String userName;
-        private final Subject subject;
-
-        private RealmSubjectUserInfo(Subject subject) {
-            this.subject = subject;
-            Set<RealmUser> users = subject.getPrincipals(RealmUser.class);
-            userName = users.isEmpty() ? null : users.iterator().next().getName();
-        }
-
-        public String getUserName() {
-            return userName;
-        }
-
-        public Collection<Principal> getPrincipals() {
-            return subject.getPrincipals();
-        }
-
-        public Subject getSubject() {
-            return subject;
-        }
-
     }
 }

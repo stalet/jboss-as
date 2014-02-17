@@ -367,10 +367,13 @@ public class PlatformMBeanResourceUnitTestCase {
         Assert.assertEquals(mbean.isThreadContentionMonitoringEnabled(), threadContentionEnabled);
         boolean threadCPUSupported = describedResource.resource.get(PlatformMBeanConstants.THREAD_CPU_TIME_SUPPORTED).asBoolean();
         Assert.assertEquals(mbean.isThreadCpuTimeSupported(), threadCPUSupported);
-        boolean threadCPUEnabled = describedResource.resource.get(PlatformMBeanConstants.THREAD_CPU_TIME_ENABLED).asBoolean();
-        Assert.assertEquals(mbean.isThreadCpuTimeSupported(), threadCPUEnabled);
         boolean currentThreadPUSupported = describedResource.resource.get(PlatformMBeanConstants.CURRENT_THREAD_CPU_TIME_SUPPORTED).asBoolean();
         Assert.assertEquals(mbean.isCurrentThreadCpuTimeSupported(), currentThreadPUSupported);
+        boolean threadCPUEnabled = false;
+        if (threadCPUSupported || currentThreadPUSupported) {
+            threadCPUEnabled = describedResource.resource.get(PlatformMBeanConstants.THREAD_CPU_TIME_ENABLED).asBoolean();
+            Assert.assertEquals(mbean.isThreadCpuTimeSupported(), threadCPUEnabled);
+        }
 
         ModelNode op = getOperation("reset-peak-thread-count", "threading", null);
         Assert.assertFalse(executeOp(op, false).isDefined());
@@ -477,30 +480,32 @@ public class PlatformMBeanResourceUnitTestCase {
             list = thread.get("stack-trace").asList();
             Assert.assertTrue(list.size() > 1);
         }
+        if(threadCPUSupported) {
+            op = getOperation("get-thread-cpu-time", "threading", null);
+            op.get("id").set(mainThreadId);
+            result = executeOp(op, !threadCPUSupported);
+            Assert.assertEquals(ModelType.LONG, result.getType());
+            if (!threadCPUEnabled) {
+                Assert.assertEquals(-1L, result.asLong());
+            }
 
-        op = getOperation("get-thread-cpu-time", "threading", null);
-        op.get("id").set(mainThreadId);
-        result = executeOp(op, !threadCPUSupported);
-        Assert.assertEquals(ModelType.LONG, result.getType());
-        if (!threadCPUEnabled) {
-            Assert.assertEquals(-1L, result.asLong());
+            op = getOperation("get-thread-user-time", "threading", null);
+            op.get("id").set(mainThreadId);
+            result = executeOp(op, !threadCPUSupported);
+            Assert.assertEquals(ModelType.LONG, result.getType());
+            if (!threadCPUEnabled) {
+                Assert.assertEquals(-1L, result.asLong());
+            }
         }
 
-        op = getOperation("get-thread-user-time", "threading", null);
-        op.get("id").set(mainThreadId);
-        result = executeOp(op, !threadCPUSupported);
-        Assert.assertEquals(ModelType.LONG, result.getType());
-        if (!threadCPUEnabled) {
-            Assert.assertEquals(-1L, result.asLong());
+        if (threadCPUSupported || currentThreadPUSupported) {
+            op = getOperation("write-attribute", "threading", null);
+            op.get("name").set("thread-cpu-time-enabled");
+            op.get("value").set(!threadCPUEnabled);
+            executeOp(op, false);
+            Assert.assertEquals(mbean.isThreadCpuTimeEnabled(), !threadCPUEnabled);
+            mbean.setThreadCpuTimeEnabled(threadCPUEnabled); // restore
         }
-
-        op = getOperation("write-attribute", "threading", null);
-        op.get("name").set("thread-cpu-time-enabled");
-        op.get("value").set(!threadCPUEnabled);
-        executeOp(op, false);
-        Assert.assertEquals(mbean.isThreadCpuTimeEnabled(), !threadCPUEnabled);
-        mbean.setThreadCpuTimeEnabled(threadCPUEnabled); // restore
-
         op = getOperation("write-attribute", "threading", null);
         op.get("name").set("thread-contention-monitoring-enabled");
         op.get("value").set(!threadContentionEnabled);
@@ -609,7 +614,13 @@ public class PlatformMBeanResourceUnitTestCase {
             if (attrVal.isDefined()) {
                 Assert.assertEquals(prop.getName() + " has incorrect ModelType", desc.get(TYPE).asType(), attrVal.getType());
             } else {
-                Assert.assertTrue(prop.getName() + " is undefined", desc.get(NILLABLE).asBoolean());
+                /*
+                    In case of three special properties no assert possible on some platforms
+                 */
+                if(!prop.getName().equals("thread-cpu-time-enabled")
+                        && !prop.getName().equals("current-thread-cpu-time")
+                        && !prop.getName().equals("current-thread-user-time"))
+                    Assert.assertTrue(prop.getName() + " is undefined", desc.get(NILLABLE).asBoolean());
             }
         }
     }
@@ -620,7 +631,7 @@ public class PlatformMBeanResourceUnitTestCase {
             Assert.assertEquals(FAILED, response.get(OUTCOME).asString());
             return response.get(FAILURE_DESCRIPTION);
         } else {
-            Assert.assertEquals(SUCCESS, response.get(OUTCOME).asString());
+            Assert.assertEquals(response.get(FAILURE_DESCRIPTION).asString(),SUCCESS, response.get(OUTCOME).asString());
             return response.get(RESULT);
         }
     }

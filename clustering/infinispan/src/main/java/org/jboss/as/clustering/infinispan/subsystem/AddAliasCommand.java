@@ -54,23 +54,23 @@ public class AddAliasCommand implements OperationStepHandler {
     @Override
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
-        nameValidator.validate(operation);
+        this.nameValidator.validate(operation);
         final String newAlias = operation.require(NAME).asString();
         final ModelNode submodel = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS).getModel();
-        final ModelNode currentValue = submodel.get(CacheContainerResource.ALIASES.getName()).clone();
+        final ModelNode currentValue = submodel.get(CacheContainerResourceDefinition.ALIASES.getName()).clone();
 
         ModelNode newValue = addNewAliasToList(currentValue, newAlias) ;
 
         // now set the new ALIAS attribute
         final ModelNode syntheticOp = new ModelNode();
-        syntheticOp.get(CacheContainerResource.ALIASES.getName()).set(newValue);
-        CacheContainerResource.ALIASES.validateAndSet(syntheticOp, submodel);
+        syntheticOp.get(CacheContainerResourceDefinition.ALIASES.getName()).set(newValue);
+        CacheContainerResourceDefinition.ALIASES.validateAndSet(syntheticOp, submodel);
 
         // since we modified the model, set reload required
         if (requiresRuntime(context)) {
             context.addStep(new OperationStepHandler() {
                 @Override
-                public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                public void execute(OperationContext context, ModelNode operation) {
                     context.reloadRequired();
                     context.completeStep(OperationContext.RollbackHandler.REVERT_RELOAD_REQUIRED_ROLLBACK_HANDLER);
                 }
@@ -98,18 +98,17 @@ public class AddAliasCommand implements OperationStepHandler {
      * @param alias
      * @return LIST ModelNode with the added aliases
      */
-    private ModelNode addNewAliasToList(ModelNode list, String alias) {
+    private static ModelNode addNewAliasToList(ModelNode list, String alias) {
 
         // check for empty string
-        if (alias == null || alias.equals(""))
-            return list ;
+        if (alias == null || alias.equals("")) return list;
 
         // check for undefined list (AS7-3476)
         if (!list.isDefined()) {
             list.setEmptyList();
         }
 
-        ModelNode newList = list.clone() ;
+        ModelNode newList = list.clone();
         List<ModelNode> listElements = list.asList();
 
         boolean found = false;
@@ -121,7 +120,7 @@ public class AddAliasCommand implements OperationStepHandler {
         if (!found) {
             newList.add().set(alias);
         }
-        return newList ;
+        return newList;
     }
 
 }

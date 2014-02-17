@@ -26,12 +26,12 @@ import static org.jboss.as.messaging.MessagingLogger.MESSAGING_LOGGER;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 import javax.transaction.TransactionManager;
 
 import org.hornetq.jms.bridge.JMSBridge;
 import org.jboss.as.messaging.MessagingLogger;
-import org.jboss.as.messaging.jms.SecurityActions;
 import org.jboss.as.txn.service.TxnServices;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
@@ -41,6 +41,7 @@ import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Service responsible for JMS Bridges.
@@ -70,7 +71,7 @@ class JMSBridgeService implements Service<JMSBridge> {
 
     @Override
     public synchronized void start(final StartContext context) throws StartException {
-        final Runnable r = new Runnable() {
+        final Runnable task = new Runnable() {
             @Override
             public void run() {
                 try {
@@ -83,22 +84,27 @@ class JMSBridgeService implements Service<JMSBridge> {
                 }
             }
         };
-        context.asynchronous();
-        executorInjector.getValue().execute(r);
+        try {
+            executorInjector.getValue().execute(task);
+        } catch (RejectedExecutionException e) {
+            task.run();
+        } finally {
+            context.asynchronous();
+        }
     }
 
     public void startBridge() throws Exception {
         if (moduleName == null) {
             bridge.start();
         } else {
-            ClassLoader oldTccl= SecurityActions.getContextClassLoader();
+            ClassLoader oldTccl= WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
             try {
                 ModuleIdentifier moduleID = ModuleIdentifier.create(moduleName);
                 Module module = Module.getCallerModuleLoader().loadModule(moduleID);
-                SecurityActions.setThreadContextClassLoader(module.getClassLoader());
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(module.getClassLoader());
                 bridge.start();
             } finally {
-                SecurityActions.setThreadContextClassLoader(oldTccl);
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
             }
         }
         MessagingLogger.MESSAGING_LOGGER.startedService("JMS Bridge", bridgeName);
@@ -106,7 +112,7 @@ class JMSBridgeService implements Service<JMSBridge> {
 
     @Override
     public synchronized void stop(final StopContext context) {
-        final Runnable r = new Runnable() {
+        final Runnable task = new Runnable() {
             @Override
             public void run() {
                 try {
@@ -119,8 +125,13 @@ class JMSBridgeService implements Service<JMSBridge> {
                 }
             }
         };
-        context.asynchronous();
-        executorInjector.getValue().execute(r);
+        try {
+            executorInjector.getValue().execute(task);
+        } catch (RejectedExecutionException e) {
+            task.run();
+        } finally {
+            context.asynchronous();
+        }
     }
 
     @Override

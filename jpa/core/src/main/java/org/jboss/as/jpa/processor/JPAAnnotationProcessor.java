@@ -22,8 +22,6 @@
 
 package org.jboss.as.jpa.processor;
 
-import static org.jboss.as.jpa.JpaMessages.MESSAGES;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -34,6 +32,7 @@ import javax.persistence.PersistenceContextType;
 import javax.persistence.PersistenceContexts;
 import javax.persistence.PersistenceUnit;
 import javax.persistence.PersistenceUnits;
+import javax.persistence.SynchronizationType;
 import javax.persistence.spi.PersistenceUnitTransactionType;
 
 import org.jboss.as.ee.component.Attachments;
@@ -47,15 +46,16 @@ import org.jboss.as.ee.component.InjectionTarget;
 import org.jboss.as.ee.component.LookupInjectionSource;
 import org.jboss.as.ee.component.MethodInjectionTarget;
 import org.jboss.as.ee.component.ResourceInjectionConfiguration;
+import org.jboss.as.jpa.config.JPADeploymentSettings;
 import org.jboss.as.jpa.container.PersistenceUnitSearch;
 import org.jboss.as.jpa.injectors.PersistenceContextInjectionSource;
 import org.jboss.as.jpa.injectors.PersistenceUnitInjectionSource;
 import org.jboss.as.jpa.service.PersistenceUnitServiceImpl;
-import org.jboss.as.jpa.spi.PersistenceUnitMetadata;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
+import org.jboss.as.server.deployment.DeploymentUtils;
 import org.jboss.as.server.deployment.JPADeploymentMarker;
 import org.jboss.as.server.deployment.annotation.CompositeIndex;
 import org.jboss.jandex.AnnotationInstance;
@@ -66,6 +66,10 @@ import org.jboss.jandex.DotName;
 import org.jboss.jandex.FieldInfo;
 import org.jboss.jandex.MethodInfo;
 import org.jboss.msc.service.ServiceName;
+import org.jipijapa.plugin.spi.PersistenceUnitMetadata;
+
+import static org.jboss.as.jpa.messages.JpaLogger.ROOT_LOGGER;
+import static org.jboss.as.jpa.messages.JpaMessages.MESSAGES;
 
 /**
  * Handle PersistenceContext and PersistenceUnit annotations.
@@ -301,6 +305,11 @@ public class JPAAnnotationProcessor implements DeploymentUnitProcessor {
             PersistenceContextType type = (pcType == null || PersistenceContextType.TRANSACTION.name().equals(pcType.asString()))
                 ? PersistenceContextType.TRANSACTION : PersistenceContextType.EXTENDED;
 
+            AnnotationValue stType = annotation.value("synchronization");
+            SynchronizationType synchronizationType =
+                    (stType == null || SynchronizationType.SYNCHRONIZED.name().equals(stType.asString()))?
+                            SynchronizationType.SYNCHRONIZED: SynchronizationType.UNSYNCHRONIZED;
+
             Map properties;
             AnnotationValue value = annotation.value("properties");
             AnnotationInstance[] props = value != null ? value.asNestedArray() : null;
@@ -312,10 +321,11 @@ public class JPAAnnotationProcessor implements DeploymentUnitProcessor {
             } else {
                 properties = null;
             }
-
-            return new PersistenceContextInjectionSource(type, properties, puServiceName, deploymentUnit, scopedPuName, injectionTypeName, pu);
+            // get deployment settings from top level du (jboss-all.xml is only parsed at the top level).
+            final JPADeploymentSettings jpaDeploymentSettings = DeploymentUtils.getTopDeploymentUnit(deploymentUnit).getAttachment(JpaAttachments.DEPLOYMENT_SETTINGS_KEY);
+            return new PersistenceContextInjectionSource(type, synchronizationType , properties, puServiceName, deploymentUnit.getServiceRegistry(), scopedPuName, injectionTypeName, pu, jpaDeploymentSettings);
         } else {
-            return new PersistenceUnitInjectionSource(puServiceName, deploymentUnit, injectionTypeName, pu);
+            return new PersistenceUnitInjectionSource(puServiceName, deploymentUnit.getServiceRegistry(), injectionTypeName, pu);
         }
     }
 
@@ -355,6 +365,7 @@ public class JPAAnnotationProcessor implements DeploymentUnitProcessor {
         if (puName != null) {
             searchName = puName.asString();
         }
+        ROOT_LOGGER.debugf("persistence unit search for unitName=%s referenced from class=%s (annotation=%s)", searchName, classDescription.getClassName(), annotation.toString());
         PersistenceUnitMetadata pu = PersistenceUnitSearch.resolvePersistenceUnitSupplier(deploymentUnit, searchName);
         if (null == pu) {
             classDescription.setInvalid(MESSAGES.persistenceUnitNotFound(searchName, deploymentUnit));

@@ -39,6 +39,7 @@ public enum Namespace {
 
     DATASOURCES_2_0("urn:jboss:domain:datasources:2.0");
 
+
     /**
      * The current namespace version.
      */

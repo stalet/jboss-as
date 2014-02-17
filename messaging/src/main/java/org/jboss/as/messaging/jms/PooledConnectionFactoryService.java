@@ -22,19 +22,19 @@
 
 package org.jboss.as.messaging.jms;
 
-import static org.jboss.as.messaging.MessagingLogger.ROOT_LOGGER;
+import static java.util.Collections.EMPTY_LIST;
+import static org.jboss.as.messaging.BinderServiceUtil.installAliasBinderService;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
+import static org.jboss.as.messaging.MessagingServices.getHornetQServiceName;
+import static org.jboss.as.naming.deployment.ContextNames.BindInfo;
 
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-
-import javax.naming.InitialContext;
+import java.util.Set;
 
 import org.hornetq.api.core.BroadcastEndpointFactoryConfiguration;
 import org.hornetq.api.core.DiscoveryGroupConfiguration;
@@ -48,17 +48,16 @@ import org.jboss.as.connector.services.resourceadapters.ResourceAdapterActivator
 import org.jboss.as.connector.services.resourceadapters.deployment.registry.ResourceAdapterDeploymentRegistry;
 import org.jboss.as.connector.subsystems.jca.JcaSubsystemConfiguration;
 import org.jboss.as.connector.util.ConnectorServices;
+import org.jboss.as.controller.ServiceVerificationHandler;
+import org.jboss.as.messaging.HornetQActivationService;
 import org.jboss.as.messaging.JGroupsChannelLocator;
-import org.jboss.as.naming.ContextListAndJndiViewManagedReferenceFactory;
-import org.jboss.as.naming.ContextListManagedReferenceFactory;
-import org.jboss.as.naming.ManagedReference;
-import org.jboss.as.naming.ServiceBasedNamingStore;
-import org.jboss.as.naming.ValueManagedReference;
+import org.jboss.as.messaging.MessagingLogger;
+import org.jboss.as.messaging.MessagingServices;
 import org.jboss.as.naming.deployment.ContextNames;
-import org.jboss.as.naming.service.BinderService;
 import org.jboss.as.naming.service.NamingService;
 import org.jboss.as.network.SocketBinding;
 import org.jboss.as.security.service.SubjectFactoryService;
+import org.jboss.as.server.Services;
 import org.jboss.as.txn.service.TxnServices;
 import org.jboss.jca.common.api.metadata.Defaults;
 import org.jboss.jca.common.api.metadata.common.CommonAdminObject;
@@ -110,6 +109,7 @@ import org.jboss.jca.core.spi.transaction.TransactionIntegration;
 import org.jboss.msc.inject.Injector;
 import org.jboss.msc.inject.MapInjector;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
@@ -117,7 +117,6 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
-import org.jboss.msc.value.ImmediateValue;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.security.SubjectFactory;
 
@@ -162,17 +161,6 @@ public class PooledConnectionFactoryService implements Service<Void> {
     public static final String JGROUPS_CHANNEL_LOCATOR_CLASS = "jgroupsChannelLocatorClass";
     public static final String JGROUPS_CHANNEL_NAME = "jgroupsChannelName";
     public static final String JGROUPS_CHANNEL_REF_NAME = "jgroupsChannelRefName";
-    private static final Collection<String> JMS_ACTIVATION_CONFIG_PROPERTIES = new HashSet<String>();
-
-   {
-        // All the activation-config-properties that are mandated to be supported by the RA, as per EJB3.1 spec,
-        // section 5.4.15 through 5.4.17
-
-        JMS_ACTIVATION_CONFIG_PROPERTIES.add("acknowledgeMode");
-        JMS_ACTIVATION_CONFIG_PROPERTIES.add("destinationType");
-        JMS_ACTIVATION_CONFIG_PROPERTIES.add("messageSelector");
-        JMS_ACTIVATION_CONFIG_PROPERTIES.add("subscriptionDurability");
-    }
 
     private Injector<Object> transactionManager = new InjectedValue<Object>();
     private List<String> connectors;
@@ -181,12 +169,15 @@ public class PooledConnectionFactoryService implements Service<Void> {
     private String name;
     private Map<String, SocketBinding> socketBindings = new HashMap<String, SocketBinding>();
     private InjectedValue<HornetQServer> hornetQService = new InjectedValue<HornetQServer>();
-    private List<String> jndiNames;
+    private BindInfo bindInfo;
+    private final boolean pickAnyConnectors;
+    private List<String> jndiAliases;
     private String txSupport;
     private int minPoolSize;
     private int maxPoolSize;
     private String hqServerName;
     private final String jgroupsChannelName;
+    private final boolean createBinderService;
 
    public PooledConnectionFactoryService(String name, List<String> connectors, String discoveryGroupName, String hqServerName, String jgroupsChannelName, List<PooledConnectionFactoryConfigProperties> adapterParams, List<String> jndiNames, String txSupport, int minPoolSize, int maxPoolSize) {
         this.name = name;
@@ -195,12 +186,121 @@ public class PooledConnectionFactoryService implements Service<Void> {
         this.hqServerName = hqServerName;
         this.jgroupsChannelName = jgroupsChannelName;
         this.adapterParams = adapterParams;
-        this.jndiNames = jndiNames;
+        initJNDIBindings(jndiNames);
+        createBinderService = true;
         this.txSupport = txSupport;
         this.minPoolSize = minPoolSize;
         this.maxPoolSize = maxPoolSize;
+        this.pickAnyConnectors = false;
     }
 
+    public PooledConnectionFactoryService(String name, List<String> connectors, String discoveryGroupName, String hqServerName, String jgroupsChannelName, List<PooledConnectionFactoryConfigProperties> adapterParams, BindInfo bindInfo, String txSupport, int minPoolSize, int maxPoolSize, boolean pickAnyConnectors) {
+        this.name = name;
+        this.connectors = connectors;
+        this.discoveryGroupName = discoveryGroupName;
+        this.hqServerName = hqServerName;
+        this.jgroupsChannelName = jgroupsChannelName;
+        this.adapterParams = adapterParams;
+        this.bindInfo = bindInfo;
+        this.jndiAliases = EMPTY_LIST;
+        this.createBinderService = false;
+        this.txSupport = txSupport;
+        this.minPoolSize = minPoolSize;
+        this.maxPoolSize = maxPoolSize;
+        this.pickAnyConnectors = pickAnyConnectors;
+    }
+
+    private void initJNDIBindings(List<String> jndiNames) {
+        // create the definition with the 1st jndi names and create jndi aliases for the rest
+        String jndiName = jndiNames.get(0);
+        this.bindInfo = ContextNames.bindInfoFor(jndiName);
+        this.jndiAliases = new ArrayList<String>();
+        if (jndiNames.size() > 1) {
+            jndiAliases = jndiNames.subList(1, jndiNames.size());
+        }
+    }
+
+    /**
+     *
+     * @param verificationHandler can be {@code null}
+     * @param newControllers  can be {@code null}
+     */
+
+    public static void installService(final ServiceVerificationHandler verificationHandler,
+                                      final List<ServiceController<?>> newControllers,
+                                      ServiceTarget serviceTarget,
+                                      String name,
+                                      String hqServerName,
+                                      List<String> connectors,
+                                      String discoveryGroupName,
+                                      String jgroupsChannelName,
+                                      List<PooledConnectionFactoryConfigProperties> adapterParams,
+                                      BindInfo bindInfo,
+                                      String txSupport,
+                                      int minPoolSize,
+                                      int maxPoolSize,
+                                      boolean pickAnyConnectors) {
+
+        ServiceName hqServiceName = MessagingServices.getHornetQServiceName(hqServerName);
+        ServiceName serviceName = JMSServices.getPooledConnectionFactoryBaseServiceName(hqServiceName).append(name);
+
+        PooledConnectionFactoryService service = new PooledConnectionFactoryService(name,
+                connectors, discoveryGroupName, hqServerName, jgroupsChannelName, adapterParams,
+                bindInfo, txSupport, minPoolSize, maxPoolSize, pickAnyConnectors);
+
+        installService0(verificationHandler, newControllers, serviceTarget, hqServiceName, serviceName, service);
+    }
+
+    /**
+     *
+     * @param verificationHandler can be {@code null}
+     * @param newControllers  can be {@code null}
+     */
+    public static void installService(final ServiceVerificationHandler verificationHandler,
+                                      final List<ServiceController<?>> newControllers,
+                                      ServiceTarget serviceTarget,
+                                      String name,
+                                      String hqServerName,
+                                      List<String> connectors,
+                                      String discoveryGroupName,
+                                      String jgroupsChannelName,
+                                      List<PooledConnectionFactoryConfigProperties> adapterParams,
+                                      List<String> jndiNames,
+                                      String txSupport,
+                                      int minPoolSize,
+                                      int maxPoolSize) {
+
+        ServiceName hqServiceName = MessagingServices.getHornetQServiceName(hqServerName);
+        ServiceName serviceName = JMSServices.getPooledConnectionFactoryBaseServiceName(hqServiceName).append(name);
+        PooledConnectionFactoryService service = new PooledConnectionFactoryService(name,
+                connectors, discoveryGroupName, hqServerName, jgroupsChannelName, adapterParams,
+                jndiNames, txSupport, minPoolSize, maxPoolSize);
+
+        installService0(verificationHandler, newControllers, serviceTarget, hqServiceName, serviceName, service);
+    }
+
+    private static void installService0(ServiceVerificationHandler verificationHandler,
+                                        List<ServiceController<?>> newControllers,
+                                        ServiceTarget serviceTarget,
+                                        ServiceName hqServiceName,
+                                        ServiceName serviceName,
+                                        PooledConnectionFactoryService service) {
+        ServiceBuilder serviceBuilder = serviceTarget
+                .addService(serviceName, service)
+                .addDependency(TxnServices.JBOSS_TXN_TRANSACTION_MANAGER, service.transactionManager)
+                .addDependency(hqServiceName, HornetQServer.class, service.hornetQService)
+                .addDependency(HornetQActivationService.getHornetQActivationServiceName(hqServiceName))
+                .addDependency(JMSServices.getJmsManagerBaseServiceName(hqServiceName))
+                .setInitialMode(ServiceController.Mode.PASSIVE);
+        if (verificationHandler != null) {
+            serviceBuilder.addListener(verificationHandler);
+        }
+
+        final ServiceController<Void> controller = serviceBuilder.install();
+        if (newControllers != null) {
+            newControllers.add(controller);
+        }
+    }
 
     public Void getValue() throws IllegalStateException, IllegalArgumentException {
         return null;
@@ -225,6 +325,16 @@ public class PooledConnectionFactoryService implements Service<Void> {
         try {
             StringBuilder connectorClassname = new StringBuilder();
             StringBuilder connectorParams = new StringBuilder();
+            // if there is no discovery-group and the connector list is empty,
+            // pick the first connector available if pickAnyConnectors is true
+            if (discoveryGroupName == null && connectors.isEmpty() && pickAnyConnectors) {
+                Set<String> connectorNames = hornetQService.getValue().getConfiguration().getConnectorConfigurations().keySet();
+                if (connectorNames.size() > 0) {
+                    String connectorName = connectorNames.iterator().next();
+                    MessagingLogger.ROOT_LOGGER.connectorForPooledConnectionFactory(name, connectorName);
+                    connectors.add(connectorName);
+                }
+            }
             for (String connector : connectors) {
                 TransportConfiguration tc = hornetQService.getValue().getConfiguration().getConnectorConfigurations().get(connector);
                 if(tc == null) {
@@ -262,7 +372,6 @@ public class PooledConnectionFactoryService implements Service<Void> {
                     properties.add(simpleProperty15(GROUP_PORT, INTEGER_TYPE, "" + udpCfg.getGroupPort()));
                     properties.add(simpleProperty15(DISCOVERY_LOCAL_BIND_ADDRESS, STRING_TYPE, "" + udpCfg.getLocalBindAddress()));
                 } else if (bgCfg instanceof JGroupsBroadcastGroupConfiguration) {
-                    JGroupsChannelLocator.container = container;
                     properties.add(simpleProperty15(JGROUPS_CHANNEL_LOCATOR_CLASS, STRING_TYPE, JGroupsChannelLocator.class.getName()));
                     properties.add(simpleProperty15(JGROUPS_CHANNEL_NAME, STRING_TYPE, jgroupsChannelName));
                     properties.add(simpleProperty15(JGROUPS_CHANNEL_REF_NAME, STRING_TYPE, hqServerName + '/' + jgroupsChannelName));
@@ -295,22 +404,20 @@ public class PooledConnectionFactoryService implements Service<Void> {
             ResourceAdapter1516 ra = createResourceAdapter15(properties, outbound, inbound);
             Connector15 cmd = createConnector15(ra);
 
-            // create the definition with the 1st jndi names and create jndi aliases for the rest
-            String jndiName = jndiNames.get(0);
-            List<String> jndiAliases = new ArrayList<String>();
-            if (jndiNames.size() > 1) {
-                jndiAliases = jndiNames.subList(1, jndiNames.size());
-            }
-
             TransactionSupportEnum transactionSupport = getTransactionSupport(txSupport);
-            CommonConnDef common = createConnDef(transactionSupport, jndiName, minPoolSize, maxPoolSize);
+            CommonConnDef common = createConnDef(transactionSupport, bindInfo.getBindName(), minPoolSize, maxPoolSize);
             IronJacamar ijmd = createIron(common, transactionSupport);
 
             ResourceAdapterActivatorService activator = new ResourceAdapterActivatorService(cmd, ijmd,
                     PooledConnectionFactoryService.class.getClassLoader(), name);
+            activator.setBindInfo(bindInfo);
+            activator.setCreateBinderService(createBinderService);
 
-            ServiceController<ResourceAdapterDeployment> controller = serviceTarget
-                    .addService(ConnectorServices.RESOURCE_ADAPTER_ACTIVATOR_SERVICE.append(name), activator)
+            ServiceController<ResourceAdapterDeployment> controller =
+                    Services.addServerExecutorDependency(
+                        serviceTarget.addService(ConnectorServices.RESOURCE_ADAPTER_ACTIVATOR_SERVICE.append(name), activator),
+                            activator.getExecutorServiceInjector(), false)
+                    .addDependency(HornetQActivationService.getHornetQActivationServiceName(getHornetQServiceName(hqServerName)))
                     .addDependency(ConnectorServices.IRONJACAMAR_MDR, AS7MetadataRepository.class,
                             activator.getMdrInjector())
                     .addDependency(ConnectorServices.RA_REPOSITORY_SERVICE, ResourceAdapterRepository.class,
@@ -329,9 +436,9 @@ public class PooledConnectionFactoryService implements Service<Void> {
                             activator.getCcmInjector()).addDependency(NamingService.SERVICE_NAME)
                     .addDependency(TxnServices.JBOSS_TXN_TRANSACTION_MANAGER)
                     .addDependency(ConnectorServices.BOOTSTRAP_CONTEXT_SERVICE.append("default"))
-                    .setInitialMode(ServiceController.Mode.ACTIVE).install();
+                    .setInitialMode(ServiceController.Mode.PASSIVE).install();
 
-            createJNDIAliases(jndiName, jndiAliases, controller);
+            createJNDIAliases(bindInfo, jndiAliases, controller);
 
             // Mock the deployment service to allow it to start
             serviceTarget.addService(ConnectorServices.RESOURCE_ADAPTER_DEPLOYER_SERVICE_PREFIX.append(name), Service.NULL).install();
@@ -343,21 +450,15 @@ public class PooledConnectionFactoryService implements Service<Void> {
         }
     }
 
-    private List<ServiceName> createJNDIAliases(final String name, List<String> aliases, ServiceController<ResourceAdapterDeployment> controller) {
-            List<ServiceName> serviceNames = new ArrayList<ServiceName>();
-            for (final String alias : aliases) {
-                final ContextNames.BindInfo aliasBindInfo = ContextNames.bindInfoFor(alias);
-                final BinderService aliasBinderService = new BinderService(alias);
-                aliasBinderService.getManagedObjectInjector().inject(new AliasManagedReferenceFactory(name));
-
-                controller.getServiceContainer()
-                    .addService(aliasBindInfo.getBinderServiceName(), aliasBinderService)
-                    .addDependency(aliasBindInfo.getParentContextServiceName(), ServiceBasedNamingStore.class, aliasBinderService.getNamingStoreInjector())
-                    .addDependency(ContextNames.bindInfoFor(name).getBinderServiceName())
-                    .install();
-                ROOT_LOGGER.boundJndiName(alias);
+    private void createJNDIAliases(final BindInfo bindInfo, List<String> aliases, ServiceController<ResourceAdapterDeployment> controller) {
+        for (final String alias : aliases) {
+            // do not install the alias' binder service if it is already registered
+            if (controller.getServiceContainer().getService(ContextNames.bindInfoFor(alias).getBinderServiceName()) == null) {
+                installAliasBinderService(controller.getServiceContainer(),
+                        bindInfo,
+                        alias);
             }
-            return serviceNames;
+        }
     }
 
     private static TransactionSupportEnum getTransactionSupport(String txSupport) {
@@ -380,10 +481,12 @@ public class PooledConnectionFactoryService implements Service<Void> {
         boolean prefill = false;
         boolean useStrictMin = false;
         FlushStrategy flushStrategy = FlushStrategy.FAILING_CONNECTION_ONLY;
+        Boolean isXA = Boolean.FALSE;
         final CommonPool pool;
         if (transactionSupport == TransactionSupportEnum.XATransaction) {
             pool = new CommonXaPoolImpl(minSize, maxSize, prefill, useStrictMin, flushStrategy,
                     Defaults.IS_SAME_RM_OVERRIDE, Defaults.INTERLEAVING, Defaults.PAD_XID, Defaults.WRAP_XA_RESOURCE, Defaults.NO_TX_SEPARATE_POOL);
+            isXA = Boolean.TRUE;
         } else {
             pool = new CommonPoolImpl(minSize, maxSize, prefill, useStrictMin, flushStrategy);
         }
@@ -397,7 +500,7 @@ public class PooledConnectionFactoryService implements Service<Void> {
         // when its ResourceAdapter is started
         Recovery recovery = new Recovery(new CredentialImpl(null, null, null), null, Boolean.TRUE);
         CommonValidationImpl validation = new CommonValidationImpl(null, null, false);
-        return new CommonConnDefImpl(Collections.<String, String>emptyMap(), RAMANAGED_CONN_FACTORY, jndiName, HQ_CONN_DEF, true, true, true, pool, timeOut, validation, security, recovery);
+        return new CommonConnDefImpl(Collections.<String, String>emptyMap(), RAMANAGED_CONN_FACTORY, jndiName, HQ_CONN_DEF, true, true, true, pool, timeOut, validation, security, recovery, isXA);
     }
 
     private static Connector15Impl createConnector15(ResourceAdapter1516 ra) {
@@ -410,12 +513,7 @@ public class PooledConnectionFactoryService implements Service<Void> {
 
     private InboundResourceAdapter createInbound() {
         List<RequiredConfigProperty> destination = Collections.singletonList(new RequiredConfigProperty(EMPTY_LOCL, str("destination"), null));
-        // setup the JMS activation config properties
-        final List<ConfigProperty> jmsActivationConfigProps = new ArrayList<ConfigProperty>(JMS_ACTIVATION_CONFIG_PROPERTIES.size());
-        for (final String activationConfigProp : JMS_ACTIVATION_CONFIG_PROPERTIES) {
-            final ConfigProperty configProp = new ConfigPropertyImpl(EMPTY_LOCL, str(activationConfigProp), str(STRING_TYPE), null, null);
-            jmsActivationConfigProps.add(configProp);
-        }
+
         Activationspec15Impl activation15 = new Activationspec15Impl(str(HQ_ACTIVATION), destination, null);
         List<MessageListener> messageListeners = Collections.<MessageListener>singletonList(new MessageListenerImpl(str(JMS_MESSAGE_LISTENER), activation15, null));
         Messageadapter message = new MessageAdapterImpl(messageListeners, null);
@@ -459,36 +557,4 @@ public class PooledConnectionFactoryService implements Service<Void> {
         return hornetQService;
     }
 
-    private final class AliasManagedReferenceFactory implements ContextListAndJndiViewManagedReferenceFactory {
-
-        private final String name;
-
-        /**
-         * @param name original JNDI name
-         */
-        private AliasManagedReferenceFactory(String name) {
-            this.name = name;
-        }
-
-        @Override
-        public ManagedReference getReference() {
-            try {
-                final Object value = new InitialContext().lookup(name);
-                return new ValueManagedReference(new ImmediateValue<Object>(value));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        @Override
-        public String getInstanceClassName() {
-            final Object value = getReference().getInstance();
-            return value != null ? value.getClass().getName() : ContextListManagedReferenceFactory.DEFAULT_INSTANCE_CLASS_NAME;
-        }
-
-        @Override
-        public String getJndiViewInstanceValue() {
-            return String.valueOf(getReference().getInstance());
-        }
-    }
 }

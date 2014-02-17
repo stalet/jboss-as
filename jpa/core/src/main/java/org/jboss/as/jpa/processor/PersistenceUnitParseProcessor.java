@@ -28,7 +28,6 @@ import org.jboss.as.ee.structure.SpecDescriptorPropertyReplacement;
 import org.jboss.as.jpa.config.PersistenceUnitMetadataHolder;
 import org.jboss.as.jpa.config.PersistenceUnitsInApplication;
 import org.jboss.as.jpa.puparser.PersistenceUnitXmlParser;
-import org.jboss.as.jpa.spi.PersistenceUnitMetadata;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
@@ -40,6 +39,7 @@ import org.jboss.as.server.deployment.SubDeploymentMarker;
 import org.jboss.as.server.deployment.module.ResourceRoot;
 import org.jboss.metadata.parser.util.NoopXMLResolver;
 import org.jboss.vfs.VirtualFile;
+import org.jipijapa.plugin.spi.PersistenceUnitMetadata;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamReader;
@@ -53,8 +53,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import static org.jboss.as.jpa.JpaLogger.JPA_LOGGER;
-import static org.jboss.as.jpa.JpaMessages.MESSAGES;
+import static org.jboss.as.jpa.messages.JpaLogger.JPA_LOGGER;
+import static org.jboss.as.jpa.messages.JpaMessages.MESSAGES;
 
 /**
  * Handle parsing of Persistence unit persistence.xml files
@@ -77,6 +77,12 @@ public class PersistenceUnitParseProcessor implements DeploymentUnitProcessor {
     private static final String JAR_FILE_EXTENSION = ".jar";
     private static final String LIB_FOLDER = "lib";
 
+    private final boolean appClientContainerMode;
+
+    public PersistenceUnitParseProcessor(boolean appclient) {
+        appClientContainerMode = appclient;
+    }
+
     @Override
     public void deploy(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
 
@@ -91,7 +97,8 @@ public class PersistenceUnitParseProcessor implements DeploymentUnitProcessor {
 
     private void handleJarDeployment(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
-        if (!isEarDeployment(deploymentUnit) && !isWarDeployment(deploymentUnit)) {
+        if (!isEarDeployment(deploymentUnit) && !isWarDeployment(deploymentUnit) &&
+                (!appClientContainerMode || DeploymentTypeMarker.isType(DeploymentType.APPLICATION_CLIENT, deploymentUnit)) ) {
 
             // handle META-INF/persistence.xml
             // ordered list of PUs
@@ -114,7 +121,7 @@ public class PersistenceUnitParseProcessor implements DeploymentUnitProcessor {
 
     private void handleWarDeployment(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
-        if (isWarDeployment(deploymentUnit)) {
+        if (!appClientContainerMode && isWarDeployment(deploymentUnit)) {
 
             int puCount;
             // ordered list of PUs

@@ -84,6 +84,7 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
     private CacheInfo cache;
     // by default stateful beans are passivation capable, but beans can override it via annotation or deployment descriptor, starting EJB 3.2
     private boolean passivationApplicable = true;
+    private final ServiceName deploymentUnitServiceName;
 
     /**
      * Map of init method, to the corresponding home create method on the home interface
@@ -138,7 +139,7 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
     public StatefulComponentDescription(final String componentName, final String componentClassName, final EjbJarDescription ejbJarDescription,
                                         final ServiceName deploymentUnitServiceName, final SessionBeanMetaData descriptorData) {
         super(componentName, componentClassName, ejbJarDescription, deploymentUnitServiceName, descriptorData);
-
+        this.deploymentUnitServiceName = deploymentUnitServiceName;
         addInitMethodInvokingInterceptor();
     }
 
@@ -146,7 +147,7 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
         getConfigurators().addFirst(new ComponentConfigurator() {
             @Override
             public void configure(DeploymentPhaseContext context, ComponentDescription description, ComponentConfiguration configuration) throws DeploymentUnitProcessingException {
-                configuration.addPostConstructInterceptor(StatefulInitMethodInterceptorFactory.INSTANCE, InterceptorOrder.ComponentPostConstruct.SFSB_INIT_METHOD);
+                configuration.addPostConstructInterceptor(StatefulInitMethodInterceptor.INSTANCE, InterceptorOrder.ComponentPostConstruct.SFSB_INIT_METHOD);
             }
         });
     }
@@ -319,7 +320,7 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
                     }
                 } else {
                     // interceptor factory return an interceptor which sets up the session id on component view instance creation
-                    final InterceptorFactory sessionIdGeneratingInterceptorFactory = StatefulComponentSessionIdGeneratingInterceptorFactory.INSTANCE;
+                    final InterceptorFactory sessionIdGeneratingInterceptorFactory = StatefulComponentSessionIdGeneratingInterceptor.FACTORY;
 
                     // add the session id generating interceptor to the start of the *post-construct interceptor chain of the ComponentViewInstance*
                     viewConfiguration.addClientPostConstructInterceptor(sessionIdGeneratingInterceptorFactory, InterceptorOrder.ClientPostConstruct.INSTANCE_CREATE);
@@ -328,7 +329,7 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
                         if ((method.getName().equals("hashCode") && method.getParameterTypes().length == 0) ||
                                 method.getName().equals("equals") && method.getParameterTypes().length == 1 &&
                                         method.getParameterTypes()[0] == Object.class) {
-                            viewConfiguration.addClientInterceptor(method, StatefulIdentityInterceptorFactory.INSTANCE, InterceptorOrder.Client.EJB_EQUALS_HASHCODE);
+                            viewConfiguration.addClientInterceptor(method, StatefulIdentityInterceptor.FACTORY, InterceptorOrder.Client.EJB_EQUALS_HASHCODE);
                         }
                     }
                 }
@@ -339,7 +340,6 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
                 @Override
                 public void configure(DeploymentPhaseContext context, ComponentConfiguration componentConfiguration, ViewDescription description, ViewConfiguration configuration) throws DeploymentUnitProcessingException {
                     // add the instance associating interceptor to the *start of the invocation interceptor chain*
-                    configuration.addClientInterceptor(StatefulComponentIdInterceptor.Factory.INSTANCE, InterceptorOrder.Client.ASSOCIATING_INTERCEPTOR);
                     configuration.addViewInterceptor(StatefulComponentInstanceInterceptor.FACTORY, InterceptorOrder.View.ASSOCIATING_INTERCEPTOR);
                 }
             });
@@ -397,5 +397,33 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
 
     public void setPassivationApplicable(final boolean passivationApplicable) {
         this.passivationApplicable = passivationApplicable;
+    }
+
+    /**
+     * EJB 3.2 spec allows the TimeService to be injected/looked up/accessed from the stateful bean so as to allow access to the {@link javax.ejb.TimerService#getAllTimers()}
+     * method from a stateful bean. Hence we make timerservice applicable for stateful beans too. However, we return <code>false</code> in {@link #isTimerServiceRequired()} so that a {@link org.jboss.as.ejb3.timerservice.NonFunctionalTimerService}
+     * is made available for the stateful bean. The {@link org.jboss.as.ejb3.timerservice.NonFunctionalTimerService} only allows access to {@link javax.ejb.TimerService#getAllTimers()} and {@link javax.ejb.TimerService#getTimers()}
+     * methods and throws an {@link IllegalStateException} for all othre methods on the timerservice and that's exactly how we want it to behave for stateful beans
+     *
+     * @return
+     * @see {@link #isTimerServiceRequired()}
+     */
+    @Override
+    public boolean isTimerServiceApplicable() {
+        return true;
+    }
+
+    /**
+     * Timeout methods and auto timer methods aren't applicable for stateful beans, hence we return false.
+     * @return
+     * @see {@link #isTimerServiceApplicable()}
+     */
+    @Override
+    public boolean isTimerServiceRequired() {
+        return false;
+    }
+
+    public ServiceName getDeploymentUnitServiceName() {
+        return this.deploymentUnitServiceName;
     }
 }

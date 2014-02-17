@@ -25,12 +25,13 @@ package org.jboss.as.test.integration.logging.operations;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import javax.servlet.http.HttpServletResponse;
 
-import org.junit.Assert;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.junit.Arquillian;
@@ -46,6 +47,7 @@ import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.dmr.ModelNode;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -95,12 +97,14 @@ public class Log4jCustomHandlerTestCase extends AbstractLoggingOperationsTestCas
     @Test
     @RunAsClient
     public void disabledLoggerTest() throws Exception {
-        // Disable the handler
-        final ModelNode op = Operations.createWriteAttributeOperation(CUSTOM_HANDLER_ADDRESS.toModelNode(), ModelDescriptionConstants.ENABLED, false);
-        executeOperation(op);
+        setEnabled(CUSTOM_HANDLER_ADDRESS, false);
 
-        final String msg = "Logging Test: Log4jCustomHandlerTestCase.disabledLoggerTest";
-        searchLog(msg, false);
+        try {
+            final String msg = "Logging Test: Log4jCustomHandlerTestCase.disabledLoggerTest";
+            searchLog(msg, false);
+        } finally {
+            setEnabled(CUSTOM_HANDLER_ADDRESS, true);
+        }
     }
 
     private void searchLog(final String msg, final boolean expected) throws Exception {
@@ -109,7 +113,7 @@ public class Log4jCustomHandlerTestCase extends AbstractLoggingOperationsTestCas
             int statusCode = getResponse(new URL(url, "logger?msg=" + URLEncoder.encode(msg, "utf-8")));
             Assert.assertTrue("Invalid response statusCode: " + statusCode, statusCode == HttpServletResponse.SC_OK);
             // check logs
-            reader = new BufferedReader(new InputStreamReader(new FileInputStream(logFile), "utf-8"));
+            reader = new BufferedReader(new InputStreamReader(new FileInputStream(logFile), StandardCharsets.UTF_8));
             String line;
             boolean logFound = false;
 
@@ -119,7 +123,7 @@ public class Log4jCustomHandlerTestCase extends AbstractLoggingOperationsTestCas
                     break;
                 }
             }
-            Assert.assertTrue(logFound == expected);
+            Assert.assertTrue(msg + " not found in " + logFile, logFound == expected);
         } finally {
             safeClose(reader);
         }
@@ -141,12 +145,12 @@ public class Log4jCustomHandlerTestCase extends AbstractLoggingOperationsTestCas
             ModelNode opProperties = op.get("properties").setEmptyObject();
             opProperties.get("file").set(logFile.getAbsolutePath());
             opProperties.get("immediateFlush").set(true);
-            System.out.println(client.execute(op));
+            execute(client, op);
 
             // Add the handler to the root-logger
             op = Operations.createOperation("add-handler", createRootLoggerAddress().toModelNode());
             op.get(ModelDescriptionConstants.NAME).set(CUSTOM_HANDLER_NAME);
-            client.execute(op);
+            execute(client, op);
         }
 
         @Override
@@ -156,11 +160,11 @@ public class Log4jCustomHandlerTestCase extends AbstractLoggingOperationsTestCas
             // Remove the handler from the root-logger
             ModelNode op = Operations.createOperation("remove-handler", createRootLoggerAddress().toModelNode());
             op.get(ModelDescriptionConstants.NAME).set(CUSTOM_HANDLER_NAME);
-            client.execute(op);
+            execute(client, op);
 
             // Remove the custom handler
             op = Operations.createRemoveOperation(CUSTOM_HANDLER_ADDRESS.toModelNode());
-            client.execute(op);
+            execute(client, op);
 
             if (logFile != null) logFile.delete();
 

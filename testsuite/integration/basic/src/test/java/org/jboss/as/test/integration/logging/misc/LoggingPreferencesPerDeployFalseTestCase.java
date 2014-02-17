@@ -37,7 +37,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -66,18 +66,22 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 /**
- * 
+ *
  * @author Petr Křemenský <pkremens@redhat.com>
+ * @deprecated this needs to be moved/copied to the manualmode tests and the new use-deployment-logging-config attribute
+ * needs to be used which requires a reload/restart of the server. Also I'm not sure the test actually works as it
+ * passed when I broke the property. See WFLY-2648
  */
 
 @ServerSetup(LoggingPreferencesPerDeployFalseTestCase.LoggingPreferencesPerDeployFalseTestCaseSetup.class)
 @RunWith(Arquillian.class)
+@Deprecated
 public class LoggingPreferencesPerDeployFalseTestCase extends
 		AbstractLoggingTest {
 
 	private static Logger log = Logger
 			.getLogger(LoggingPreferencesPerDeployFalseTestCase.class);
-	
+
 	private static final String PER_DEPLOY_NAME = "jboss-logging-properties-test.log";
 	private static final String PROFILE_LOG_NAME = "dummy-profile.log";
 	private static File perDeployLogFile;
@@ -231,7 +235,7 @@ public class LoggingPreferencesPerDeployFalseTestCase extends
 				statusCode == HttpServletResponse.SC_OK);
 		// check logs
 		BufferedReader br = new BufferedReader(new InputStreamReader(
-				new FileInputStream(profileLog), Charset.forName("UTF-8")));
+				new FileInputStream(profileLog), StandardCharsets.UTF_8));
 		String line;
 		boolean logFound = false;
 		while ((line = br.readLine()) != null) {

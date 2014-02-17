@@ -29,6 +29,7 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VAL
 
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
 import java.util.Set;
@@ -38,11 +39,14 @@ import javax.xml.stream.XMLStreamWriter;
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ListAttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ReadResourceNameOperationStepHandler;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
@@ -79,10 +83,12 @@ public class InterfaceDefinition extends SimpleResourceDefinition {
             .setValidator(new ModelTypeValidator(ModelType.BOOLEAN, true, false))
             .addAlternatives(OTHERS).addAlternatives(ModelDescriptionConstants.ANY_IPV4_ADDRESS, ModelDescriptionConstants.ANY_IPV6_ADDRESS)
             .build();
+
     public static final AttributeDefinition ANY_IPV4_ADDRESS = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.ANY_IPV4_ADDRESS, ModelType.BOOLEAN)
             .setAllowExpression(false).setAllowNull(true).setRestartAllServices()
             .setValidator(new ModelTypeValidator(ModelType.BOOLEAN, true, false))
             .addAlternatives(OTHERS).addAlternatives(ModelDescriptionConstants.ANY_ADDRESS, ModelDescriptionConstants.ANY_IPV6_ADDRESS)
+            .setDeprecated(ModelVersion.create(2,0,0))
             .build();
     /**
      * All other attribute names.
@@ -92,6 +98,7 @@ public class InterfaceDefinition extends SimpleResourceDefinition {
             .setAllowExpression(false).setAllowNull(true).setRestartAllServices()
             .setValidator(new ModelTypeValidator(ModelType.BOOLEAN, true, false))
             .addAlternatives(OTHERS).addAlternatives(ModelDescriptionConstants.ANY_ADDRESS, ModelDescriptionConstants.ANY_IPV4_ADDRESS)
+            .setDeprecated(ModelVersion.create(2,0,0))
             .build();
     public static final AttributeDefinition INET_ADDRESS = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.INET_ADDRESS, ModelType.STRING)
             .setAllowExpression(true).setAllowNull(true).addAlternatives(ALTERNATIVES_ANY).setRestartAllServices()
@@ -179,6 +186,7 @@ public class InterfaceDefinition extends SimpleResourceDefinition {
             MULTICAST, POINT_TO_POINT, PUBLIC_ADDRESS, SITE_LOCAL_ADDRESS, UP, VIRTUAL};*/
 
     private final boolean updateRuntime;
+    private final List<AccessConstraintDefinition> sensitivity;
 
     public InterfaceDefinition(InterfaceAddHandler addHandler, InterfaceRemoveHandler removeHandler, boolean updateRuntime) {
         super(PathElement.pathElement(INTERFACE),
@@ -186,6 +194,7 @@ public class InterfaceDefinition extends SimpleResourceDefinition {
                 addHandler,
                 removeHandler);
         this.updateRuntime = updateRuntime;
+        this.sensitivity = SensitiveTargetAccessConstraintDefinition.SOCKET_CONFIG.wrapAsList();
     }
 
     public static String localName(final Element element) {
@@ -220,6 +229,11 @@ public class InterfaceDefinition extends SimpleResourceDefinition {
             registration.registerReadWriteAttribute(def, null, handler);
         }
         registration.registerReadOnlyAttribute(InterfaceDefinition.NAME, ReadResourceNameOperationStepHandler.INSTANCE);
+    }
+
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return sensitivity;
     }
 
     @Deprecated

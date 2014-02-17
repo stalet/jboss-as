@@ -21,7 +21,26 @@
 */
 package org.jboss.as.connector.subsystems.resourceadapters;
 
+import static org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_CLASS;
+import static org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_PROPERTIES;
+import static org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_CLASS;
+import static org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_PROPERTIES;
+import static org.jboss.as.connector.subsystems.common.pool.Constants.INITIAL_POOL_SIZE;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ENLISTMENT;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.RESOURCEADAPTER_NAME;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.SHARABLE;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_DEFAULT_GROUP;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_DEFAULT_GROUPS;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_DEFAULT_PRINCIPAL;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_DOMAIN;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_MAPPING_GROUP;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_MAPPING_GROUPS;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_MAPPING_REQUIRED;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_MAPPING_USER;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WM_SECURITY_MAPPING_USERS;
+
+import java.util.List;
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationDefinition;
@@ -30,10 +49,15 @@ import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
 import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
 import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.constraint.ApplicationTypeConfig;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.ApplicationTypeAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
 import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.dmr.ModelNode;
 
 /**
  *
@@ -46,11 +70,14 @@ public class ResourceAdapterResourceDefinition extends SimpleResourceDefinition 
 
     private final boolean readOnly;
     private final boolean runtimeOnlyRegistrationValid;
+    private final List<AccessConstraintDefinition> accessConstraints;
 
     public ResourceAdapterResourceDefinition(boolean readOnly, boolean runtimeOnlyRegistrationValid) {
         super(PathElement.pathElement(RESOURCEADAPTER_NAME), RESOLVER, readOnly ? null : RaAdd.INSTANCE, readOnly ? null : RaRemove.INSTANCE);
         this.readOnly = readOnly;
         this.runtimeOnlyRegistrationValid = runtimeOnlyRegistrationValid;
+        ApplicationTypeConfig atc = new ApplicationTypeConfig(ResourceAdaptersExtension.SUBSYSTEM_NAME, RESOURCEADAPTER_NAME);
+        accessConstraints = new ApplicationTypeAccessConstraintDefinition(atc).wrapAsList();
     }
 
     @Override
@@ -78,10 +105,63 @@ public class ResourceAdapterResourceDefinition extends SimpleResourceDefinition 
         resourceRegistration.registerSubModel(new AdminObjectResourceDefinition(readOnly));
     }
 
-
-    static void registerTransformers(ResourceTransformationDescriptionBuilder parentBuilder) {
-        ResourceTransformationDescriptionBuilder builder = parentBuilder.addChildResource(PathElement.pathElement(RESOURCEADAPTER_NAME)).getAttributeBuilder()
-                .setDiscard(DiscardAttributeChecker.UNDEFINED, Constants.MODULE).end();
-        ConnectionDefinitionResourceDefinition.registerTransformers(builder);
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return accessConstraints;
     }
+
+
+    static void registerTransformers120(ResourceTransformationDescriptionBuilder parentBuilder) {
+        ResourceTransformationDescriptionBuilder builder = parentBuilder.addChildResource(PathElement.pathElement(RESOURCEADAPTER_NAME))
+                .getAttributeBuilder()
+                .setDiscard(DiscardAttributeChecker.UNDEFINED, WM_SECURITY_MAPPING_USER, WM_SECURITY_MAPPING_GROUP,
+                        WM_SECURITY_MAPPING_GROUPS, WM_SECURITY_MAPPING_USERS, WM_SECURITY_DEFAULT_GROUP,
+                        WM_SECURITY_DEFAULT_GROUPS, WM_SECURITY_DEFAULT_PRINCIPAL)
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, true, new ModelNode(false)), WM_SECURITY, WM_SECURITY_MAPPING_REQUIRED)
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, true, new ModelNode("other")), WM_SECURITY_DOMAIN)
+                .addRejectCheck(RejectAttributeChecker.DEFINED, Constants.MODULE, WM_SECURITY, WM_SECURITY_MAPPING_USER, WM_SECURITY_MAPPING_GROUP,
+                        WM_SECURITY_MAPPING_GROUPS, WM_SECURITY_MAPPING_USERS, WM_SECURITY_DEFAULT_GROUP,
+                        WM_SECURITY_DEFAULT_GROUPS, WM_SECURITY_DEFAULT_PRINCIPAL, WM_SECURITY_MAPPING_REQUIRED,
+                        WM_SECURITY_DOMAIN)
+                .end();
+
+        ConnectionDefinitionResourceDefinition.registerTransformer120(builder);
+    }
+
+    static void registerTransformers110(ResourceTransformationDescriptionBuilder parentBuilder) {
+        ResourceTransformationDescriptionBuilder builder = parentBuilder.addChildResource(PathElement.pathElement(RESOURCEADAPTER_NAME)).getAttributeBuilder()
+                .setDiscard(DiscardAttributeChecker.UNDEFINED, WM_SECURITY_MAPPING_USER, WM_SECURITY_MAPPING_GROUP,
+                        WM_SECURITY_MAPPING_GROUPS, WM_SECURITY_MAPPING_USERS, WM_SECURITY_DEFAULT_GROUP,
+                        WM_SECURITY_DEFAULT_GROUPS, WM_SECURITY_DEFAULT_PRINCIPAL)
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, true, new ModelNode(false)), WM_SECURITY, WM_SECURITY_MAPPING_REQUIRED)
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, true, new ModelNode("other")), WM_SECURITY_DOMAIN)
+                .addRejectCheck(RejectAttributeChecker.DEFINED, WM_SECURITY, WM_SECURITY_MAPPING_USER, WM_SECURITY_MAPPING_GROUP,
+                        WM_SECURITY_MAPPING_GROUPS, WM_SECURITY_MAPPING_USERS, WM_SECURITY_DEFAULT_GROUP,
+                        WM_SECURITY_DEFAULT_GROUPS, WM_SECURITY_DEFAULT_PRINCIPAL, WM_SECURITY_MAPPING_REQUIRED,
+                        WM_SECURITY_DOMAIN)
+                .setDiscard(DiscardAttributeChecker.UNDEFINED, Constants.MODULE)
+                .addRejectCheck(RejectAttributeChecker.DEFINED, Constants.MODULE)
+                //These used to be non-nillable so reject if undefined
+                .addRejectCheck(RejectAttributeChecker.UNDEFINED, Constants.BEANVALIDATIONGROUP, Constants.ARCHIVE)
+                //Expressions not allowed
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, Constants.BEANVALIDATIONGROUP, Constants.ARCHIVE)
+                .end()
+                .addChildResource(ConnectionDefinitionResourceDefinition.PATH).getAttributeBuilder()
+                        .setDiscard(DiscardAttributeChecker.UNDEFINED, Constants.SECURITY_DOMAIN, Constants.SECURITY_DOMAIN_AND_APPLICATION, Constants.APPLICATION,
+                                CAPACITY_DECREMENTER_CLASS, CAPACITY_INCREMENTER_CLASS,
+                                INITIAL_POOL_SIZE, CAPACITY_DECREMENTER_PROPERTIES, CAPACITY_INCREMENTER_PROPERTIES)
+                        .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(false, false, new ModelNode(false)), ENLISTMENT, SHARABLE)
+                                .addRejectCheck(RejectAttributeChecker.DEFINED, Constants.SECURITY_DOMAIN, Constants.SECURITY_DOMAIN_AND_APPLICATION, Constants.APPLICATION,
+                                        CAPACITY_DECREMENTER_CLASS, CAPACITY_INCREMENTER_CLASS,
+                                        INITIAL_POOL_SIZE, CAPACITY_DECREMENTER_PROPERTIES, CAPACITY_INCREMENTER_PROPERTIES)
+                                .addRejectCheck(RejectAttributeChecker.UNDEFINED, ENLISTMENT, SHARABLE)
+                                .addRejectCheck(new RejectAttributeChecker.SimpleAcceptAttributeChecker(new ModelNode(true)), ENLISTMENT, SHARABLE)
+                                        //Did not use to be nillable
+                                .addRejectCheck(RejectAttributeChecker.UNDEFINED, Constants.RECOVERLUGIN_PROPERTIES)
+                                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, Constants.RECOVERLUGIN_PROPERTIES)
+                                .end();
+
+    }
+
+
 }

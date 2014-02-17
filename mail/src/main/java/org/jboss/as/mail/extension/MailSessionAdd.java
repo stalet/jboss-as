@@ -22,9 +22,9 @@
 
 package org.jboss.as.mail.extension;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.mail.extension.MailSubsystemModel.CUSTOM;
 import static org.jboss.as.mail.extension.MailSubsystemModel.IMAP;
-import static org.jboss.as.mail.extension.MailSubsystemModel.JNDI_NAME;
 import static org.jboss.as.mail.extension.MailSubsystemModel.POP3;
 import static org.jboss.as.mail.extension.MailSubsystemModel.SERVER_TYPE;
 import static org.jboss.as.mail.extension.MailSubsystemModel.SMTP;
@@ -39,12 +39,8 @@ import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.registry.Resource;
-import org.jboss.as.naming.ContextListAndJndiViewManagedReferenceFactory;
-import org.jboss.as.naming.ContextListManagedReferenceFactory;
-import org.jboss.as.naming.ManagedReference;
 import org.jboss.as.naming.ManagedReferenceFactory;
 import org.jboss.as.naming.ServiceBasedNamingStore;
-import org.jboss.as.naming.ValueManagedReference;
 import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.as.naming.service.BinderService;
 import org.jboss.as.network.OutboundSocketBinding;
@@ -55,7 +51,6 @@ import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
-import org.jboss.msc.value.ImmediateValue;
 
 /**
  * @author Tomaz Cerar
@@ -64,7 +59,7 @@ import org.jboss.msc.value.ImmediateValue;
 class MailSessionAdd extends AbstractAddStepHandler {
 
     static final MailSessionAdd INSTANCE = new MailSessionAdd();
-    public static final ServiceName SERVICE_NAME_BASE = ServiceName.JBOSS.append("mail-session");
+    public static final ServiceName MAIL_SESSION_SERVICE_NAME = ServiceName.JBOSS.append("mail-session");
 
     protected MailSessionAdd() {
     }
@@ -102,41 +97,33 @@ class MailSessionAdd extends AbstractAddStepHandler {
      */
     @Override
     protected void performRuntime(OperationContext context, ModelNode operation, ModelNode model, ServiceVerificationHandler verificationHandler, List<ServiceController<?>> controllers) throws OperationFailedException {
-        final String jndiName = getJndiName(operation);
+        final PathAddress address = PathAddress.pathAddress(operation.get(OP_ADDR));
+        ModelNode fullTree = Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS));
+        installRuntimeServices(context, address, fullTree, verificationHandler, controllers);
+    }
+
+
+    static void installRuntimeServices(OperationContext context, PathAddress address, ModelNode fullModel, ServiceVerificationHandler verificationHandler, List<ServiceController<?>> controllers) throws OperationFailedException {
+        String name = address.getLastElement().getValue();
+
+        final String jndiName = getJndiName(fullModel, context);
         final ServiceTarget serviceTarget = context.getServiceTarget();
 
-        ModelNode fullTree = Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS));
-        final MailSessionConfig config = from(context, fullTree);
+
+        final MailSessionConfig config = from(context, fullModel);
         final MailSessionService service = new MailSessionService(config);
-        final ServiceName serviceName = SERVICE_NAME_BASE.append(jndiName);
+        final ServiceName serviceName = MAIL_SESSION_SERVICE_NAME.append(name);
         final ServiceBuilder<?> mailSessionBuilder = serviceTarget.addService(serviceName, service);
         addOutboundSocketDependency(service, mailSessionBuilder, config.getImapServer());
         addOutboundSocketDependency(service, mailSessionBuilder, config.getPop3Server());
         addOutboundSocketDependency(service, mailSessionBuilder, config.getSmtpServer());
-        for (CustomServerConfig server:config.getCustomServers()){
-            if (server.getOutgoingSocketBinding()!=null){
+        for (CustomServerConfig server : config.getCustomServers()) {
+            if (server.getOutgoingSocketBinding() != null) {
                 addOutboundSocketDependency(service, mailSessionBuilder, server);
             }
         }
 
-        final ManagedReferenceFactory valueManagedReferenceFactory = new ContextListAndJndiViewManagedReferenceFactory() {
-
-            @Override
-            public String getJndiViewInstanceValue() {
-                return String.valueOf(getReference().getInstance());
-            }
-
-            @Override
-            public String getInstanceClassName() {
-                final Object value = getReference().getInstance();
-                return value != null ? value.getClass().getName() : ContextListManagedReferenceFactory.DEFAULT_INSTANCE_CLASS_NAME;
-            }
-
-            @Override
-            public ManagedReference getReference() {
-                return new ValueManagedReference(new ImmediateValue<Object>(service.getValue()));
-            }
-        };
+        final ManagedReferenceFactory valueManagedReferenceFactory = new MailSessionManagedReferenceFactory(service);
         final ContextNames.BindInfo bindInfo = ContextNames.bindInfoFor(jndiName);
         final BinderService binderService = new BinderService(bindInfo.getBindName());
         final ServiceBuilder<?> binderBuilder = serviceTarget
@@ -167,6 +154,7 @@ class MailSessionAdd extends AbstractAddStepHandler {
                 .addListener(verificationHandler);
         controllers.add(mailSessionBuilder.install());
         controllers.add(binderBuilder.install());
+
     }
 
     /**
@@ -176,8 +164,12 @@ class MailSessionAdd extends AbstractAddStepHandler {
      * @param modelNode the model node; either an operation or the model behind a mail session resource
      * @return the compliant jndi name
      */
-    public static String getJndiName(final ModelNode modelNode) {
-        final String rawJndiName = modelNode.require(JNDI_NAME).asString();
+    static String getJndiName(final ModelNode modelNode, OperationContext context) throws OperationFailedException {
+        final String rawJndiName = MailSessionDefinition.JNDI_NAME.resolveModelAttribute(context, modelNode).asString();
+        return getJndiName(rawJndiName);
+    }
+
+    public static String getJndiName(final String rawJndiName) {
         final String jndiName;
         if (!rawJndiName.startsWith("java:")) {
             jndiName = "java:jboss/mail/" + rawJndiName;
@@ -188,7 +180,7 @@ class MailSessionAdd extends AbstractAddStepHandler {
     }
 
 
-    private void addOutboundSocketDependency(MailSessionService service, ServiceBuilder<?> mailSessionBuilder, ServerConfig server) {
+    private static void addOutboundSocketDependency(MailSessionService service, ServiceBuilder<?> mailSessionBuilder, ServerConfig server) {
         if (server != null) {
             final String ref = server.getOutgoingSocketBinding();
             mailSessionBuilder.addDependency(OutboundSocketBinding.OUTBOUND_SOCKET_BINDING_BASE_SERVICE_NAME.append(ref),
@@ -250,4 +242,5 @@ class MailSessionAdd extends AbstractAddStepHandler {
         }
         return null;
     }
+
 }

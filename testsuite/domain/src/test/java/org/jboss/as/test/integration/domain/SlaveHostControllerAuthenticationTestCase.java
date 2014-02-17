@@ -43,19 +43,18 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VAU
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VAULT_OPTIONS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.WRITE_ATTRIBUTE_OPERATION;
 
-import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.ExecutionException;
 
 import javax.security.auth.callback.CallbackHandler;
 
-import org.apache.commons.io.FileUtils;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.client.OperationBuilder;
-import org.jboss.as.security.vault.VaultSession;
 import org.jboss.as.test.integration.domain.management.util.Authentication;
 import org.jboss.as.test.integration.domain.management.util.DomainLifecycleUtil;
 import org.jboss.as.test.integration.domain.management.util.DomainTestSupport;
 import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfiguration;
+import org.jboss.as.test.integration.security.common.VaultHandler;
 import org.jboss.dmr.ModelNode;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -70,24 +69,24 @@ import org.junit.Test;
  */
 public class SlaveHostControllerAuthenticationTestCase {
 
-    private static final String KEYSTORE_FILENAME = "vaulttest.keystore";
     private static final String VAULT_BLOCK = "ds_TestDS";
     private static final String RIGHT_PASSWORD = DomainLifecycleUtil.SLAVE_HOST_PASSWORD;
-    private static final String ENC_DAT_FILE = "ENC.dat";
-    private static final String SHARED_DAT_FILE = "Shared.dat";
-    private static final File keyStoreFile = new File(System.getProperty("java.io.tmpdir"), KEYSTORE_FILENAME);
     private static final int TIMEOUT = 60000;
 
     private static ModelControllerClient domainMasterClient;
     private static ModelControllerClient domainSlaveClient;
     private static DomainTestSupport testSupport;
 
+    static final String RESOURCE_LOCATION = SlaveHostControllerAuthenticationTestCase.class.getProtectionDomain().getCodeSource().getLocation().getFile()
+            + "vault-shcatc/";
+
     @BeforeClass
     public static void setupDomain() throws Exception {
 
         // Set up a domain with a master that doesn't support local auth so slaves have to use configured credentials
-        testSupport = DomainTestSupport.create(SlaveHostControllerAuthenticationTestCase.class.getSimpleName(),
-                DomainTestSupport.Configuration.create("domain-configs/domain-standard.xml",
+        testSupport = DomainTestSupport.create(
+                DomainTestSupport.Configuration.create(SlaveHostControllerAuthenticationTestCase.class.getSimpleName(),
+                        "domain-configs/domain-standard.xml",
                         "host-configs/host-master-no-local.xml", "host-configs/host-secrets.xml"));
 
         // Tweak the callback handler so the master test driver client can authenticate
@@ -101,19 +100,14 @@ public class SlaveHostControllerAuthenticationTestCase {
         domainMasterClient = testSupport.getDomainMasterLifecycleUtil().getDomainClient();
         domainSlaveClient = testSupport.getDomainSlaveLifecycleUtil().getDomainClient();
 
-        setupVault();
     }
 
     @AfterClass
     public static void tearDownDomain() throws Exception {
-        try {
-            testSupport.stop();
-            testSupport = null;
-            domainMasterClient = null;
-            domainSlaveClient = null;
-        } finally {
-            cleanUpVault();
-        }
+        testSupport.stop();
+        testSupport = null;
+        domainMasterClient = null;
+        domainSlaveClient = null;
     }
 
     @Test
@@ -142,67 +136,38 @@ public class SlaveHostControllerAuthenticationTestCase {
     private void slaveWithVaultPasswordTest() throws Exception {
 
         // create new vault
-        String keystoreURL = keyStoreFile.getAbsolutePath();
-        String keystorePassword = "password";
-        String encryptionDirectory = System.getProperty("java.io.tmpdir") + File.separator;
-        String salt = "87654321";
-        int iterationCount = 20;
+        VaultHandler vaultHandler = new VaultHandler(RESOURCE_LOCATION);
 
-        VaultSession nonInteractiveSession = new VaultSession(keystoreURL, keystorePassword, encryptionDirectory, salt, iterationCount);
-        String vaultAlias = "vault";
-        nonInteractiveSession.startVaultSession(vaultAlias);
+        try {
 
-        // create security attributes
-        String attributeName = "value";
-        String vaultPasswordString = nonInteractiveSession.addSecuredAttribute(VAULT_BLOCK, attributeName,
-                RIGHT_PASSWORD.toCharArray());
+            // create security attributes
+            String attributeName = "value";
+            String vaultPasswordString = vaultHandler.addSecuredAttribute(VAULT_BLOCK, attributeName,
+                    RIGHT_PASSWORD.toCharArray());
 
-        // create new vault setting in host
-        ModelNode op = new ModelNode();
-        op.get(OP).set(ADD);
-        op.get(OP_ADDR).add(HOST, "slave").add(CORE_SERVICE, VAULT);
-        ModelNode vaultOption = op.get(VAULT_OPTIONS);
-        vaultOption.get("KEYSTORE_URL").set(keystoreURL);
-        vaultOption.get("KEYSTORE_PASSWORD").set(nonInteractiveSession.getKeystoreMaskedPassword());
-        vaultOption.get("KEYSTORE_ALIAS").set(vaultAlias);
-        vaultOption.get("SALT").set(salt);
-        vaultOption.get("ITERATION_COUNT").set(Integer.toString(iterationCount));
-        vaultOption.get("ENC_FILE_DIR").set(encryptionDirectory);
-        domainSlaveClient.execute(new OperationBuilder(op).build());
+            // create new vault setting in host
+            ModelNode op = new ModelNode();
+            op.get(OP).set(ADD);
+            op.get(OP_ADDR).add(HOST, "slave").add(CORE_SERVICE, VAULT);
+            ModelNode vaultOption = op.get(VAULT_OPTIONS);
+            vaultOption.get("KEYSTORE_URL").set(vaultHandler.getKeyStore());
+            vaultOption.get("KEYSTORE_PASSWORD").set(vaultHandler.getMaskedKeyStorePassword());
+            vaultOption.get("KEYSTORE_ALIAS").set(vaultHandler.getAlias());
+            vaultOption.get("SALT").set(vaultHandler.getSalt());
+            vaultOption.get("ITERATION_COUNT").set(vaultHandler.getIterationCountAsString());
+            vaultOption.get("ENC_FILE_DIR").set(vaultHandler.getEncodedVaultFileDirectory());
+            domainSlaveClient.execute(new OperationBuilder(op).build());
 
-        setSlaveSecret("${" + vaultPasswordString + "}");
+            setSlaveSecret("${" + vaultPasswordString + "}");
 
-        reloadSlave();
+            reloadSlave();
 
-        // Validate that it joined the master
-        readHostControllerStatus(domainMasterClient, 0);
-    }
-
-    private static void setupVault() throws Exception {
-
-        // copy keystore to temporary file
-        FileUtils.copyURLToFile(SlaveHostControllerAuthenticationTestCase.class.getResource(KEYSTORE_FILENAME), keyStoreFile);
-
-        // clean temporary directory
-        cleanTempDir();
-
-    }
-
-    private static void cleanUpVault() {
-
-        // remove temporary files
-        if (keyStoreFile.exists())
-            keyStoreFile.delete();
-        cleanTempDir();
-    }
-
-    private static void cleanTempDir() {
-        File datFile1 = new File(System.getProperty("java.io.tmpdir"), ENC_DAT_FILE);
-        if (datFile1.exists())
-            datFile1.delete();
-        File datFile2 = new File(System.getProperty("java.io.tmpdir"), SHARED_DAT_FILE);
-        if (datFile2.exists())
-            datFile2.delete();
+            // Validate that it joined the master
+            readHostControllerStatus(domainMasterClient, 0);
+        } finally {
+            // remove temporary files
+            vaultHandler.cleanUp();
+        }
     }
 
     private static void reloadSlave() throws Exception {
@@ -210,7 +175,13 @@ public class SlaveHostControllerAuthenticationTestCase {
         op.get(OP).set("reload");
         op.get(OP_ADDR).add(HOST, "slave");
         op.get(ADMIN_ONLY).set(false);
-        domainSlaveClient.execute(new OperationBuilder(op).build());
+        try {
+            domainSlaveClient.execute(new OperationBuilder(op).build());
+        } catch(IOException e) {
+            if (!(e.getCause() instanceof ExecutionException)) {
+                throw e;
+            } // else ignore, this might happen if the channel gets closed before we got the response
+        }
 
         // Wait until host is reloaded
         readHostControllerStatus(domainSlaveClient, TIMEOUT);

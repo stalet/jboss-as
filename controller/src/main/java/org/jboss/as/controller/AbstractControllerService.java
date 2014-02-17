@@ -27,7 +27,12 @@ import static org.jboss.as.controller.ControllerMessages.MESSAGES;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
+import org.jboss.as.controller.access.management.DelegatingConfigurableAuthorizer;
+import org.jboss.as.controller.access.management.WritableAuthorizerConfiguration;
+import org.jboss.as.controller.audit.AuditLogger;
+import org.jboss.as.controller.audit.ManagedAuditLogger;
 import org.jboss.as.controller.client.OperationAttachments;
 import org.jboss.as.controller.client.OperationMessageHandler;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
@@ -44,6 +49,7 @@ import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A base class for controller services.
@@ -69,7 +75,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
     public static final int DEFAULT_BOOT_STACK_SIZE = 2 * 1024 * 1024;
 
     private static int getBootStackSize() {
-        String prop = SecurityActions.getSystemProperty(BOOT_STACK_SIZE_PROPERTY);
+        String prop = WildFlySecurityManager.getPropertyPrivileged(BOOT_STACK_SIZE_PROPERTY, null);
         if (prop == null) {
             return  DEFAULT_BOOT_STACK_SIZE;
         } else {
@@ -96,6 +102,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
     }
 
     protected final ProcessType processType;
+    protected final DelegatingConfigurableAuthorizer authorizer;
     private final RunningModeControl runningModeControl;
     private final DescriptionProvider rootDescriptionProvider;
     private final ResourceDefinition rootResourceDefinition;
@@ -105,6 +112,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
     private final ExpressionResolver expressionResolver;
     private volatile ModelControllerImpl controller;
     private ConfigurationPersister configurationPersister;
+    private final ManagedAuditLogger auditLogger;
 
     /**
      * Construct a new instance.
@@ -116,22 +124,17 @@ public abstract class AbstractControllerService implements Service<ModelControll
      * @param rootDescriptionProvider the root description provider
      * @param prepareStep             the prepare step to prepend to operation execution
      * @param expressionResolver      the expression resolver
+     * @param auditLogger             the audit logger
      */
     @Deprecated
     protected AbstractControllerService(final ProcessType processType, final RunningModeControl runningModeControl,
                                         final ConfigurationPersister configurationPersister,
                                         final ControlledProcessState processState, final DescriptionProvider rootDescriptionProvider,
-                                        final OperationStepHandler prepareStep, final ExpressionResolver expressionResolver) {
-        assert rootDescriptionProvider != null : "Null root description provider";
-        assert expressionResolver != null : "Null expressionResolver";
-        this.processType = processType;
-        this.runningModeControl = runningModeControl;
-        this.configurationPersister = configurationPersister;
-        this.rootDescriptionProvider = rootDescriptionProvider;
-        this.rootResourceDefinition = null;
-        this.processState = processState;
-        this.prepareStep = prepareStep;
-        this.expressionResolver = expressionResolver;
+                                        final OperationStepHandler prepareStep, final ExpressionResolver expressionResolver,
+                                        final ManagedAuditLogger auditLogger, DelegatingConfigurableAuthorizer authorizer) {
+        this(processType, runningModeControl, configurationPersister, processState, null, rootDescriptionProvider,
+                prepareStep, expressionResolver, auditLogger, authorizer);
+
     }
 
     /**
@@ -144,22 +147,81 @@ public abstract class AbstractControllerService implements Service<ModelControll
      * @param rootResourceDefinition  the root resource definition
      * @param prepareStep             the prepare step to prepend to operation execution
      * @param expressionResolver      the expression resolver
+     * @param auditLogger             the audit logger
+     */
+    protected AbstractControllerService(final ProcessType processType, final RunningModeControl runningModeControl,
+                                        final ConfigurationPersister configurationPersister,
+                                        final ControlledProcessState processState, final ResourceDefinition rootResourceDefinition,
+                                        final OperationStepHandler prepareStep, final ExpressionResolver expressionResolver,
+                                        final ManagedAuditLogger auditLogger, final DelegatingConfigurableAuthorizer authorizer) {
+        this(processType, runningModeControl, configurationPersister, processState, rootResourceDefinition, null,
+                prepareStep, expressionResolver, auditLogger, authorizer);
+    }
+
+    /**
+     * Construct a new instance.
+     * Simplified constructor for test case subclasses.
+     *
+     * @param processType             the type of process being controlled
+     * @param runningModeControl      the controller of the process' running mode
+     * @param configurationPersister  the configuration persister
+     * @param processState            the controlled process state
+     * @param rootDescriptionProvider the root description provider
+     * @param prepareStep             the prepare step to prepend to operation execution
+     * @param expressionResolver      the expression resolver
+     *
+     * @deprecated Here for backwards compatibility for ModelTestModelControllerService
+     */
+    @Deprecated
+    protected AbstractControllerService(final ProcessType processType, final RunningModeControl runningModeControl,
+                                        final ConfigurationPersister configurationPersister,
+                                        final ControlledProcessState processState, final DescriptionProvider rootDescriptionProvider,
+                                        final OperationStepHandler prepareStep, final ExpressionResolver expressionResolver) {
+        this(processType, runningModeControl, configurationPersister, processState, null, rootDescriptionProvider,
+                prepareStep, expressionResolver, AuditLogger.NO_OP_LOGGER, new DelegatingConfigurableAuthorizer());
+
+    }
+
+    /**
+     * Construct a new instance.
+     *
+     * @param processType             the type of process being controlled
+     * @param runningModeControl      the controller of the process' running mode
+     * @param configurationPersister  the configuration persister
+     * @param processState            the controlled process state
+     * @param rootResourceDefinition  the root resource definition
+     * @param prepareStep             the prepare step to prepend to operation execution
+     * @param expressionResolver      the expression resolver
+     *
+     * @deprecated Here for backwards compatibility for ModelTestModelControllerService
      */
     protected AbstractControllerService(final ProcessType processType, final RunningModeControl runningModeControl,
                                         final ConfigurationPersister configurationPersister,
                                         final ControlledProcessState processState, final ResourceDefinition rootResourceDefinition,
                                         final OperationStepHandler prepareStep, final ExpressionResolver expressionResolver) {
-        assert rootResourceDefinition != null : "Null root resource definition";
+        this(processType, runningModeControl, configurationPersister, processState, rootResourceDefinition, null,
+                prepareStep, expressionResolver, AuditLogger.NO_OP_LOGGER, new DelegatingConfigurableAuthorizer());
+    }
+
+    private AbstractControllerService(final ProcessType processType, final RunningModeControl runningModeControl,
+                                      final ConfigurationPersister configurationPersister, final ControlledProcessState processState,
+                                      final ResourceDefinition rootResourceDefinition, final DescriptionProvider rootDescriptionProvider,
+                                      final OperationStepHandler prepareStep, final ExpressionResolver expressionResolver, final ManagedAuditLogger auditLogger,
+                                      final DelegatingConfigurableAuthorizer authorizer) {
+        assert rootDescriptionProvider != null || rootResourceDefinition != null: rootDescriptionProvider == null ? "Null root description provider" : "Null root resource definition";
         assert expressionResolver != null : "Null expressionResolver";
+        assert auditLogger != null : "Null auditLogger";
+        assert authorizer != null : "Null authorizer";
         this.processType = processType;
         this.runningModeControl = runningModeControl;
         this.configurationPersister = configurationPersister;
-        this.rootDescriptionProvider = null;
+        this.rootDescriptionProvider = rootDescriptionProvider;
         this.rootResourceDefinition = rootResourceDefinition;
         this.processState = processState;
         this.prepareStep = prepareStep;
         this.expressionResolver = expressionResolver;
-
+        this.auditLogger = auditLogger;
+        this.authorizer = authorizer;
     }
 
     public void start(final StartContext context) throws StartException {
@@ -171,12 +233,18 @@ public abstract class AbstractControllerService implements Service<ModelControll
         final ServiceContainer container = serviceController.getServiceContainer();
         final ServiceTarget target = context.getChildTarget();
         final ExecutorService executorService = injectedExecutorService.getOptionalValue();
-        ManagementResourceRegistration rootResourceRegistration = rootDescriptionProvider != null ? ManagementResourceRegistration.Factory.create(rootDescriptionProvider) : ManagementResourceRegistration.Factory.create(rootResourceDefinition);
+        WritableAuthorizerConfiguration authorizerConfig = authorizer.getWritableAuthorizerConfiguration();
+        authorizerConfig.reset();
+        ManagementResourceRegistration rootResourceRegistration = rootDescriptionProvider != null
+                ? ManagementResourceRegistration.Factory.create(rootDescriptionProvider, authorizerConfig)
+                : ManagementResourceRegistration.Factory.create(rootResourceDefinition, authorizerConfig);
         final ModelControllerImpl controller = new ModelControllerImpl(container, target,
                 rootResourceRegistration,
                 new ContainerStateMonitor(container),
                 configurationPersister, processType, runningModeControl, prepareStep,
-                processState, executorService, expressionResolver);
+                processState, executorService, expressionResolver, authorizer, auditLogger);
+
+        // Initialize the model
         initModel(controller.getRootResource(), controller.getRootRegistration());
         this.controller = controller;
 
@@ -217,6 +285,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
      *          if the configuration failed to be loaded
      */
     protected void boot(final BootContext context) throws ConfigurationPersistenceException {
+        runPerformControllerInitialization(context);
         boot(configurationPersister.load(), false);
         finishBoot();
     }
@@ -252,6 +321,46 @@ public abstract class AbstractControllerService implements Service<ModelControll
 
     public void stop(final StopContext context) {
         controller = null;
+
+        Runnable r = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    stopAsynchronous(context);
+                } finally {
+                    try {
+                        authorizer.shutdown();
+                    } finally {
+                        context.complete();
+                    }
+                }
+            }
+        };
+        final ExecutorService executorService = injectedExecutorService.getOptionalValue();
+        try {
+            if (executorService != null) {
+                try {
+                    executorService.execute(r);
+                } catch (RejectedExecutionException e) {
+                    r.run();
+                }
+            } else {
+                Thread executorShutdown = new Thread(r, getClass().getSimpleName() + " Shutdown Thread");
+                executorShutdown.start();
+            }
+        } finally {
+            context.asynchronous();
+        }
+    }
+
+    /**
+     * Hook for subclasses to perform work during the asynchronous task started by
+     * {@link #stop(org.jboss.msc.service.StopContext)}. This base method does nothing.
+     * <p><strong>Subclasses must not invoke {@link org.jboss.msc.service.StopContext#complete()}</strong></p>
+     * @param context the stop context
+     */
+    protected void stopAsynchronous(StopContext context) {
+        // no-op
     }
 
     /**
@@ -279,6 +388,18 @@ public abstract class AbstractControllerService implements Service<ModelControll
         this.configurationPersister = persister;
     }
 
+    protected void runPerformControllerInitialization(BootContext context) {
+        performControllerInitialization(context.getServiceTarget(), controller.getRootResource(), controller.getRootRegistration());
+    }
+
+    protected void performControllerInitialization(ServiceTarget target, Resource rootResource, ManagementResourceRegistration rootRegistration) {
+        //
+    }
+
     protected abstract void initModel(Resource rootResource, ManagementResourceRegistration rootRegistration);
 
+    protected ManagedAuditLogger getAuditLogger() {
+        return auditLogger;
+    }
 }
+

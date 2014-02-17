@@ -3,6 +3,7 @@
 <config>
    <subsystems>
       <subsystem>configuration/subsystems/logging.xml</subsystem>
+      <subsystem>configuration/subsystems/batch.xml</subsystem>
       <subsystem>configuration/subsystems/datasources.xml</subsystem>
       <subsystem>configuration/subsystems/deployment-scanner.xml</subsystem>
       <subsystem>configuration/subsystems/ee.xml</subsystem>
@@ -21,6 +22,7 @@
       <subsystem>configuration/subsystems/remoting.xml</subsystem>
       <subsystem>configuration/subsystems/resource-adapters.xml</subsystem>
       <subsystem>configuration/subsystems/sar.xml</subsystem>
+      <subsystem include-if-set="security.manager">configuration/subsystems/security-manager.xml</subsystem>
       <subsystem supplement="standalone">configuration/subsystems/security.xml</subsystem>
       <subsystem>configuration/subsystems/threads.xml</subsystem>
       <subsystem>configuration/subsystems/transactions.xml</subsystem>

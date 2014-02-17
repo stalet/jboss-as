@@ -22,6 +22,7 @@
 package org.jboss.as.ejb3.deployment.processors.annotation;
 
 import org.jboss.as.ee.metadata.ClassAnnotationInformationFactory;
+import org.jboss.as.ejb3.util.PropertiesValueResolver;
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.AnnotationValue;
 
@@ -37,11 +38,14 @@ public class InitAnnotationInformationFactory extends ClassAnnotationInformation
     }
 
     @Override
-    protected String fromAnnotation(final AnnotationInstance annotationInstance) {
+    protected String fromAnnotation(final AnnotationInstance annotationInstance, final boolean replacement) {
         AnnotationValue value = annotationInstance.value();
         if (value == null) {
             return null;
         }
-        return value.asString();
+        if (replacement)
+            return PropertiesValueResolver.replaceProperties(value.asString());
+        else
+            return value.asString();
     }
 }

@@ -42,9 +42,14 @@
             <fileset dir="${jboss.dist}/modules"/>
         </copy>
 
+        <echo message="Copying and configuring instance jbossas-admin-only"/>
+        <copy todir="target/jbossas-admin-only">
+            <fileset dir="target/jbossas"/>
+        </copy>
+
         <!-- Connects back to original host (node0) -->
         <ts.config-as.add-remote-outbound-connection name="jbossas-with-remote-outbound-connection" node="${node0}"
-                                                     remotePort="4447" securityRealm="PasswordRealm" userName="user1"/>
+                                                     remotePort="8080" protocol="http-remoting" securityRealm="PasswordRealm" userName="user1"/>
         <ts.config-as.add-identity-realm name="jbossas-with-remote-outbound-connection" realmName="PasswordRealm"
                                          secret="cGFzc3dvcmQx"/>
 
@@ -54,12 +59,10 @@
         />
         <ts.config-as.add-port-offset name="jbossas-with-remote-outbound-connection" offset="100" nativePort="9999" httpPort="9990"/>
 
+        <delete dir="target/jbossas-messaging-failover"/>
         <echo message="Copying and configuring instance jbossas-messaging-failover"/>
         <copy todir="target/jbossas-messaging-failover">
             <fileset dir="target/jbossas"/>
-        </copy>
-        <copy todir="target/jbossas-messaging-failover/modules">
-            <fileset dir="${jboss.dist}/modules"/>
         </copy>
         <ts.config-as.add-messaging-failover name="jbossas-messaging-failover"/>
     </target>

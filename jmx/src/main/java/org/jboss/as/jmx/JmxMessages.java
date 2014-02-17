@@ -29,6 +29,7 @@ import java.util.Map;
 import javax.management.AttributeNotFoundException;
 import javax.management.InstanceNotFoundException;
 import javax.management.InvalidAttributeValueException;
+import javax.management.JMRuntimeException;
 import javax.management.MBeanException;
 import javax.management.ObjectName;
 import javax.management.ReflectionException;
@@ -138,13 +139,15 @@ public interface JmxMessages {
     /**
      * Creates an exception indicating the {@link ObjectName} could not be created for the address.
      *
+     *
      * @param cause   the cause of the error.
      * @param address the address.
      *
+     * @param s
      * @return a {@link RuntimeException} for the error.
      */
-    @Message(id = 11332, value = "Could not create ObjectName for address %s")
-    RuntimeException cannotCreateObjectName(@Cause Throwable cause, PathAddress address);
+    @Message(id = 11332, value = "Could not create ObjectName for address %s from string %s")
+    RuntimeException cannotCreateObjectName(@Cause Throwable cause, PathAddress address, String s);
 
     /**
      * Creates an exception indicating the attribute could not be set.
@@ -375,5 +378,22 @@ public interface JmxMessages {
     @Message(id = 11357, value = "'false' is the only acceptable value for 'proper-property-format'")
     String properPropertyFormatMustBeFalse();
 
+    @Message(id = 11358, value = "The 'enabled' attribute of audit-log must be false")
+    String auditLogEnabledMustBeFalse();
+
+    @Message(id = 11359, value = "There is no handler called '%s'")
+    IllegalStateException noHandlerCalled(String name);
+
+    @Message(id = 11360, value = "Unauthorized access")
+    JMRuntimeException unauthorized();
+
+    @Message(id = 11361, value = "Not authorized to write attribute: '%s'")
+    JMRuntimeException notAuthorizedToWriteAttribute(String attributeName);
+
+    @Message(id = 11362, value = "Not authorized to read attribute: '%s'")
+    JMRuntimeException notAuthorizedToReadAttribute(String attributeName);
+
+    @Message(id = 11363, value = "Not authorized to invoke operation: '%s'")
+    JMRuntimeException notAuthorizedToExecuteOperation(String operationName);
 }
 

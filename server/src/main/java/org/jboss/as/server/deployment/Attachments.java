@@ -22,6 +22,7 @@
 
 package org.jboss.as.server.deployment;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.Manifest;
@@ -186,6 +187,10 @@ public final class Attachments {
 
     public static final AttachmentKey<AttachmentList<ModuleIdentifier>> ADDITIONAL_ANNOTATION_INDEXES = AttachmentKey.createList(ModuleIdentifier.class);
 
+    public static final AttachmentKey<Map<ModuleIdentifier, CompositeIndex>> ADDITIONAL_ANNOTATION_INDEXES_BY_MODULE = AttachmentKey.create(Map.class);
+
+    public static final AttachmentKey<AttachmentList<VirtualFile>> DEPLOYMENT_OVERRIDE_LOCATIONS = AttachmentKey.createList(VirtualFile.class);
+
     //
     // VALIDATE
     //
@@ -288,6 +293,11 @@ public final class Attachments {
      * Setup actions that must be run before running an arquillian test
      */
     public static final AttachmentKey<AttachmentList<SetupAction>> SETUP_ACTIONS = AttachmentKey.createList(SetupAction.class);
+
+    /**
+     * Attachment key for services that the {@link BundleActivateService} depends on.
+     */
+    public static final AttachmentKey<AttachmentList<ServiceName>> BUNDLE_ACTIVE_DEPENDENCIES = AttachmentKey.createList(ServiceName.class);
 
     /**
      * List of services that need to be up before we consider this deployment 'done'. This is used to manage initialize-in-order,

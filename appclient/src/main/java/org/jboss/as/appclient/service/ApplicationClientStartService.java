@@ -34,7 +34,6 @@ import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentInstance;
 import org.jboss.as.ee.naming.InjectedEENamespaceContextSelector;
 import org.jboss.as.naming.context.NamespaceContextSelector;
-import org.jboss.as.server.CurrentServiceContainer;
 import org.jboss.as.server.deployment.SetupAction;
 import org.jboss.ejb.client.ContextSelector;
 import org.jboss.ejb.client.EJBClientConfiguration;
@@ -47,6 +46,7 @@ import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 import static org.jboss.as.appclient.logging.AppClientLogger.ROOT_LOGGER;
 
@@ -70,7 +70,6 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
     private final String[] parameters;
     private final ClassLoader classLoader;
     private final ContextSelector<EJBClientContext> contextSelector;
-    final String hostUrl;
 
     private Thread thread;
     private ComponentInstance instance;
@@ -80,7 +79,6 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
         this.parameters = parameters;
         this.namespaceContextSelectorInjectedValue = namespaceContextSelectorInjectedValue;
         this.classLoader = classLoader;
-        this.hostUrl = hostUrl;
         this.setupActions = setupActions;
         this.contextSelector = new LazyConnectionContextSelector(hostUrl, callbackHandler);
     }
@@ -90,22 +88,22 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
         this.parameters = parameters;
         this.namespaceContextSelectorInjectedValue = namespaceContextSelectorInjectedValue;
         this.classLoader = classLoader;
-        this.hostUrl = null;
         this.setupActions = setupActions;
         this.contextSelector = new ConfigBasedEJBClientContextSelector(configuration);
     }
     @Override
     public synchronized void start(final StartContext context) throws StartException {
+        final ServiceContainer serviceContainer = context.getController().getServiceContainer();
 
         thread = new Thread(new Runnable() {
 
             @Override
             public void run() {
-                final ClassLoader oldTccl = SecurityActions.getContextClassLoader();
+                final ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
                 try {
                     try {
                         try {
-                            SecurityActions.setContextClassLoader(classLoader);
+                            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
                             AccessController.doPrivileged(new SetSelectorAction(contextSelector));
                             applicationClientDeploymentServiceInjectedValue.getValue().getDeploymentCompleteLatch().await();
                             NamespaceContextSelector.setDefault(namespaceContextSelectorInjectedValue);
@@ -138,7 +136,7 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
                         } catch (Exception e) {
                             ROOT_LOGGER.exceptionRunningAppClient(e, e.getClass().getSimpleName());
                         } finally {
-                            SecurityActions.setContextClassLoader(oldTccl);
+                            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
                         }
                     } finally {
                         if(contextSelector instanceof LazyConnectionContextSelector) {
@@ -146,7 +144,7 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
                         }
                     }
                 } finally {
-                    CurrentServiceContainer.getServiceContainer().shutdown();
+                    serviceContainer.shutdown();
                 }
             }
         });
@@ -154,7 +152,6 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             @Override
             public void run() {
-                final ServiceContainer serviceContainer = CurrentServiceContainer.getServiceContainer();
                 if(serviceContainer != null) {
                     serviceContainer.shutdown();
                 }

@@ -21,20 +21,22 @@
  */
 package org.jboss.as.webservices.publish;
 
+import java.security.AccessController;
 import java.util.Map;
 import java.util.StringTokenizer;
 
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.registry.Resource;
+import org.jboss.as.server.CurrentServiceContainer;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.SimpleAttachable;
 import org.jboss.as.webservices.metadata.model.JAXWSDeployment;
 import org.jboss.as.webservices.metadata.model.POJOEndpoint;
 import org.jboss.as.webservices.util.WSAttachmentKeys;
-import org.jboss.as.webservices.util.WSServices;
 import org.jboss.dmr.ModelNode;
 import org.jboss.metadata.web.jboss.JBossWebMetaData;
+import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.wsf.spi.metadata.webservices.JBossWebservicesMetaData;
@@ -120,7 +122,7 @@ public class WSEndpointDeploymentUnit extends SimpleAttachable implements Deploy
 
     @Override
     public ServiceRegistry getServiceRegistry() {
-        return WSServices.getContainerRegistry();
+        return currentServiceContainer();
     }
 
     @Override
@@ -141,5 +143,12 @@ public class WSEndpointDeploymentUnit extends SimpleAttachable implements Deploy
     @Override
     public ModelNode createDeploymentSubModel(String subsystemName, PathAddress address, Resource resource) {
         throw new UnsupportedOperationException();
+    }
+
+    private static ServiceContainer currentServiceContainer() {
+        if(System.getSecurityManager() == null) {
+            return CurrentServiceContainer.getServiceContainer();
+        }
+        return AccessController.doPrivileged(CurrentServiceContainer.GET_ACTION);
     }
 }

@@ -73,8 +73,8 @@ public class DefaultCallbackHandler extends ValidatingCallbackHandler implements
     private boolean operationComplete;
     private String operationName;
     private OperationRequestAddress address;
-    private Map<String, String> props = new HashMap<String, String>();
-    private List<String> otherArgs = new ArrayList<String>();
+    private Map<String, String> props = Collections.emptyMap();
+    private List<String> otherArgs = Collections.emptyList();
     private String outputTarget;
 
     private String lastPropName;
@@ -102,20 +102,30 @@ public class DefaultCallbackHandler extends ValidatingCallbackHandler implements
         address = prefix;
     }
 
+    @Deprecated
     public void parse(OperationRequestAddress initialAddress, String argsStr) throws CommandFormatException {
+        parse(initialAddress, argsStr, null);
+    }
+
+    public void parse(OperationRequestAddress initialAddress, String argsStr, CommandContext ctx) throws CommandFormatException {
         reset();
         if(initialAddress != null) {
             address = new DefaultOperationRequestAddress(initialAddress);
         }
         this.originalLine = argsStr;
-        ParserUtil.parse(argsStr, this, validation);
+        ParserUtil.parse(argsStr, this, validation, ctx);
     }
 
+    @Deprecated
     public void parse(OperationRequestAddress initialAddress, String argsStr, boolean validation) throws CommandFormatException {
+        parse(initialAddress, argsStr, validation, null);
+    }
+
+    public void parse(OperationRequestAddress initialAddress, String argsStr, boolean validation, CommandContext ctx) throws CommandFormatException {
         final boolean defaultValidation = this.validation;
         this.validation = validation;
         try {
-            parse(initialAddress, argsStr);
+            parse(initialAddress, argsStr, ctx);
         } finally {
             this.validation = defaultValidation;
         }
@@ -142,8 +152,8 @@ public class DefaultCallbackHandler extends ValidatingCallbackHandler implements
         operationComplete = false;
         operationName = null;
         address = null;
-        props.clear();
-        otherArgs.clear();
+        props = Collections.emptyMap();
+        otherArgs = Collections.emptyList();
         outputTarget = null;
         lastPropName = null;
         lastPropValue = null;
@@ -328,7 +338,7 @@ public class DefaultCallbackHandler extends ValidatingCallbackHandler implements
 
     @Override
     protected void validatedPropertyName(int index, String propertyName) throws OperationFormatException {
-        props.put(propertyName, null);
+        putProperty(propertyName, null);
         lastPropName = propertyName;
         lastPropValue = null;
         separator = SEPARATOR_NONE;
@@ -361,9 +371,9 @@ public class DefaultCallbackHandler extends ValidatingCallbackHandler implements
     @Override
     protected void validatedProperty(String name, String value, int nameValueSeparatorIndex) throws OperationFormatException {
         if(name == null) {
-            otherArgs.add(value);
+            addArgument(value);
         } else {
-            props.put(name, value);
+            putProperty(name, value);
         }
         lastPropName = name;
         lastPropValue = value;
@@ -508,6 +518,24 @@ public class DefaultCallbackHandler extends ValidatingCallbackHandler implements
     }
 
     @Override
+    public void nodeName(int index, String nodeName) throws OperationFormatException {
+        if(validation) {
+            super.nodeName(index, nodeName);
+        } else {
+            this.validatedNodeName(index, nodeName);
+        }
+    }
+
+    @Override
+    public void nodeType(int index, String nodeType) throws OperationFormatException {
+        if(validation) {
+            super.nodeType(index, nodeType);
+        } else {
+            this.validatedNodeType(index, nodeType);
+        }
+    }
+
+    @Override
     public void nodeTypeOrName(int index, String typeOrName) throws OperationFormatException {
 
         if(address == null) {
@@ -621,5 +649,19 @@ public class DefaultCallbackHandler extends ValidatingCallbackHandler implements
     @Override
     public boolean endsOnHeaderSeparator() {
         return separator == SEPARATOR_HEADER;
+    }
+
+    private void putProperty(String key, String name) {
+        if(props.isEmpty()) {
+            props = new HashMap<String,String>();
+        }
+        props.put(key, name);
+    }
+
+    private void addArgument(String value) {
+        if(otherArgs.isEmpty()) {
+            otherArgs = new ArrayList<String>();
+        }
+        otherArgs.add(value);
     }
 }

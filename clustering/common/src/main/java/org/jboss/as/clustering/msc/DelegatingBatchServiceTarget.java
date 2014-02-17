@@ -27,6 +27,7 @@ import java.util.Collection;
 import org.jboss.msc.service.BatchServiceTarget;
 import org.jboss.msc.service.ServiceListener;
 import org.jboss.msc.service.ServiceName;
+import org.jboss.msc.service.StabilityMonitor;
 
 /**
  * @author Paul Ferraro
@@ -40,13 +41,31 @@ public class DelegatingBatchServiceTarget extends DelegatingServiceTarget implem
     }
 
     @Override
+    public BatchServiceTarget addMonitor(StabilityMonitor monitor) {
+        this.target.addMonitor(monitor);
+        return this;
+    }
+
+    @Override
+    public BatchServiceTarget addMonitors(StabilityMonitor... monitors) {
+        this.target.addMonitors(monitors);
+        return this;
+    }
+
+    @Override
+    public BatchServiceTarget removeMonitor(StabilityMonitor monitor) {
+        this.target.removeMonitor(monitor);
+        return this;
+    }
+
+    @Override
     public BatchServiceTarget addListener(ServiceListener<Object> listener) {
         this.target.addListener(listener);
         return this;
     }
 
     @Override
-    public BatchServiceTarget addListener(ServiceListener<Object>... listeners) {
+    public BatchServiceTarget addListener(@SuppressWarnings("unchecked") ServiceListener<Object>... listeners) {
         this.target.addListener(listeners);
         return this;
     }

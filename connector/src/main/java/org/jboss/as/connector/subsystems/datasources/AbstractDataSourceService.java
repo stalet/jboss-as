@@ -22,7 +22,6 @@
 
 package org.jboss.as.connector.subsystems.datasources;
 
-import static java.lang.System.getSecurityManager;
 import static java.lang.Thread.currentThread;
 import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.connector.logging.ConnectorLogger.DS_DEPLOYER_LOGGER;
@@ -35,6 +34,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+
 import javax.naming.Reference;
 import javax.resource.spi.ManagedConnectionFactory;
 import javax.sql.DataSource;
@@ -42,9 +44,9 @@ import javax.sql.DataSource;
 import org.jboss.as.connector.services.driver.InstalledDriver;
 import org.jboss.as.connector.services.driver.registry.DriverRegistry;
 import org.jboss.as.connector.util.Injection;
-import org.jboss.as.util.security.ClearContextClassLoaderAction;
-import org.jboss.as.util.security.GetClassLoaderAction;
-import org.jboss.as.util.security.SetContextClassLoaderFromClassAction;
+import org.wildfly.security.manager.action.ClearContextClassLoaderAction;
+import org.wildfly.security.manager.action.GetClassLoaderAction;
+import org.wildfly.security.manager.action.SetContextClassLoaderFromClassAction;
 import org.jboss.jca.adapters.jdbc.BaseWrapperManagedConnectionFactory;
 import org.jboss.jca.adapters.jdbc.local.LocalManagedConnectionFactory;
 import org.jboss.jca.adapters.jdbc.spi.ClassLoaderPlugin;
@@ -81,6 +83,7 @@ import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.security.SubjectFactory;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Base service for managing a data-source.
@@ -97,6 +100,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
     private final InjectedValue<SubjectFactory> subjectFactory = new InjectedValue<SubjectFactory>();
     private final InjectedValue<DriverRegistry> driverRegistry = new InjectedValue<DriverRegistry>();
     private final InjectedValue<CachedConnectionManager> ccmValue = new InjectedValue<CachedConnectionManager>();
+    private final InjectedValue<ExecutorService> executor = new InjectedValue<ExecutorService>();
 
     private final String jndiName;
 
@@ -130,7 +134,32 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
 
     protected abstract AS7DataSourceDeployer getDeployer() throws ValidateException ;
 
-    public synchronized void stop(StopContext stopContext) {
+    public void stop(final StopContext stopContext) {
+        ExecutorService executorService = executor.getValue();
+        Runnable r = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    stopService();
+                } finally {
+                    stopContext.complete();
+                }
+            }
+        };
+        try {
+            executorService.execute(r);
+        } catch (RejectedExecutionException e) {
+            r.run();
+        } finally {
+            stopContext.asynchronous();
+        }
+    }
+
+    /**
+     * Performs the actual work of stopping the service. Should be called by {@link #stop(org.jboss.msc.service.StopContext)}
+     * asynchronously from the MSC thread that invoked stop.
+     */
+    protected synchronized void stopService() {
         if (deploymentMD != null) {
 
             if (deploymentMD.getDataSources() != null && managementRepositoryValue.getValue() != null) {
@@ -147,6 +176,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
         }
 
         sqlDataSource = null;
+
     }
 
     public CommonDeployment getDeploymentMD() {
@@ -181,6 +211,10 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
         return ccmValue;
     }
 
+    public Injector<ExecutorService> getExecutorServiceInjector() {
+        return executor;
+    }
+
     protected String buildConfigPropsString(Map<String, String> configProps) {
         final StringBuffer valueBuf = new StringBuffer();
         for (Map.Entry<String, String> connProperty : configProps.entrySet()) {
@@ -193,7 +227,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
     }
 
     protected TransactionIntegration getTransactionIntegration() {
-        if (getSecurityManager() == null) {
+        if (! WildFlySecurityManager.isChecking()) {
             currentThread().setContextClassLoader(TransactionIntegration.class.getClassLoader());
         } else {
             doPrivileged(new SetContextClassLoaderFromClassAction(TransactionIntegration.class));
@@ -210,7 +244,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
             return classLoader;
         }
         final Class<? extends Driver> clazz = driverValue.getValue().getClass();
-        return getSecurityManager() == null ? clazz.getClassLoader() : doPrivileged(new GetClassLoaderAction(clazz));
+        return ! WildFlySecurityManager.isChecking() ? clazz.getClassLoader() : doPrivileged(new GetClassLoaderAction(clazz));
     }
 
     protected class AS7DataSourceDeployer extends AbstractDsDeployer {
@@ -344,7 +378,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
 
         @Override
         public CachedConnectionManager getCachedConnectionManager() {
-            return ccmValue.getValue();
+            return ccmValue.getOptionalValue();
         }
 
         @Override
@@ -366,7 +400,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
 
         @Override
         public TransactionIntegration getTransactionIntegration() {
-            if (getSecurityManager() == null) {
+            if (! WildFlySecurityManager.isChecking()) {
                 currentThread().setContextClassLoader(TransactionIntegration.class.getClassLoader());
             } else {
                 doPrivileged(new SetContextClassLoaderFromClassAction(TransactionIntegration.class));
@@ -374,14 +408,18 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
             try {
                 return transactionIntegrationValue.getValue();
             } finally {
-                doPrivileged(ClearContextClassLoaderAction.getInstance());
+                if (! WildFlySecurityManager.isChecking()) {
+                    currentThread().setContextClassLoader(null);
+                } else {
+                    doPrivileged(ClearContextClassLoaderAction.getInstance());
+                }
             }
         }
 
         @Override
         protected ManagedConnectionFactory createMcf(XaDataSource arg0, String arg1, ClassLoader arg2)
                 throws NotFoundException, DeployException {
-            final MyXaMCF xaManagedConnectionFactory = new MyXaMCF();
+            final WildFlyXaMCF xaManagedConnectionFactory = new WildFlyXaMCF();
 
             if (xaDataSourceConfig.getUrlDelimiter() != null) {
                 xaManagedConnectionFactory.setURLDelimiter(xaDataSourceConfig.getUrlDelimiter());
@@ -410,7 +448,7 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
             }
 
             setMcfProperties(xaManagedConnectionFactory, xaDataSourceConfig, xaDataSourceConfig.getStatement());
-            xaManagedConnectionFactory.setUserTransactionJndiName("java:jboss/UserTransaction");
+            xaManagedConnectionFactory.setTransactionSynchronizationRegistry(getTransactionIntegration().getTransactionSynchronizationRegistry());
             return xaManagedConnectionFactory;
 
         }
@@ -418,8 +456,10 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
         @Override
         protected ManagedConnectionFactory createMcf(org.jboss.jca.common.api.metadata.ds.DataSource arg0, String arg1,
                 ClassLoader arg2) throws NotFoundException, DeployException {
-            final LocalManagedConnectionFactory managedConnectionFactory = new LocalManagedConnectionFactory();
-            managedConnectionFactory.setUserTransactionJndiName("java:jboss/UserTransaction");
+            final WildFlyLocalMCF managedConnectionFactory = new WildFlyLocalMCF();
+            if (dataSourceConfig.isJTA()) {
+                managedConnectionFactory.setTransactionSynchronizationRegistry(getTransactionIntegration().getTransactionSynchronizationRegistry());
+            }
             managedConnectionFactory.setDriverClass(dataSourceConfig.getDriverClass());
 
             if (dataSourceConfig.getUrlDelimiter() != null) {
@@ -565,13 +605,30 @@ public abstract class AbstractDataSourceService implements Service<DataSource> {
 
     }
 
-    private class MyXaMCF extends XAManagedConnectionFactory {
+    private class WildFlyXaMCF extends XAManagedConnectionFactory {
 
         private static final long serialVersionUID = 4876371551002746953L;
 
         public void setXaProps(Map<String, String> inputProperties) {
             xaProps.putAll(inputProperties);
         }
+
+        public void setTransactionSynchronizationRegistry(javax.transaction.TransactionSynchronizationRegistry tsr) {
+            super.setTransactionSynchronizationRegistry(tsr);
+        }
+
+
+    }
+
+    private class WildFlyLocalMCF extends LocalManagedConnectionFactory {
+
+        private static final long serialVersionUID = 4876371551002746953L;
+
+
+        public void setTransactionSynchronizationRegistry(javax.transaction.TransactionSynchronizationRegistry tsr) {
+            super.setTransactionSynchronizationRegistry(tsr);
+        }
+
 
     }
 }

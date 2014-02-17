@@ -106,6 +106,7 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
             }
 
             final String additionalJavaOpts = config.getJavaVmArguments();
+            final String additionalJbossOpts = config.getJbossArguments();
 
             File modulesJar = new File(jbossHome + File.separatorChar + "jboss-modules.jar");
             if (!modulesJar.exists())
@@ -135,7 +136,7 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
                 replaceSystemPropertyValue(cmd, "jboss.server.base.dir", serverBaseDir);
             }
 
-            final String bootLogFileDefaultValue = serverBaseDir + File.separatorChar + LOG_DIR + File.separatorChar + "boot.log";
+            final String bootLogFileDefaultValue = serverBaseDir + File.separatorChar + LOG_DIR + File.separatorChar + "server.log";
             final String loggingConfigurationDefaultValue = serverBaseDir + File.separatorChar + CONFIG_DIR + File.separatorChar + "logging.properties";
             cmd.add("-Djboss.home.dir=" + jbossHome);
             cmd.add("-Dorg.jboss.boot.log.file=" + getSystemPropertyValue(cmd, "org.jboss.boot.log.file", getFile(bootLogFileDefaultValue, jbossHome).getAbsolutePath()));
@@ -150,6 +151,12 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
             cmd.add(config.getServerConfig());
             if (config.isAdminOnly())
                 cmd.add("--admin-only");
+
+            if (additionalJbossOpts != null) {
+                for (String opt : additionalJbossOpts.split("\\s+")) {
+                    cmd.add(opt);
+                }
+            }
 
             // Wait on ports before launching; AS7-4070
             this.waitOnPorts();
@@ -181,7 +188,9 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
             boolean serverAvailable = false;
             long sleep = 1000;
             while (timeout > 0 && serverAvailable == false) {
+                long before = System.currentTimeMillis();
                 serverAvailable = getManagementClient().isServerInRunningState();
+                timeout -= (System.currentTimeMillis() - before);
                 if (!serverAvailable) {
                     if (processHasDied(proc))
                         break;

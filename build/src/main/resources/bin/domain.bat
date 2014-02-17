@@ -7,6 +7,8 @@ rem $Id$
 
 @if not "%ECHO%" == ""  echo %ECHO%
 @if "%OS%" == "Windows_NT" setlocal
+rem Set to all parameters by default
+set SERVER_OPTS=%*
 
 if "%OS%" == "Windows_NT" (
   set "DIRNAME=%~dp0%"
@@ -25,7 +27,7 @@ if exist "%DOMAIN_CONF%" (
    echo Config file not found "%DOMAIN_CONF%"
 )
 
-pushd %DIRNAME%..
+pushd "%DIRNAME%.."
 set "RESOLVED_JBOSS_HOME=%CD%"
 popd
 
@@ -37,8 +39,12 @@ pushd "%JBOSS_HOME%"
 set "SANITIZED_JBOSS_HOME=%CD%"
 popd
 
-if "%RESOLVED_JBOSS_HOME%" NEQ "%SANITIZED_JBOSS_HOME%" (
-    echo WARNING JBOSS_HOME may be pointing to a different installation - unpredictable results may occur.
+if /i "%RESOLVED_JBOSS_HOME%" NEQ "%SANITIZED_JBOSS_HOME%" (
+   echo.
+   echo   WARNING:  JBOSS_HOME may be pointing to a different installation - unpredictable results may occur.
+   echo.
+   echo       JBOSS_HOME: "%JBOSS_HOME%"
+   echo.
 )
 
 set DIRNAME=
@@ -50,14 +56,20 @@ if "%OS%" == "Windows_NT" (
 )
 
 rem Setup JBoss specific properties
-set JAVA_OPTS=-Dprogram.name=%PROGNAME% %JAVA_OPTS%
+set "JAVA_OPTS=-Dprogram.name=%PROGNAME% %JAVA_OPTS%"
 
 if "x%JAVA_HOME%" == "x" (
   set  JAVA=java
   echo JAVA_HOME is not set. Unexpected results may occur.
   echo Set JAVA_HOME to the directory of your local JDK to avoid this message.
 ) else (
-  set "JAVA=%JAVA_HOME%\bin\java"
+  if not exist "%JAVA_HOME%" (
+    echo JAVA_HOME "%JAVA_HOME%" path doesn't exist
+    goto END
+  ) else (
+    echo Setting JAVA property to "%JAVA_HOME%\bin\java"
+    set "JAVA=%JAVA_HOME%\bin\java"
+  )
 )
 
 rem Add -server to the JVM options, if supported
@@ -76,6 +88,36 @@ if exist "%JBOSS_HOME%\jboss-modules.jar" (
   goto END
 )
 
+rem Setup directories, note directories with spaces do not work
+set "CONSOLIDATED_OPTS=%JAVA_OPTS% %SERVER_OPTS%"
+:DIRLOOP
+echo(%CONSOLIDATED_OPTS% | findstr /r /c:"^-Djboss.domain.base.dir" > nul && (
+  for /f "tokens=1,2* delims==" %%a IN ("%CONSOLIDATED_OPTS%") DO (
+    for /f %%i IN ("%%b") DO set "JBOSS_BASE_DIR=%%~fi"
+  )
+)
+echo(%CONSOLIDATED_OPTS% | findstr /r /c:"^-Djboss.domain.config.dir" > nul && (
+  for /f "tokens=1,2* delims==" %%a IN ("%CONSOLIDATED_OPTS%") DO (
+    for /f %%i IN ("%%b") DO set "JBOSS_CONFIG_DIR=%%~fi"
+  )
+)
+echo(%CONSOLIDATED_OPTS% | findstr /r /c:"^-Djboss.domain.log.dir" > nul && (
+  for /f "tokens=1,2* delims==" %%a IN ("%CONSOLIDATED_OPTS%") DO (
+    for /f %%i IN ("%%b") DO set "JBOSS_LOG_DIR=%%~fi"
+  )
+)
+
+for /f "tokens=1* delims= " %%i IN ("%CONSOLIDATED_OPTS%") DO (
+  if %%i == "" (
+    goto ENDDIRLOOP
+  ) else (
+    set CONSOLIDATED_OPTS=%%j
+    GOTO DIRLOOP
+  )
+)
+
+:ENDDIRLOOP
+
 rem Setup JBoss specific properties
 
 rem Set default module root paths
@@ -93,18 +135,18 @@ if "x%JBOSS_LOG_DIR%" == "x" (
 )
 rem Set the domain configuration dir
 if "x%JBOSS_CONFIG_DIR%" == "x" (
-  set  "JBOSS_CONFIG_DIR=%JBOSS_BASE_DIR%/configuration"
+  set  "JBOSS_CONFIG_DIR=%JBOSS_BASE_DIR%\configuration"
 )
 
 echo ===============================================================================
 echo.
 echo   JBoss Bootstrap Environment
 echo.
-echo   JBOSS_HOME: %JBOSS_HOME%
+echo   JBOSS_HOME: "%JBOSS_HOME%"
 echo.
-echo   JAVA: %JAVA%
+echo   JAVA: "%JAVA%"
 echo.
-echo   JAVA_OPTS: %JAVA_OPTS%
+echo   JAVA_OPTS: "%JAVA_OPTS%"
 echo.
 echo ===============================================================================
 echo.

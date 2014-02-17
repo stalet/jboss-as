@@ -50,33 +50,22 @@ class PeriodicHandlerResourceDefinition extends AbstractFileHandlerDefinition {
             .setValidator(new SuffixValidator())
             .build();
 
-    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, APPEND, FILE, SUFFIX);
+    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, APPEND, FILE, SUFFIX, NAMED_FORMATTER);
 
     public PeriodicHandlerResourceDefinition(final ResolvePathHandler resolvePathHandler, final boolean includeLegacyAttributes) {
         super(PERIODIC_HANDLER_PATH, PeriodicRotatingFileHandler.class, resolvePathHandler,
                 (includeLegacyAttributes ? Logging.join(ATTRIBUTES, LEGACY_ATTRIBUTES) : ATTRIBUTES));
     }
 
-    /**
-     * Add the transformers for the periodic file handler.
-     *
-     * @param subsystemBuilder      the default subsystem builder
-     * @param loggingProfileBuilder the logging profile builder
-     *
-     * @return the builder created for the resource
-     */
-    static ResourceTransformationDescriptionBuilder addTransformers(final ResourceTransformationDescriptionBuilder subsystemBuilder,
-                                                                    final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
-        // Register the logger resource
-        final ResourceTransformationDescriptionBuilder child = subsystemBuilder.addChildResource(PERIODIC_HANDLER_PATH)
-                .getAttributeBuilder()
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, APPEND, FILE, SUFFIX)
-                .end();
-
-        // Reject logging profile resources
-        loggingProfileBuilder.rejectChildResource(PERIODIC_HANDLER_PATH);
-
-        return registerTransformers(child);
+    @Override
+    protected void registerResourceTransformers(final KnownModelVersion modelVersion, final ResourceTransformationDescriptionBuilder resourceBuilder, final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
+        switch (modelVersion) {
+            case VERSION_1_1_0: {
+                resourceBuilder
+                        .getAttributeBuilder()
+                        .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, APPEND, FILE, SUFFIX)
+                        .end();
+            }
+        }
     }
-
 }

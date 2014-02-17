@@ -21,8 +21,6 @@
  */
 package org.jboss.as.ejb3.security;
 
-import static java.security.AccessController.doPrivileged;
-
 import java.security.PrivilegedAction;
 
 import javax.ejb.EJBAccessException;
@@ -30,6 +28,9 @@ import javax.ejb.EJBAccessException;
 import org.jboss.invocation.Interceptor;
 import org.jboss.invocation.InterceptorContext;
 import org.jboss.security.SecurityRolesAssociation;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Establish the security context.
@@ -45,16 +46,26 @@ public class SecurityContextInterceptor implements Interceptor {
         this.pushAction = new PrivilegedAction<Void>() {
             @Override
             public Void run() {
+                holder.securityManager.push(holder.securityDomain);
                 try {
-                    holder.securityManager.push(holder.securityDomain);
                     if (holder.skipAuthentication == false) {
                         holder.securityManager.authenticate(holder.runAs, holder.runAsPrincipal, holder.extraRoles);
                     }
                     if (holder.principalVsRolesMap != null) {
                         SecurityRolesAssociation.setSecurityRoles(holder.principalVsRolesMap);
                     }
-                } catch (SecurityException e) {
-                    throw new EJBAccessException(e.getMessage());
+                } catch (Throwable t) {
+                    // undo the push actions on failure
+                    if (holder.principalVsRolesMap != null) {
+                        // clear the threadlocal
+                        SecurityRolesAssociation.setSecurityRoles(null);
+                    }
+                    holder.securityManager.pop();
+
+                    if (t instanceof SecurityException) {
+                        throw new EJBAccessException(t.getMessage());
+                    }
+                    throw t;
                 }
                 return null;
             }
@@ -62,10 +73,11 @@ public class SecurityContextInterceptor implements Interceptor {
         this.popAction = new PrivilegedAction<Void>() {
             @Override
             public Void run() {
-                holder.securityManager.pop();
-                if(holder.principalVsRolesMap != null){
-                    SecurityRolesAssociation.setSecurityRoles(null);//Clear the threadlocal
+                if (holder.principalVsRolesMap != null) {
+                    // Clear the threadlocal
+                    SecurityRolesAssociation.setSecurityRoles(null);
                 }
+                holder.securityManager.pop();
                 return null;
             }
         };
@@ -74,11 +86,19 @@ public class SecurityContextInterceptor implements Interceptor {
     @Override
     public Object processInvocation(final InterceptorContext context) throws Exception {
         // TODO - special cases need to be handled where SecurityContext not established or minimal unauthenticated principal context instead.
-        doPrivileged(pushAction);
+        if (WildFlySecurityManager.isChecking()) {
+            doPrivileged(pushAction);
+        } else {
+            pushAction.run();
+        }
         try {
             return context.proceed();
         } finally {
-            doPrivileged(popAction);
+            if (WildFlySecurityManager.isChecking()) {
+                doPrivileged(popAction);
+            } else {
+                popAction.run();
+            }
         }
     }
 }

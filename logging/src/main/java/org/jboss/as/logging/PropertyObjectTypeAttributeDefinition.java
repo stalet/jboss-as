@@ -30,6 +30,7 @@ import org.jboss.as.controller.ObjectTypeAttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.ParameterCorrector;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.operations.validation.ObjectTypeValidator;
 import org.jboss.as.controller.operations.validation.ParameterValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
@@ -51,8 +52,10 @@ public class PropertyObjectTypeAttributeDefinition extends ObjectTypeAttributeDe
                                                   final AttributeDefinition[] valueTypes, final boolean allowNull, final ModelNodeResolver<String> resolver,
                                                   final ParameterValidator validator, final ParameterCorrector corrector, final String[] alternatives, final String[] requires,
                                                   final AttributeMarshaller attributeMarshaller, final boolean resourceOnly, final DeprecationData deprecationData,
-                                                  final AttributeAccess.Flag... flags) {
-        super(name, xmlName, suffix, valueTypes, allowNull, validator, corrector, alternatives, requires, attributeMarshaller, resourceOnly, deprecationData, flags);
+                                                  final AccessConstraintDefinition[] accessConstraints,
+                                                  final Boolean nullSignificant, final AttributeAccess.Flag... flags) {
+        super(name, xmlName, suffix, valueTypes, allowNull, validator, corrector, alternatives, requires, attributeMarshaller,
+                resourceOnly, deprecationData, accessConstraints, nullSignificant, flags);
         this.propertyName = propertyName;
         this.resolver = resolver;
     }
@@ -112,7 +115,8 @@ public class PropertyObjectTypeAttributeDefinition extends ObjectTypeAttributeDe
             if (validator == null) {
                 validator = new ObjectTypeValidator(allowNull, valueTypes);
             }
-            return new PropertyObjectTypeAttributeDefinition(name, xmlName, propertyName, suffix, valueTypes, allowNull, resolver, validator, corrector, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+            return new PropertyObjectTypeAttributeDefinition(name, xmlName, propertyName, suffix, valueTypes, allowNull, resolver, validator, corrector, alternatives, requires,
+                        attributeMarshaller, resourceOnly, deprecated, accessConstraints, nullSignficant, flags);
         }
 
         public Builder setSuffix(final String suffix) {

@@ -40,6 +40,18 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUB
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.TYPE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE_TYPE;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
 import javax.management.Attribute;
 import javax.management.AttributeList;
 import javax.management.InstanceNotFoundException;
@@ -65,17 +77,6 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import javax.xml.stream.XMLStreamException;
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
 
 import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.AbstractRemoveStepHandler;
@@ -114,8 +115,10 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.staxmapper.XMLElementReader;
 import org.jboss.staxmapper.XMLExtendedStreamReader;
 import org.jboss.staxmapper.XMLMapper;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
+import org.xnio.IoUtils;
 import org.xnio.OptionMap;
 
 /**
@@ -146,8 +149,17 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
     private final static ObjectName EXPR_SUBSYSTEM_NAME = createObjectName(EXPR_DOMAIN + ":subsystem=jmx");
     private final static ObjectName EXPR_BAD_NAME = createObjectName(LEGACY_DOMAIN + ":type=bad");
 
+    private JMXConnector jmxConnector;
+
     public ModelControllerMBeanTestCase() {
         super(JMXExtension.SUBSYSTEM_NAME, new JMXExtension());
+    }
+
+    @After
+    public void cleanup() throws Exception {
+        super.cleanup();
+        IoUtils.safeClose(jmxConnector);
+        jmxConnector = null;
     }
 
     @Test
@@ -185,6 +197,7 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
         Assert.assertEquals(count, objectNames.size());
 
         checkSameMBeans(instances, objectNames);
+
         assertContainsNames(objectNames,
                 LEGACY_ROOT_NAME, LEGACY_INTERFACE_NAME, LEGACY_SOCKET_BINDING_GROUP_NAME, LEGACY_SERVER_SOCKET_BINDING_NAME, LEGACY_SUBSYSTEM_NAME,
                 EXPR_ROOT_NAME, EXPR_INTERFACE_NAME, EXPR_SOCKET_BINDING_GROUP_NAME, EXPR_SERVER_SOCKET_BINDING_NAME, EXPR_SUBSYSTEM_NAME);
@@ -239,7 +252,8 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
         // bundles
         info = connection.getMBeanInfo(createObjectName(LEGACY_DOMAIN + ":subsystem=jmx"));
         Assert.assertNotNull(info);
-        Assert.assertEquals("The configuration of the JMX subsystem.", info.getDescription());
+        Assert.assertEquals(JMXExtension.getResourceDescriptionResolver("").getResourceBundle(Locale.getDefault())
+                .getString(CommonAttributes.JMX), info.getDescription());
 
         info = connection.getMBeanInfo(createObjectName(LEGACY_DOMAIN + ":subsystem=test"));
         Assert.assertNotNull(info);
@@ -321,7 +335,8 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
         // bundles
         info = connection.getMBeanInfo(createObjectName(LEGACY_DOMAIN + ":subsystem=jmx"));
         Assert.assertNotNull(info);
-        Assert.assertEquals("The configuration of the JMX subsystem.", info.getDescription());
+        Assert.assertEquals(JMXExtension.getResourceDescriptionResolver("").getResourceBundle(Locale.getDefault())
+                .getString(CommonAttributes.JMX), info.getDescription());
 
         info = connection.getMBeanInfo(createObjectName(LEGACY_DOMAIN + ":subsystem=test"));
         Assert.assertNotNull(info);
@@ -363,7 +378,8 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
         // bundles
         info = connection.getMBeanInfo(createObjectName(EXPR_DOMAIN + ":subsystem=jmx"));
         Assert.assertNotNull(info);
-        Assert.assertEquals("The configuration of the JMX subsystem.", info.getDescription());
+        Assert.assertEquals(JMXExtension.getResourceDescriptionResolver("").getResourceBundle(Locale.getDefault())
+                .getString(CommonAttributes.JMX), info.getDescription());
 
         info = connection.getMBeanInfo(createObjectName(EXPR_DOMAIN + ":subsystem=test"));
         Assert.assertNotNull(info);
@@ -1193,6 +1209,7 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
     }
 
     private MBeanServerConnection setupAndGetConnection(BaseAdditionalInitialization additionalInitialization) throws Exception {
+        Assert.assertNull(jmxConnector);
 
         // Parse the subsystem xml and install into the controller
         String subsystemXml = "<subsystem xmlns=\"" + Namespace.CURRENT.getUriString() + "\">"
@@ -1216,6 +1233,7 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
         while (true) {
             try {
                 JMXConnector jmxConnector = JMXConnectorFactory.connect(serviceURL, null);
+                this.jmxConnector = jmxConnector;
                 return jmxConnector.getMBeanServerConnection();
             } catch (Exception e) {
                 if (System.currentTimeMillis() >= end) {
@@ -1258,7 +1276,7 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
 
         @Override
         protected void addExtraServices(final ServiceTarget target) {
-            ManagementRemotingServices.installRemotingEndpoint(target, ManagementRemotingServices.MANAGEMENT_ENDPOINT, "loaclhost", EndpointService.EndpointType.MANAGEMENT, null, null);
+            ManagementRemotingServices.installRemotingManagementEndpoint(target, ManagementRemotingServices.MANAGEMENT_ENDPOINT, "loaclhost", EndpointService.EndpointType.MANAGEMENT, null, null);
             ServiceName tmpDirPath = ServiceName.JBOSS.append("server", "path", "jboss.controller.temp.dir");
 
             RemotingServices.installSecurityServices(target, "server", null, null, tmpDirPath, null, null);
@@ -1603,6 +1621,7 @@ public class ModelControllerMBeanTestCase extends AbstractSubsystemTest {
             });
             singleRegistration.registerOperationHandler(ADD, TestChildAdd.INSTANCE, TestChildAdd.INSTANCE);
             singleRegistration.registerOperationHandler(REMOVE, TestChildRemove.INSTANCE, TestChildRemove.INSTANCE);
+            singleRegistration.registerReadOnlyAttribute("attr", null, Storage.CONFIGURATION);
         }
 
         PathElement getChildElement() {

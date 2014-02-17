@@ -23,10 +23,12 @@
 package org.jboss.as.controller;
 
 import static org.jboss.logging.Logger.Level.ERROR;
+import static org.jboss.logging.Logger.Level.INFO;
 import static org.jboss.logging.Logger.Level.WARN;
 
 import java.io.Closeable;
 import java.net.InetAddress;
+import java.util.List;
 import java.util.Set;
 
 import javax.xml.stream.XMLStreamWriter;
@@ -84,6 +86,11 @@ public interface ControllerLogger extends BasicLogger {
      * A logger for logging problems in the transformers
      */
     ControllerLogger TRANSFORMER_LOGGER = Logger.getMessageLogger(ControllerLogger.class, ControllerLogger.class.getPackage().getName() + ".transformer");
+
+    /**
+     * A logger for access control related messages.
+     */
+    ControllerLogger ACCESS_LOGGER = Logger.getMessageLogger(ControllerLogger.class, ControllerLogger.class.getPackage().getName() + ".access-control");
 
     /**
      * Logs a warning message indicating the address, represented by the {@code address} parameter, could not be
@@ -443,4 +450,42 @@ public interface ControllerLogger extends BasicLogger {
     @Message(id = 13404, value = "Extension '%s' is deprecated and may not be supported in future versions")
     @LogMessage(level = WARN)
     void extensionDeprecated(String extensionName);
+
+    @Message(id = 13405, value = "Subsystems %s provided by legacy extension '%s' are not supported on servers running this version. " +
+            "The extension is only supported for use by hosts running a previous release in a mixed-version managed domain. " +
+            "On this server the extension will not register any subsystems, and future attempts to create or address " +
+            "subsystem resources on this server will result in failure.")
+    @LogMessage(level = INFO)
+    void ignoringUnsupportedLegacyExtension(List<String> subsystemNames, String extensionName);
+
+    /**
+     * Logs an error message indicating that updating the audit log failed
+     */
+    @LogMessage(level = Level.ERROR)
+    @Message(id = 13406, value = "Update of the management operation audit log failed")
+    void failedToUpdateAuditLog(@Cause Exception e);
+
+    /**
+     * Logs an error message indicating that audit logging is being disabled due to logging failures.
+     */
+    @LogMessage(level = Level.ERROR)
+    @Message(id = 13407, value = "[%d] consecutive management operation audit logging failures have occurred; disabling audit logging")
+    void disablingLoggingDueToFailures(short failureCount);
+
+    /**
+     * Logs an error message indicating that a handler failed writing a log message
+     */
+    @LogMessage(level = Level.ERROR)
+    @Message(id = 13408, value = "Update of the management operation audit log failed in handler '%s'")
+    void logHandlerWriteFailed(@Cause Throwable t, String name);
+
+    /**
+     * Logs an error message indicating that audit logging is being disabled due to logging failures.
+     */
+    @LogMessage(level = Level.ERROR)
+    @Message(id = 13409, value = "[%d] consecutive management operation audit logging failures have occurred in handler '%s'; disabling this handler for audit logging")
+    void disablingLogHandlerDueToFailures(int failureCount, String name);
+
+    // 13449 IS END OF 134xx SERIES USABLE FOR LOGGER MESSAGES
+
 }

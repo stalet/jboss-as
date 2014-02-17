@@ -22,18 +22,6 @@
 
 package org.jboss.as.ee.component.deployers;
 
-import static org.jboss.as.ee.EeMessages.MESSAGES;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-
-import javax.annotation.Resource;
-import javax.annotation.Resources;
-
 import org.jboss.as.ee.component.Attachments;
 import org.jboss.as.ee.component.BindingConfiguration;
 import org.jboss.as.ee.component.EEApplicationClasses;
@@ -46,6 +34,8 @@ import org.jboss.as.ee.component.LookupInjectionSource;
 import org.jboss.as.ee.component.MethodInjectionTarget;
 import org.jboss.as.ee.component.OptionalLookupInjectionSource;
 import org.jboss.as.ee.component.ResourceInjectionConfiguration;
+import org.jboss.as.ee.structure.EJBAnnotationPropertyReplacement;
+import org.jboss.as.ee.utils.InjectionUtils;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
@@ -58,7 +48,20 @@ import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.FieldInfo;
 import org.jboss.jandex.MethodInfo;
+import org.jboss.metadata.property.PropertyReplacer;
 import org.jboss.modules.Module;
+
+import javax.annotation.Resource;
+import javax.annotation.Resources;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+import static org.jboss.as.ee.EeMessages.MESSAGES;
 
 /**
  * Deployment processor responsible for analyzing each attached {@link org.jboss.as.ee.component.ComponentDescription} instance to configure
@@ -67,14 +70,15 @@ import org.jboss.modules.Module;
  * @author John Bailey
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  * @author <a href="mailto:ropalka@redhat.com">Richard Opalka</a>
+ * @author Eduardo Martins
  */
 public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUnitProcessor {
 
     private static final DotName RESOURCE_ANNOTATION_NAME = DotName.createSimple(Resource.class.getName());
     private static final DotName RESOURCES_ANNOTATION_NAME = DotName.createSimple(Resources.class.getName());
+
     public static final Map<String, String> FIXED_LOCATIONS;
     public static final Set<String> SIMPLE_ENTRIES;
-    public static final Set<String> RESOURCE_REF_ENTRIES;
 
     static {
         final Map<String, String> locations = new HashMap<String, String>();
@@ -110,17 +114,8 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
         simpleEntries.add("java.lang.String");
         simpleEntries.add("java.lang.Class");
         SIMPLE_ENTRIES = Collections.unmodifiableSet(simpleEntries);
-
-        final Set<String> resourceRefEntries = new HashSet<String>();
-        resourceRefEntries.add("javax.sql.DataSource");
-        resourceRefEntries.add("javax.jms.QueueConnectionFactory");
-        resourceRefEntries.add("javax.jms.TopicConnectionFactory");
-        resourceRefEntries.add("javax.jms.ConnectionFactory");
-        resourceRefEntries.add("javax.mail.Session");
-        resourceRefEntries.add("java.net.URL");
-
-        RESOURCE_REF_ENTRIES = Collections.unmodifiableSet(resourceRefEntries);
     }
+
 
     public void deploy(final DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
@@ -128,6 +123,8 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
         final CompositeIndex index = deploymentUnit.getAttachment(org.jboss.as.server.deployment.Attachments.COMPOSITE_ANNOTATION_INDEX);
         final EEApplicationClasses applicationClasses = deploymentUnit.getAttachment(Attachments.EE_APPLICATION_CLASSES_DESCRIPTION);
         final Module module = deploymentUnit.getAttachment(org.jboss.as.server.deployment.Attachments.MODULE);
+        final boolean replacement = deploymentUnit.getAttachment(org.jboss.as.ee.structure.Attachments.ANNOTATION_PROPERTY_REPLACEMENT);
+        final PropertyReplacer replacer = EJBAnnotationPropertyReplacement.propertyReplacer(deploymentUnit);
         if (module == null) {
             return;
         }
@@ -135,23 +132,23 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
         for (AnnotationInstance annotation : resourceAnnotations) {
             final AnnotationTarget annotationTarget = annotation.target();
             final AnnotationValue nameValue = annotation.value("name");
-            final String name = nameValue != null ? nameValue.asString() : null;
+            final String name = nameValue != null ? (replacement ? replacer.replaceProperties(nameValue.asString()) : nameValue.asString()) : null;
             final AnnotationValue typeValue = annotation.value("type");
             final String type = typeValue != null ? typeValue.asClass().name().toString() : null;
             if (annotationTarget instanceof FieldInfo) {
                 final FieldInfo fieldInfo = (FieldInfo) annotationTarget;
                 final ClassInfo classInfo = fieldInfo.declaringClass();
                 EEModuleClassDescription classDescription = eeModuleDescription.addOrGetLocalClassDescription(classInfo.name().toString());
-                processFieldResource(phaseContext, fieldInfo, name, type, classDescription, annotation, eeModuleDescription, module, applicationClasses);
+                processFieldResource(phaseContext, fieldInfo, name, type, classDescription, annotation, eeModuleDescription, module, applicationClasses, replacement, replacer);
             } else if (annotationTarget instanceof MethodInfo) {
                 final MethodInfo methodInfo = (MethodInfo) annotationTarget;
                 ClassInfo classInfo = methodInfo.declaringClass();
                 EEModuleClassDescription classDescription = eeModuleDescription.addOrGetLocalClassDescription(classInfo.name().toString());
-                processMethodResource(phaseContext, methodInfo, name, type, classDescription, annotation, eeModuleDescription, module, applicationClasses);
+                processMethodResource(phaseContext, methodInfo, name, type, classDescription, annotation, eeModuleDescription, module, applicationClasses, replacement, replacer);
             } else if (annotationTarget instanceof ClassInfo) {
                 final ClassInfo classInfo = (ClassInfo) annotationTarget;
                 EEModuleClassDescription classDescription = eeModuleDescription.addOrGetLocalClassDescription(classInfo.name().toString());
-                processClassResource(phaseContext, name, type, classDescription, annotation, eeModuleDescription, module, applicationClasses);
+                processClassResource(phaseContext, name, type, classDescription, annotation, eeModuleDescription, module, applicationClasses, replacement, replacer);
             }
         }
         final List<AnnotationInstance> resourcesAnnotations = index.getAnnotations(RESOURCES_ANNOTATION_NAME);
@@ -162,11 +159,11 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
                 final AnnotationInstance[] values = outerAnnotation.value("value").asNestedArray();
                 for (AnnotationInstance annotation : values) {
                     final AnnotationValue nameValue = annotation.value("name");
-                    final String name = nameValue != null ? nameValue.asString() : null;
+                    final String name = nameValue != null ? (replacement ? replacer.replaceProperties(nameValue.asString()) : nameValue.asString()) : null;
                     final AnnotationValue typeValue = annotation.value("type");
                     final String type = typeValue != null ? typeValue.asClass().name().toString() : null;
                     EEModuleClassDescription classDescription = eeModuleDescription.addOrGetLocalClassDescription(classInfo.name().toString());
-                    processClassResource(phaseContext, name, type, classDescription, annotation, eeModuleDescription, module, applicationClasses);
+                    processClassResource(phaseContext, name, type, classDescription, annotation, eeModuleDescription, module, applicationClasses, replacement, replacer);
                 }
             }
         }
@@ -175,15 +172,15 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
     public void undeploy(final DeploymentUnit context) {
     }
 
-    protected void processFieldResource(final DeploymentPhaseContext phaseContext, final FieldInfo fieldInfo, final String name, final String type, final EEModuleClassDescription classDescription, final AnnotationInstance annotation, final EEModuleDescription eeModuleDescription, final Module module, final EEApplicationClasses applicationClasses) throws DeploymentUnitProcessingException {
+    protected void processFieldResource(final DeploymentPhaseContext phaseContext, final FieldInfo fieldInfo, final String name, final String type, final EEModuleClassDescription classDescription, final AnnotationInstance annotation, final EEModuleDescription eeModuleDescription, final Module module, final EEApplicationClasses applicationClasses, final boolean replacement, final PropertyReplacer replacer) throws DeploymentUnitProcessingException {
         final String fieldName = fieldInfo.name();
         final String injectionType = isEmpty(type) || type.equals(Object.class.getName()) ? fieldInfo.type().name().toString() : type;
         final String localContextName = isEmpty(name) ? fieldInfo.declaringClass().name().toString() + "/" + fieldName : name;
         final InjectionTarget targetDescription = new FieldInjectionTarget(fieldInfo.declaringClass().name().toString(), fieldName, fieldInfo.type().name().toString());
-        process(phaseContext, classDescription, annotation, injectionType, localContextName, targetDescription, eeModuleDescription, module, applicationClasses);
+        process(phaseContext, classDescription, annotation, injectionType, localContextName, targetDescription, eeModuleDescription, module, applicationClasses, replacement, replacer);
     }
 
-    protected void processMethodResource(final DeploymentPhaseContext phaseContext, final MethodInfo methodInfo, final String name, final String type, final EEModuleClassDescription classDescription, final AnnotationInstance annotation, final EEModuleDescription eeModuleDescription, final Module module, final EEApplicationClasses applicationClasses) throws DeploymentUnitProcessingException {
+    protected void processMethodResource(final DeploymentPhaseContext phaseContext, final MethodInfo methodInfo, final String name, final String type, final EEModuleClassDescription classDescription, final AnnotationInstance annotation, final EEModuleDescription eeModuleDescription, final Module module, final EEApplicationClasses applicationClasses, final boolean replacement, final PropertyReplacer replacer) throws DeploymentUnitProcessingException {
         final String methodName = methodInfo.name();
         if (!methodName.startsWith("set") || methodInfo.args().length != 1) {
             throw MESSAGES.setterMethodOnly("@Resource", methodInfo);
@@ -194,10 +191,10 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
 
         final String injectionType = isEmpty(type) || type.equals(Object.class.getName()) ? methodInfo.args()[0].name().toString() : type;
         final InjectionTarget targetDescription = new MethodInjectionTarget(methodInfo.declaringClass().name().toString(), methodName, methodInfo.args()[0].name().toString());
-        process(phaseContext, classDescription, annotation, injectionType, localContextName, targetDescription, eeModuleDescription, module, applicationClasses);
+        process(phaseContext, classDescription, annotation, injectionType, localContextName, targetDescription, eeModuleDescription, module, applicationClasses, replacement, replacer);
     }
 
-    protected void processClassResource(final DeploymentPhaseContext phaseContext, final String name, final String type, final EEModuleClassDescription classDescription, final AnnotationInstance annotation, final EEModuleDescription eeModuleDescription, final Module module, final EEApplicationClasses applicationClasses) throws DeploymentUnitProcessingException {
+    protected void processClassResource(final DeploymentPhaseContext phaseContext, final String name, final String type, final EEModuleClassDescription classDescription, final AnnotationInstance annotation, final EEModuleDescription eeModuleDescription, final Module module, final EEApplicationClasses applicationClasses, final boolean replacement, final PropertyReplacer replacer) throws DeploymentUnitProcessingException {
         if (isEmpty(name)) {
             throw MESSAGES.annotationAttributeMissing("@Resource", "name");
         }
@@ -207,17 +204,17 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
         } else {
             realType = type;
         }
-        process(phaseContext, classDescription, annotation, realType, name, null, eeModuleDescription, module, applicationClasses);
+        process(phaseContext, classDescription, annotation, realType, name, null, eeModuleDescription, module, applicationClasses, replacement, replacer);
     }
 
-    protected void process(final DeploymentPhaseContext phaseContext, final EEModuleClassDescription classDescription, final AnnotationInstance annotation, final String injectionType, final String localContextName, final InjectionTarget targetDescription, final EEModuleDescription eeModuleDescription, final Module module, final EEApplicationClasses applicationClasses) throws DeploymentUnitProcessingException {
+    protected void process(final DeploymentPhaseContext phaseContext, final EEModuleClassDescription classDescription, final AnnotationInstance annotation, final String injectionType, final String localContextName, final InjectionTarget targetDescription, final EEModuleDescription eeModuleDescription, final Module module, final EEApplicationClasses applicationClasses, final boolean replacement, final PropertyReplacer replacer) throws DeploymentUnitProcessingException {
         final EEResourceReferenceProcessorRegistry registry = phaseContext.getDeploymentUnit().getAttachment(Attachments.RESOURCE_REFERENCE_PROCESSOR_REGISTRY);
         final AnnotationValue lookupAnnotation = annotation.value("lookup");
-        String lookup = lookupAnnotation == null ? null : lookupAnnotation.asString();
+        String lookup = lookupAnnotation == null ? null : (replacement ? replacer.replaceProperties(lookupAnnotation.asString()) : lookupAnnotation.asString());
         // if "lookup" hasn't been specified then fallback on "mappedName" which we treat the same as "lookup"
         if (isEmpty(lookup)) {
             final AnnotationValue mappedNameAnnotationValue = annotation.value("mappedName");
-            lookup = mappedNameAnnotationValue == null ? null : mappedNameAnnotationValue.asString();
+            lookup = mappedNameAnnotationValue == null ? null : (replacement ? replacer.replaceProperties(mappedNameAnnotationValue.asString()) : mappedNameAnnotationValue.asString());
         }
 
         if (isEmpty(lookup) && FIXED_LOCATIONS.containsKey(injectionType)) {
@@ -225,10 +222,8 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
         }
         InjectionSource valueSource = null;
         final boolean isEnvEntryType = this.isEnvEntryType(injectionType, module);
-        final boolean isResourceRefType = RESOURCE_REF_ENTRIES.contains(injectionType);
-        boolean createBinding = true;
         if (!isEmpty(lookup)) {
-            valueSource = new LookupInjectionSource(lookup);
+            valueSource = InjectionUtils.getInjectionSource(lookup,injectionType);
         } else if (isEnvEntryType) {
             // if it's a env-entry type then we do *not* create a BindingConfiguration to bind to the ENC
             // since the binding (value) for env-entry is always driven from a deployment descriptor.
@@ -237,7 +232,7 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
             // then there will be no binding the ENC and that's what is expected by the Java EE 6 spec. Furthermore,
             // if the @Resource is a env-entry binding then the injection target will be optional since in the absence of
             // a env-entry-value, there won't be a binding and effectively no injection. This again is as expected by spec.
-        } else if (!isResourceRefType) {
+        } else {
             //otherwise we just try and handle it
             //if we don't have a value source we will try and inject from a lookup
             //and the user has to configure the value in a deployment descriptor
@@ -245,13 +240,7 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
             if (resourceReferenceProcessor != null) {
                 valueSource = resourceReferenceProcessor.getResourceReferenceBindingSource();
             }
-        } else {
-            //handle resource reference types
-            createBinding = false;
-            valueSource = new LookupInjectionSource(localContextName);
         }
-
-        final boolean createBindingFinal = createBinding;
 
         // EE.5.2.4
         // Each injection of an object corresponds to a JNDI lookup. Whether a new
@@ -273,11 +262,9 @@ public class ResourceInjectionAnnotationParsingProcessor implements DeploymentUn
             final ResourceInjectionConfiguration injectionConfiguration = targetDescription != null ?
                     new ResourceInjectionConfiguration(targetDescription, injectionSource) : null;
 
-            // TODO: class hierarchies? shared bindings?
-            if (createBindingFinal) {
-                final BindingConfiguration bindingConfiguration = new BindingConfiguration(localContextName, valueSource);
-                classDescription.getBindingConfigurations().add(bindingConfiguration);
-            }
+            final BindingConfiguration bindingConfiguration = new BindingConfiguration(localContextName, valueSource);
+            classDescription.getBindingConfigurations().add(bindingConfiguration);
+
             if (injectionConfiguration != null) {
                 classDescription.addResourceInjection(injectionConfiguration);
             }

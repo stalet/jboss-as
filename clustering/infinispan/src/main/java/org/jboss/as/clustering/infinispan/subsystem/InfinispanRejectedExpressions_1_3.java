@@ -39,90 +39,91 @@ public class InfinispanRejectedExpressions_1_3 {
 
     // attributes which never accept expressions
     public static final AttributeDefinition[] NEVER_CONTAINER_ATTRIBUTES = {
-            CacheContainerResource.ALIAS,
-            CacheContainerResource.ALIASES,
-            CacheContainerResource.EVICTION_EXECUTOR,
-            CacheContainerResource.LISTENER_EXECUTOR,
-            CacheContainerResource.NAME,
-            CacheContainerResource.REPLICATION_QUEUE_EXECUTOR
+            CacheContainerResourceDefinition.ALIAS,
+            CacheContainerResourceDefinition.ALIASES,
+            CacheContainerResourceDefinition.EVICTION_EXECUTOR,
+            CacheContainerResourceDefinition.LISTENER_EXECUTOR,
+            CacheContainerResourceDefinition.NAME,
+            CacheContainerResourceDefinition.REPLICATION_QUEUE_EXECUTOR
     };
 
     public static final AttributeDefinition[] NEVER_TRANSPORT_ATTRIBUTES = {
-            TransportResource.EXECUTOR
+            TransportResourceDefinition.EXECUTOR
     };
 
     public static final AttributeDefinition[] NEVER_CACHE_ATTRIBUTES = {
-            CacheResource.NAME
+            CacheResourceDefinition.NAME
     };
 
     public static final AttributeDefinition[] NEVER_CHILD_ATTRIBUTES = {
     };
 
     public static final AttributeDefinition[] NEVER_STORE_ATTRIBUTES = {
-            RemoteStoreResource.OUTBOUND_SOCKET_BINDING,
-            RemoteStoreResource.REMOTE_SERVER,
-            RemoteStoreResource.REMOTE_SERVERS,
-            BaseJDBCStoreResource.ID_COLUMN,
-            BaseJDBCStoreResource.DATA_COLUMN,
-            BaseJDBCStoreResource.TIMESTAMP_COLUMN,
-            BaseJDBCStoreResource.ENTRY_TABLE,
-            BaseJDBCStoreResource.BUCKET_TABLE,
-            //BaseJDBCStoreResource.BINARY_KEYED_TABLE,
-            //BaseJDBCStoreResource.STRING_KEYED_TABLE
+            RemoteStoreResourceDefinition.OUTBOUND_SOCKET_BINDING,
+            RemoteStoreResourceDefinition.REMOTE_SERVER,
+            RemoteStoreResourceDefinition.REMOTE_SERVERS,
+            JDBCStoreResourceDefinition.ID_COLUMN,
+            JDBCStoreResourceDefinition.DATA_COLUMN,
+            JDBCStoreResourceDefinition.TIMESTAMP_COLUMN,
+            JDBCStoreResourceDefinition.ENTRY_TABLE,
+            JDBCStoreResourceDefinition.BUCKET_TABLE,
+            //BaseJDBCStoreResourceDefinition.BINARY_KEYED_TABLE,
+            //BaseJDBCStoreResourceDefinition.STRING_KEYED_TABLE
     };
 
      // attributes which accept in 1.4.0 and in 1.3.0
-    public static final AttributeDefinition[] ACCEPT14_ACCEPT13_CONTAINER_ATTRIBUTES = new AttributeDefinition[]{CacheContainerResource.DEFAULT_CACHE} ;
-    public static final AttributeDefinition[] ACCEPT14_ACCEPT13_TRANSPORT_ATTRIBUTES = new AttributeDefinition[]{TransportResource.CLUSTER} ;
+    public static final AttributeDefinition[] ACCEPT14_ACCEPT13_CONTAINER_ATTRIBUTES = new AttributeDefinition[]{CacheContainerResourceDefinition.DEFAULT_CACHE} ;
+    public static final AttributeDefinition[] ACCEPT14_ACCEPT13_TRANSPORT_ATTRIBUTES = new AttributeDefinition[]{TransportResourceDefinition.CLUSTER} ;
     public static final AttributeDefinition[] ACCEPT14_ACCEPT13_CACHE_ATTRIBUTES = new AttributeDefinition[] {} ;
-    public static final AttributeDefinition[] ACCEPT14_ACCEPT13_CHILD_ATTRIBUTES = new AttributeDefinition[]{TransactionResource.MODE} ;
+    public static final AttributeDefinition[] ACCEPT14_ACCEPT13_CHILD_ATTRIBUTES = new AttributeDefinition[]{TransactionResourceDefinition.MODE} ;
     public static final AttributeDefinition[] ACCEPT14_ACCEPT13_STORE_ATTRIBUTES = new AttributeDefinition[]{} ;
 
     // attributes which need to reject expressions in 1.3
     // set = all - always accept
     public static final AttributeDefinition[] REJECT_CONTAINER_ATTRIBUTES = remove(
-            CacheContainerResource.CACHE_CONTAINER_ATTRIBUTES,
+            CacheContainerResourceDefinition.CACHE_CONTAINER_ATTRIBUTES,
             ACCEPT14_ACCEPT13_CONTAINER_ATTRIBUTES
     );
 
     public static final AttributeDefinition[] REJECT_TRANSPORT_ATTRIBUTES = remove(
-            TransportResource.TRANSPORT_ATTRIBUTES,
+            TransportResourceDefinition.TRANSPORT_ATTRIBUTES,
             ACCEPT14_ACCEPT13_TRANSPORT_ATTRIBUTES
     );
 
+    @SuppressWarnings("deprecation")
     public static final AttributeDefinition[] REJECT_CACHE_ATTRIBUTES = remove(
             concat(
-                CacheResource.CACHE_ATTRIBUTES,
-                ClusteredCacheResource.CLUSTERED_CACHE_ATTRIBUTES,
-                DistributedCacheResource.DISTRIBUTED_CACHE_ATTRIBUTES,
-                new AttributeDefinition[]{DistributedCacheResource.VIRTUAL_NODES}
+                CacheResourceDefinition.CACHE_ATTRIBUTES,
+                ClusteredCacheResourceDefinition.CLUSTERED_CACHE_ATTRIBUTES,
+                DistributedCacheResourceDefinition.DISTRIBUTED_CACHE_ATTRIBUTES,
+                new AttributeDefinition[] { DistributedCacheResourceDefinition.VIRTUAL_NODES }
             ),
             ACCEPT14_ACCEPT13_CACHE_ATTRIBUTES
     );
 
     public static final AttributeDefinition[] REJECT_CHILD_ATTRIBUTES = remove(
             concat(
-                    LockingResource.LOCKING_ATTRIBUTES,
-                    TransactionResource.TRANSACTION_ATTRIBUTES,
-                    ExpirationResource.EXPIRATION_ATTRIBUTES,
-                    EvictionResource.EVICTION_ATTRIBUTES,
-                    StateTransferResource.STATE_TRANSFER_ATTRIBUTES
+                    LockingResourceDefinition.LOCKING_ATTRIBUTES,
+                    TransactionResourceDefinition.TRANSACTION_ATTRIBUTES,
+                    ExpirationResourceDefinition.EXPIRATION_ATTRIBUTES,
+                    EvictionResourceDefinition.EVICTION_ATTRIBUTES,
+                    StateTransferResourceDefinition.STATE_TRANSFER_ATTRIBUTES
             ),
             ACCEPT14_ACCEPT13_CHILD_ATTRIBUTES
     );
 
     public static final AttributeDefinition[] REJECT_STORE_ATTRIBUTES = remove(
             concat(
-                BaseStoreResource.COMMON_STORE_ATTRIBUTES,
-                StoreResource.STORE_ATTRIBUTES,
-                FileStoreResource.FILE_STORE_ATTRIBUTES,
-                RemoteStoreResource.REMOTE_STORE_ATTRIBUTES,
-                BaseJDBCStoreResource.COMMON_BASE_JDBC_STORE_ATTRIBUTES,
-                StringKeyedJDBCStoreResource.STRING_KEYED_JDBC_STORE_ATTRIBUTES,
-                BinaryKeyedJDBCStoreResource.BINARY_KEYED_JDBC_STORE_ATTRIBUTES,
-                MixedKeyedJDBCStoreResource.MIXED_KEYED_JDBC_STORE_ATTRIBUTES,
-                StoreWriteBehindResource.WRITE_BEHIND_ATTRIBUTES,
-                StorePropertyResource.STORE_PROPERTY_ATTRIBUTES
+                StoreResourceDefinition.COMMON_STORE_ATTRIBUTES,
+                CustomStoreResourceDefinition.STORE_ATTRIBUTES,
+                FileStoreResourceDefinition.FILE_STORE_ATTRIBUTES,
+                RemoteStoreResourceDefinition.REMOTE_STORE_ATTRIBUTES,
+                JDBCStoreResourceDefinition.COMMON_BASE_JDBC_STORE_ATTRIBUTES,
+                StringKeyedJDBCStoreResourceDefinition.STRING_KEYED_JDBC_STORE_ATTRIBUTES,
+                BinaryKeyedJDBCStoreResourceDefinition.BINARY_KEYED_JDBC_STORE_ATTRIBUTES,
+                MixedKeyedJDBCStoreResourceDefinition.MIXED_KEYED_JDBC_STORE_ATTRIBUTES,
+                StoreWriteBehindResourceDefinition.WRITE_BEHIND_ATTRIBUTES,
+                StorePropertyResourceDefinition.STORE_PROPERTY_ATTRIBUTES
             ),
             ACCEPT14_ACCEPT13_STORE_ATTRIBUTES
     );
@@ -130,34 +131,35 @@ public class InfinispanRejectedExpressions_1_3 {
     // attributes which accept in 1.4.0 but reject in 1.3.0 only
     // set = all - never accept - always accept
     public static final AttributeDefinition[] ACCEPT14_REJECT13_CONTAINER_ATTRIBUTES = remove(
-            CacheContainerResource.CACHE_CONTAINER_ATTRIBUTES,
+            CacheContainerResourceDefinition.CACHE_CONTAINER_ATTRIBUTES,
             NEVER_CONTAINER_ATTRIBUTES,
             ACCEPT14_ACCEPT13_CONTAINER_ATTRIBUTES
     );
 
     public static final AttributeDefinition[] ACCEPT14_REJECT13_TRANSPORT_ATTRIBUTES = remove(
-            TransportResource.TRANSPORT_ATTRIBUTES,
+            TransportResourceDefinition.TRANSPORT_ATTRIBUTES,
             NEVER_TRANSPORT_ATTRIBUTES,
             ACCEPT14_ACCEPT13_TRANSPORT_ATTRIBUTES
     );
 
+    @SuppressWarnings("deprecation")
     public static final AttributeDefinition[] ACCEPT14_REJECT13_CACHE_ATTRIBUTES = remove(
             concat(
-                CacheResource.CACHE_ATTRIBUTES,
-                ClusteredCacheResource.CLUSTERED_CACHE_ATTRIBUTES,
-                DistributedCacheResource.DISTRIBUTED_CACHE_ATTRIBUTES,
-                new AttributeDefinition[]{DistributedCacheResource.VIRTUAL_NODES}
+                CacheResourceDefinition.CACHE_ATTRIBUTES,
+                ClusteredCacheResourceDefinition.CLUSTERED_CACHE_ATTRIBUTES,
+                DistributedCacheResourceDefinition.DISTRIBUTED_CACHE_ATTRIBUTES,
+                new AttributeDefinition[] { DistributedCacheResourceDefinition.VIRTUAL_NODES }
             ),
             NEVER_CACHE_ATTRIBUTES
     );
 
     public static final AttributeDefinition[] ACCEPT14_REJECT13_CHILD_ATTRIBUTES = remove(
             concat(
-                    LockingResource.LOCKING_ATTRIBUTES,
-                    TransactionResource.TRANSACTION_ATTRIBUTES,
-                    ExpirationResource.EXPIRATION_ATTRIBUTES,
-                    EvictionResource.EVICTION_ATTRIBUTES,
-                    StateTransferResource.STATE_TRANSFER_ATTRIBUTES
+                    LockingResourceDefinition.LOCKING_ATTRIBUTES,
+                    TransactionResourceDefinition.TRANSACTION_ATTRIBUTES,
+                    ExpirationResourceDefinition.EXPIRATION_ATTRIBUTES,
+                    EvictionResourceDefinition.EVICTION_ATTRIBUTES,
+                    StateTransferResourceDefinition.STATE_TRANSFER_ATTRIBUTES
             ),
             NEVER_CHILD_ATTRIBUTES,
             ACCEPT14_ACCEPT13_CHILD_ATTRIBUTES
@@ -165,16 +167,16 @@ public class InfinispanRejectedExpressions_1_3 {
 
     public static final AttributeDefinition[] ACCEPT14_REJECT13_STORE_ATTRIBUTES = remove(
             concat(
-                BaseStoreResource.COMMON_STORE_ATTRIBUTES,
-                StoreResource.STORE_ATTRIBUTES,
-                FileStoreResource.FILE_STORE_ATTRIBUTES,
-                RemoteStoreResource.REMOTE_STORE_ATTRIBUTES,
-                BaseJDBCStoreResource.COMMON_BASE_JDBC_STORE_ATTRIBUTES,
-                StringKeyedJDBCStoreResource.STRING_KEYED_JDBC_STORE_ATTRIBUTES,
-                BinaryKeyedJDBCStoreResource.BINARY_KEYED_JDBC_STORE_ATTRIBUTES,
-                MixedKeyedJDBCStoreResource.MIXED_KEYED_JDBC_STORE_ATTRIBUTES,
-                StoreWriteBehindResource.WRITE_BEHIND_ATTRIBUTES,
-                StorePropertyResource.STORE_PROPERTY_ATTRIBUTES
+                StoreResourceDefinition.COMMON_STORE_ATTRIBUTES,
+                CustomStoreResourceDefinition.STORE_ATTRIBUTES,
+                FileStoreResourceDefinition.FILE_STORE_ATTRIBUTES,
+                RemoteStoreResourceDefinition.REMOTE_STORE_ATTRIBUTES,
+                JDBCStoreResourceDefinition.COMMON_BASE_JDBC_STORE_ATTRIBUTES,
+                StringKeyedJDBCStoreResourceDefinition.STRING_KEYED_JDBC_STORE_ATTRIBUTES,
+                BinaryKeyedJDBCStoreResourceDefinition.BINARY_KEYED_JDBC_STORE_ATTRIBUTES,
+                MixedKeyedJDBCStoreResourceDefinition.MIXED_KEYED_JDBC_STORE_ATTRIBUTES,
+                StoreWriteBehindResourceDefinition.WRITE_BEHIND_ATTRIBUTES,
+                StorePropertyResourceDefinition.STORE_PROPERTY_ATTRIBUTES
 
              ),
              NEVER_STORE_ATTRIBUTES
@@ -184,14 +186,14 @@ public class InfinispanRejectedExpressions_1_3 {
      * Helper methods to create arrays of attributes which need to have transformers applied.
      */
     private static AttributeDefinition[] concat(AttributeDefinition[]... additions) {
-        HashSet<AttributeDefinition> result = new HashSet<AttributeDefinition>();
+        HashSet<AttributeDefinition> result = new HashSet<>();
         for (int i = 0; i < additions.length; i++)
             result.addAll(Arrays.asList(additions[i]));
         return result.toArray(new AttributeDefinition[0]);
     }
 
     private static AttributeDefinition[] remove(AttributeDefinition[] initial, AttributeDefinition[]... removals) {
-        HashSet<AttributeDefinition> result = new HashSet<AttributeDefinition>(Arrays.asList(initial));
+        HashSet<AttributeDefinition> result = new HashSet<>(Arrays.asList(initial));
         for (int i = 0; i < removals.length; i++)
             result.removeAll(Arrays.asList(removals[i]));
         return result.toArray(new AttributeDefinition[0]);

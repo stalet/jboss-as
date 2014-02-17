@@ -23,7 +23,6 @@
 package org.jboss.as.connector.services.resourceadapters;
 
 import static org.jboss.as.connector.logging.ConnectorLogger.DEPLOYMENT_CONNECTOR_LOGGER;
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
 
 import java.io.File;
 import java.net.URL;
@@ -35,6 +34,7 @@ import java.util.Set;
 import org.jboss.as.connector.metadata.deployment.ResourceAdapterDeployment;
 import org.jboss.as.connector.services.resourceadapters.deployment.AbstractResourceAdapterDeploymentService;
 import org.jboss.as.connector.util.ConnectorServices;
+import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.jca.common.api.metadata.ironjacamar.IronJacamar;
 import org.jboss.jca.common.api.metadata.ra.AdminObject;
 import org.jboss.jca.common.api.metadata.ra.ConnectionDefinition;
@@ -69,6 +69,8 @@ public final class ResourceAdapterActivatorService extends AbstractResourceAdapt
     private final String deploymentName;
 
     private CommonDeployment deploymentMD;
+    private ContextNames.BindInfo bindInfo;
+    private boolean createBinderService = true;
 
     public ResourceAdapterActivatorService(final Connector cmd, final IronJacamar ijmd, ClassLoader cl,
             final String deploymentName) {
@@ -76,6 +78,27 @@ public final class ResourceAdapterActivatorService extends AbstractResourceAdapt
         this.ijmd = ijmd;
         this.cl = cl;
         this.deploymentName = deploymentName;
+        this.connectorServicesRegistrationName = deploymentName;
+        this.bindInfo = null;
+    }
+
+    public ContextNames.BindInfo getBindInfo(String jndi) {
+        if (bindInfo != null)
+            return bindInfo;
+
+        return ContextNames.bindInfoFor(jndi);
+    }
+
+    public void setBindInfo(ContextNames.BindInfo bindInfo) {
+        this.bindInfo = bindInfo;
+    }
+
+    public boolean isCreateBinderService() {
+        return createBinderService;
+    }
+
+    public void setCreateBinderService(boolean createBinderService) {
+        this.createBinderService = createBinderService;
     }
 
     @Override
@@ -95,38 +118,34 @@ public final class ResourceAdapterActivatorService extends AbstractResourceAdapt
             } finally {
                Thread.currentThread().setContextClassLoader(old);
             }
-        } catch (Throwable e) {
-            unregisterAll(deploymentName);
-            throw MESSAGES.failedToStartRaDeployment(e, deploymentName);
+            String raName = deploymentMD.getDeploymentName();
+            ServiceName raServiceName = ConnectorServices.getResourceAdapterServiceName(raName);
+            value = new ResourceAdapterDeployment(deploymentMD, raName, raServiceName);
+            registry.getValue().registerResourceAdapterDeployment(value);
+            managementRepository.getValue().getConnectors().add(value.getDeployment().getConnector());
+
+            context.getChildTarget()
+                    .addService(raServiceName,
+                            new ResourceAdapterService(raName, raServiceName,
+                                    value.getDeployment().getResourceAdapter())).setInitialMode(Mode.ACTIVE)
+                    .install();
+            DEPLOYMENT_CONNECTOR_LOGGER.debugf("Started service %s", ConnectorServices.RESOURCE_ADAPTER_ACTIVATOR_SERVICE);
+        } catch (Throwable t) {
+            // To clean up we need to invoke blocking behavior, so do that in another thread
+            // and let this MSC thread return
+            String raName = deploymentName;
+            ServiceName raServiceName = ConnectorServices.getResourceAdapterServiceName(raName);
+            cleanupStartAsync(context, deploymentName, raServiceName, t);
         }
 
-        String raName = deploymentMD.getDeploymentName();
-        ServiceName raServiceName = ConnectorServices.registerResourceAdapter(raName);
-
-        value = new ResourceAdapterDeployment(deploymentMD, raName, raServiceName);
-        registry.getValue().registerResourceAdapterDeployment(value);
-        managementRepository.getValue().getConnectors().add(value.getDeployment().getConnector());
-
-        context.getChildTarget()
-                .addService(raServiceName,
-                    new ResourceAdapterService(raName, raServiceName,
-                                               value.getDeployment().getResourceAdapter())).setInitialMode(Mode.ACTIVE)
-                .install();
-        DEPLOYMENT_CONNECTOR_LOGGER.debugf("Started service %s", ConnectorServices.RESOURCE_ADAPTER_ACTIVATOR_SERVICE);
     }
 
     /**
      * Stop
      */
     @Override
-        public void stop(StopContext context) {
-        DEPLOYMENT_CONNECTOR_LOGGER.debugf("Stopping service %s", ConnectorServices.RESOURCE_ADAPTER_ACTIVATOR_SERVICE);
-        unregisterAll(deploymentName);
-    }
-    @Override
-    public void unregisterAll(String deploymentName) {
-        super.unregisterAll(deploymentName);
-
+    public void stop(final StopContext context) {
+        stopAsync(context, deploymentName, ConnectorServices.RESOURCE_ADAPTER_ACTIVATOR_SERVICE);
     }
 
     public CommonDeployment getDeploymentMD() {
@@ -247,7 +266,7 @@ public final class ResourceAdapterActivatorService extends AbstractResourceAdapt
                         }
                     }
 
-                    return mcfOk && aoOk;
+                    return mcfOk || aoOk;
                 }
             }
 

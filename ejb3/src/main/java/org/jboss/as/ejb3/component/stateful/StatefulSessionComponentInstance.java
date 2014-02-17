@@ -25,25 +25,26 @@ import java.io.ObjectStreamException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Set;
 
 import javax.ejb.EJBException;
+import javax.transaction.Transaction;
 
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentInstance;
-import org.jboss.as.ejb3.cache.Cacheable;
+import org.jboss.as.ejb3.cache.Identifiable;
 import org.jboss.as.ejb3.component.InvokeMethodOnTargetInterceptor;
 import org.jboss.as.ejb3.component.session.SessionBeanComponentInstance;
+import org.jboss.as.ejb3.tx.OwnableReentrantLock;
 import org.jboss.as.naming.ManagedReference;
 import org.jboss.ejb.client.SessionID;
 import org.jboss.invocation.Interceptor;
 import org.jboss.invocation.InterceptorContext;
-import org.jboss.invocation.InterceptorFactoryContext;
 
 /**
  * @author <a href="mailto:cdewolf@redhat.com">Carlo de Wolf</a>
  */
-public class StatefulSessionComponentInstance extends SessionBeanComponentInstance implements Cacheable<SessionID> {
+public class StatefulSessionComponentInstance extends SessionBeanComponentInstance implements Identifiable<SessionID> {
     private static final long serialVersionUID = 3803978357389448971L;
 
     private final SessionID id;
@@ -54,26 +55,61 @@ public class StatefulSessionComponentInstance extends SessionBeanComponentInstan
     private final Interceptor prePassivate;
     private final Interceptor postActivate;
     private final Interceptor ejb2XRemoveInterceptor;
-    private volatile Map<Object, Object> serializableInterceptors;
+
+    /**
+     * If this is a BMT bean this stores the active transaction
+     */
+    private volatile Transaction transaction;
+
+    /**
+     * The transaction lock for the stateful bean
+     */
+    private final OwnableReentrantLock lock = new OwnableReentrantLock();
+
+    /**
+     * true if this bean has been enrolled in a transaction
+     */
+    private boolean synchronizationRegistered = false;
+
+    /**
+     * The thread based lock for the stateful bean
+     */
+    private final Object threadLock = new Object();
+    private boolean removed = false;
+
+    boolean isSynchronizationRegistered() {
+        return synchronizationRegistered;
+    }
+
+    void setSynchronizationRegistered(boolean synchronizationRegistered) {
+        this.synchronizationRegistered = synchronizationRegistered;
+    }
+
+    Object getThreadLock() {
+        return threadLock;
+    }
+
+    OwnableReentrantLock getLock() {
+        return lock;
+    }
 
     /**
      * Construct a new instance.
      *
      * @param component the component
      */
-    protected StatefulSessionComponentInstance(final StatefulSessionComponent component, final AtomicReference<ManagedReference> instanceReference, final Interceptor preDestroyInterceptor, final Map<Method, Interceptor> methodInterceptors, final InterceptorFactoryContext factoryContext) {
-        super(component, instanceReference, preDestroyInterceptor, methodInterceptors);
+    protected StatefulSessionComponentInstance(final StatefulSessionComponent component, final Interceptor preDestroyInterceptor, final Map<Method, Interceptor> methodInterceptors, final Map<Object, Object> context) {
+        super(component, preDestroyInterceptor, methodInterceptors);
 
-        final SessionID existingSession = (SessionID) factoryContext.getContextData().get(SessionID.class);
+        final SessionID existingSession = (SessionID) context.get(SessionID.class);
         this.id = (existingSession != null) ? existingSession : component.getCache().createIdentifier();
-        this.afterBegin = component.createInterceptor(component.getAfterBegin(), factoryContext);
-        this.afterCompletion = component.createInterceptor(component.getAfterCompletion(), factoryContext);
-        this.beforeCompletion = component.createInterceptor(component.getBeforeCompletion(), factoryContext);
-        this.prePassivate = component.createInterceptor(component.getPrePassivate(), factoryContext);
-        this.postActivate = component.createInterceptor(component.getPostActivate(), factoryContext);
-        this.ejb2XRemoveInterceptor = component.createInterceptor(component.getEjb2XRemoveMethod(), factoryContext);
+        this.afterBegin = component.getAfterBegin();
+        this.afterCompletion = component.getAfterCompletion();
+        this.beforeCompletion = component.getBeforeCompletion();
+        this.prePassivate = component.getPrePassivate();
+        this.postActivate = component.getPostActivate();
+        this.ejb2XRemoveInterceptor = component.getEjb2XRemoveMethod();
     }
-
 
     protected void afterBegin() {
         CurrentSynchronizationCallback.set(CurrentSynchronizationCallback.CallbackType.AFTER_BEGIN);
@@ -110,6 +146,8 @@ public class StatefulSessionComponentInstance extends SessionBeanComponentInstan
         this.execute(postActivate, null);
     }
 
+
+
     public void discard() {
         if (!isDiscarded()) {
             super.discard();
@@ -139,22 +177,9 @@ public class StatefulSessionComponentInstance extends SessionBeanComponentInstan
         }
     }
 
-    public Map<Object, Object> getSerializableInterceptors() {
-        return serializableInterceptors;
-    }
-
-    public void setSerializableInterceptors(final Map<Object, Object> serializableInterceptors) {
-        this.serializableInterceptors = serializableInterceptors;
-    }
-
     @Override
     public StatefulSessionComponent getComponent() {
         return (StatefulSessionComponent) super.getComponent();
-    }
-
-    @Override
-    public boolean isModified() {
-        return true;
     }
 
     @Override
@@ -172,6 +197,28 @@ public class StatefulSessionComponentInstance extends SessionBeanComponentInstan
     }
 
     public Object writeReplace() throws ObjectStreamException {
-        return new SerializedStatefulSessionComponent(getInstanceReference().get(), id, getComponent().getCreateServiceName().getCanonicalName(), serializableInterceptors);
+        Set<Object> keys = getComponent().getSerialiableInterceptorContextKeys();
+        final Map<Object, Object> serializableInterceptors = new HashMap<Object, Object>();
+        for(Object key : keys) {
+            serializableInterceptors.put(key, getInstanceData(key));
+        }
+
+        return new SerializedStatefulSessionComponent((ManagedReference)getInstanceData(INSTANCE_KEY), id, getComponent().getCreateServiceName().getCanonicalName(), serializableInterceptors);
+    }
+
+    public Transaction getTransaction() {
+        return transaction;
+    }
+
+    public void setTransaction(Transaction transaction) {
+        this.transaction = transaction;
+    }
+
+    void setRemoved(boolean removed) {
+        this.removed = removed;
+    }
+
+    boolean isRemoved() {
+        return removed;
     }
 }

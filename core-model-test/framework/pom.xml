@@ -27,13 +27,13 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-core-model-test</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-core-model-test</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-core-model-test-framework</artifactId>
-    <name>JBoss Application Server: Core Model Test Framework</name>
+    <artifactId>wildfly-core-model-test-framework</artifactId>
+    <name>WildFly: Core Model Test Framework</name>
     <dependencies>
         <dependency>
             <groupId>junit</groupId>

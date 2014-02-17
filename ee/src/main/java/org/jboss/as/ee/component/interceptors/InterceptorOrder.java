@@ -36,6 +36,7 @@ public class InterceptorOrder {
     public static final class Component {
 
         public static final int INITIAL_INTERCEPTOR = 0x100;
+        public static final int CONCURRENT_CONTEXT = 0x180;
         public static final int CDI_REQUEST_SCOPE = 0x320;
         public static final int SYNCHRONIZATION_INTERCEPTOR = 0x500;
         public static final int REENTRANCY_INTERCEPTOR = 0x501;
@@ -64,6 +65,7 @@ public class InterceptorOrder {
          */
         public static final int CDI_INTERCEPTORS = 0xB00;
         public static final int COMPONENT_USER_INTERCEPTORS = 0xC00; //interceptors defined on the component class, these have to run after CDI interceptors
+
         public static final int TERMINAL_INTERCEPTOR = 0xD00;
 
         private Component() {
@@ -74,10 +76,11 @@ public class InterceptorOrder {
 
     public static final class AroundConstruct {
 
-        public static final int INTERCEPTOR_AROUND_CONSTRUCT = 0xA00;
-        public static final int WELD_AROUND_CONSTRUCT_INTERCEPTORS = 0xB00;
-        public static final int CONSTRUCT_COMPONENT = 0xC00;
-        public static final int TERMINAL_INTERCEPTOR = 0xD00;
+        public static final int CONSTRUCTION_START_INTERCEPTOR = 0xA00;
+        public static final int INTERCEPTOR_AROUND_CONSTRUCT = 0xB00;
+        public static final int WELD_AROUND_CONSTRUCT_INTERCEPTORS = 0xC00;
+        public static final int CONSTRUCT_COMPONENT = 0xD00;
+        public static final int TERMINAL_INTERCEPTOR = 0xE00;
 
         private AroundConstruct() {
         }
@@ -89,11 +92,13 @@ public class InterceptorOrder {
 
         public static final int PRIVILEGED_INTERCEPTOR = 0;
         public static final int TCCL_INTERCEPTOR = 0x100;
+        public static final int CONCURRENT_CONTEXT = 0x180;
         public static final int EJB_SESSION_CONTEXT_INTERCEPTOR = 0x200;
         public static final int WELD_INJECTION_CONTEXT_INTERCEPTOR = 0x300;
         public static final int JPA_SFSB_PRE_CREATE = 0x400;
         public static final int TRANSACTION_INTERCEPTOR = 0x500;
         public static final int JNDI_NAMESPACE_INTERCEPTOR = 0x600;
+        public static final int CREATE_CDI_INTERCEPTORS = 0x0680;
         public static final int INTERCEPTOR_INSTANTIATION_INTERCEPTORS = 0x700;
         public static final int INTERCEPTOR_RESOURCE_INJECTION_INTERCEPTORS = 0x800;
         public static final int INTERCEPTOR_WELD_INJECTION = 0x900;
@@ -102,6 +107,7 @@ public class InterceptorOrder {
         public static final int EJB_SET_CONTEXT_METHOD_INVOCATION_INTERCEPTOR = 0xC00;
         public static final int COMPONENT_WELD_INJECTION = 0xD00;
         public static final int JPA_SFSB_CREATE = 0xE00;
+        public static final int REQUEST_SCOPE_ACTIVATING_INTERCEPTOR = 0xE80;
         public static final int INTERCEPTOR_USER_INTERCEPTORS = 0xF00;
         public static final int CDI_INTERCEPTORS = 0x1000;
         public static final int COMPONENT_USER_INTERCEPTORS = 0x1100;
@@ -118,6 +124,7 @@ public class InterceptorOrder {
 
         public static final int PRIVILEGED_INTERCEPTOR = 0;
         public static final int TCCL_INTERCEPTOR = 0x100;
+        public static final int CONCURRENT_CONTEXT = 0x180;
         public static final int EJB_SESSION_CONTEXT_INTERCEPTOR = 0x200;
         public static final int TRANSACTION_INTERCEPTOR = 0x300;
         public static final int JNDI_NAMESPACE_INTERCEPTOR = 0x400;
@@ -140,6 +147,7 @@ public class InterceptorOrder {
 
         public static final int PRIVILEGED_INTERCEPTOR = 0;
         public static final int TCCL_INTERCEPTOR = 0x100;
+        public static final int CONCURRENT_CONTEXT = 0x180;
         public static final int EJB_SESSION_CONTEXT_INTERCEPTOR = 0x200;
         public static final int TRANSACTION_INTERCEPTOR = 0x300;
         public static final int JNDI_NAMESPACE_INTERCEPTOR = 0x400;
@@ -155,12 +163,12 @@ public class InterceptorOrder {
 
     public static final class View {
         public static final int PRIVILEGED_INTERCEPTOR = 0;
-        public static final int TCCL_INTERCEPTOR = 0x001;
+        public static final int CHECKING_INTERCEPTOR = 1;
+        public static final int TCCL_INTERCEPTOR = 0x003;
         public static final int INVOCATION_TYPE = 0x005;
         public static final int EE_SETUP = 0x010;
         public static final int EJB_IIOP_TRANSACTION = 0x020;
         public static final int JNDI_NAMESPACE_INTERCEPTOR = 0x050;
-        public static final int NOT_BUSINESS_METHOD_EXCEPTION = 0x100;
         public static final int REMOTE_EXCEPTION_TRANSFORMER = 0x200;
         public static final int EJB_EXCEPTION_LOGGING_INTERCEPTOR = 0x210;
         public static final int SHUTDOWN_INTERCEPTOR = 0x220;
@@ -190,7 +198,10 @@ public class InterceptorOrder {
     public static final class Client {
 
         public static final int TO_STRING = 0x100;
+        public static final int NOT_BUSINESS_METHOD_EXCEPTION = 0x110;
+        public static final int LOCAL_ASYNC_LOG_SAVE = 0x180;
         public static final int LOCAL_ASYNC_INVOCATION = 0x200;
+        public static final int LOCAL_ASYNC_LOG_RESTORE = 0x280;
         public static final int ASSOCIATING_INTERCEPTOR = 0x300;
         public static final int EJB_EQUALS_HASHCODE = 0x400;
         public static final int WRITE_REPLACE = 0x500;

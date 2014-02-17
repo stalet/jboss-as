@@ -22,6 +22,8 @@
 
 package org.jboss.as.logging;
 
+import static org.jboss.as.logging.AbstractHandlerDefinition.FORMATTER;
+import static org.jboss.as.logging.AbstractHandlerDefinition.NAMED_FORMATTER;
 import static org.jboss.as.logging.AsyncHandlerResourceDefinition.QUEUE_LENGTH;
 import static org.jboss.as.logging.AsyncHandlerResourceDefinition.SUBHANDLERS;
 import static org.jboss.as.logging.CommonAttributes.ENABLED;
@@ -29,13 +31,14 @@ import static org.jboss.as.logging.CommonAttributes.ENCODING;
 import static org.jboss.as.logging.CommonAttributes.FILE;
 import static org.jboss.as.logging.CommonAttributes.FILTER;
 import static org.jboss.as.logging.CommonAttributes.FILTER_SPEC;
-import static org.jboss.as.logging.CommonAttributes.FORMATTER;
 import static org.jboss.as.logging.CommonAttributes.HANDLER_NAME;
 import static org.jboss.as.logging.CommonAttributes.LEVEL;
-import static org.jboss.as.logging.CustomHandlerResourceDefinition.CLASS;
-import static org.jboss.as.logging.CustomHandlerResourceDefinition.MODULE;
-import static org.jboss.as.logging.CustomHandlerResourceDefinition.PROPERTIES;
+import static org.jboss.as.logging.CommonAttributes.CLASS;
+import static org.jboss.as.logging.CommonAttributes.MODULE;
+import static org.jboss.as.logging.CommonAttributes.PROPERTIES;
 import static org.jboss.as.logging.Logging.createOperationFailure;
+import static org.jboss.as.logging.PatternFormatterResourceDefinition.PATTERN;
+import static org.jboss.as.logging.PatternFormatterResourceDefinition.PATTERN_FORMATTER;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -47,11 +50,14 @@ import java.util.logging.Handler;
 import org.apache.log4j.Appender;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
+import org.jboss.as.controller.OperationContext.ResultHandler;
+import org.jboss.as.controller.OperationContext.Stage;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.logging.logmanager.Log4jAppenderHandler;
+import org.jboss.as.logging.logmanager.PropertySorter;
 import org.jboss.as.logging.resolvers.ModelNodeResolver;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
@@ -83,13 +89,15 @@ final class HandlerOperations {
      */
     static class HandlerUpdateOperationStepHandler extends LoggingOperations.LoggingUpdateOperationStepHandler {
         private final AttributeDefinition[] attributes;
+        private final PropertySorter propertySorter;
 
         protected HandlerUpdateOperationStepHandler() {
-            this.attributes = null;
+            this(PropertySorter.NO_OP);
         }
 
-        protected HandlerUpdateOperationStepHandler(final AttributeDefinition... attributes) {
+        protected HandlerUpdateOperationStepHandler(final PropertySorter propertySorter, final AttributeDefinition... attributes) {
             this.attributes = attributes;
+            this.propertySorter = propertySorter;
         }
 
         @Override
@@ -121,7 +129,7 @@ final class HandlerOperations {
                 boolean restartRequired = false;
                 boolean reloadRequired = false;
                 for (AttributeDefinition attribute : attributes) {
-                    // Only update values for attributes defined in the operation
+                    // Only update if the attribute is on the operation
                     if (operation.has(attribute.getName())) {
                         handleProperty(attribute, context, model, logContextConfiguration, configuration);
                         restartRequired = restartRequired || Logging.requiresRestart(attribute.getFlags());
@@ -134,10 +142,14 @@ final class HandlerOperations {
                     context.reloadRequired();
                 }
             }
-            performRuntime(context, configuration, name, model);
+            performRuntime(context, configuration, operation, name, model);
+
+            // It's important that properties are written in the correct order, reorder the properties if
+            // needed before the commit.
+            addOrderPropertiesStep(context, propertySorter, configuration);
         }
 
-        public void performRuntime(final OperationContext context, final HandlerConfiguration configuration, final String name, final ModelNode model) throws OperationFailedException {
+        public void performRuntime(final OperationContext context, final HandlerConfiguration configuration, final ModelNode operation, final String name, final ModelNode model) throws OperationFailedException {
             // No-op by default
         }
     }
@@ -149,14 +161,16 @@ final class HandlerOperations {
         private final String[] constructionProperties;
         private final AttributeDefinition[] attributes;
         private final Class<? extends Handler> type;
+        private final PropertySorter propertySorter;
 
         protected HandlerAddOperationStepHandler(final Class<? extends Handler> type, final AttributeDefinition[] attributes) {
             this.type = type;
             this.constructionProperties = null;
             this.attributes = attributes;
+            this.propertySorter = PropertySorter.NO_OP;
         }
 
-        protected HandlerAddOperationStepHandler(final Class<? extends Handler> type, final AttributeDefinition[] attributes, final ConfigurationProperty<?>... constructionProperties) {
+        protected HandlerAddOperationStepHandler(final PropertySorter propertySorter, final Class<? extends Handler> type, final AttributeDefinition[] attributes, final ConfigurationProperty<?>... constructionProperties) {
             this.type = type;
             this.attributes = attributes;
             final List<String> names = new ArrayList<String>();
@@ -164,6 +178,7 @@ final class HandlerOperations {
                 names.add(prop.getPropertyName());
             }
             this.constructionProperties = names.toArray(new String[names.size()]);
+            this.propertySorter = propertySorter;
         }
 
         @Override
@@ -197,11 +212,20 @@ final class HandlerOperations {
             }
 
             HandlerConfiguration configuration = logContextConfiguration.getHandlerConfiguration(name);
+            boolean replaceHandler = false;
             final boolean exists = configuration != null;
             if (!exists) {
                 LoggingLogger.ROOT_LOGGER.tracef("Adding handler '%s' at '%s'", name, LoggingOperations.getAddress(operation));
                 configuration = createHandlerConfiguration(className, moduleName, name, logContextConfiguration);
+            } else if (Log4jAppenderHandler.class.getName().equals(configuration.getClassName())) {
+                // Check the POJO names
+                final PojoConfiguration log4jPojo = logContextConfiguration.getPojoConfiguration(name);
+                replaceHandler = (log4jPojo != null && !className.equals(log4jPojo.getClassName()) || (moduleName == null ? log4jPojo.getModuleName() != null : !moduleName.equals(log4jPojo.getModuleName())));
             } else if (!className.equals(configuration.getClassName()) || (moduleName == null ? configuration.getModuleName() != null : !moduleName.equals(configuration.getModuleName()))) {
+                replaceHandler = true;
+            }
+
+            if (replaceHandler) {
                 LoggingLogger.ROOT_LOGGER.replacingNamedHandler(name);
                 LoggingLogger.ROOT_LOGGER.debugf("Removing handler %s of type '%s' in module '%s' and replacing with type '%s' in module '%s'",
                         name, configuration.getClassName(), configuration.getModuleName(), className, moduleName);
@@ -221,13 +245,18 @@ final class HandlerOperations {
                 if ((attribute.equals(CLASS) || attribute.equals(MODULE)) || attribute.equals(FILTER)) {
                     skip = true;
                 } else {
-                    // No need to change values that are equal
+                    // No need to change values that are equal, also values like a file name that are equal could result
+                    // already logged data being overwritten
                     skip = (exists && equalValue(attribute, context, model, logContextConfiguration, configuration));
                 }
 
                 if (!skip)
                     handleProperty(attribute, context, model, logContextConfiguration, configuration);
             }
+
+            // It's important that properties are written in the correct order, reorder the properties if
+            // needed before the commit.
+            addOrderPropertiesStep(context, propertySorter, configuration);
         }
 
         protected HandlerConfiguration createHandlerConfiguration(final String className,
@@ -281,9 +310,15 @@ final class HandlerOperations {
      * A default log handler write attribute step handler.
      */
     static class LogHandlerWriteAttributeHandler extends LoggingOperations.LoggingWriteAttributeHandler {
+        private final PropertySorter propertySorter;
 
         protected LogHandlerWriteAttributeHandler(final AttributeDefinition... attributes) {
+            this(PropertySorter.NO_OP, attributes);
+        }
+
+        protected LogHandlerWriteAttributeHandler(final PropertySorter propertySorter, final AttributeDefinition... attributes) {
             super(attributes);
+            this.propertySorter = propertySorter;
         }
 
         @Override
@@ -335,11 +370,15 @@ final class HandlerOperations {
                     for (AttributeDefinition attribute : getAttributes()) {
                         if (attribute.getName().equals(attributeName)) {
                             handleProperty(attribute, context, value, logContextConfiguration, configuration, false);
-                            restartRequired = Logging.requiresRestart(attribute.getFlags());
+                            restartRequired = Logging.requiresReload(attribute.getFlags());
                             break;
                         }
                     }
                 }
+
+                // It's important that properties are written in the correct order, reorder the properties if
+                // needed before the commit.
+                addOrderPropertiesStep(context, propertySorter, configuration);
             }
             return restartRequired;
         }
@@ -355,13 +394,28 @@ final class HandlerOperations {
                 // Undefine the filter-spec
                 model.getModel().get(CommonAttributes.FILTER_SPEC.getName()).set(filterSpecValue);
             }
+
+            // Undefine formatter attribute if writing a named-formatter
+            if (AbstractHandlerDefinition.NAMED_FORMATTER.getName().equals(attributeName)) {
+                // If the formatter is defined in the model, remove it
+                final ModelNode m = model.getModel();
+                if (m.hasDefined(AbstractHandlerDefinition.FORMATTER.getName())) {
+                    m.get(AbstractHandlerDefinition.FORMATTER.getName()).clear();
+                }
+            } else if (AbstractHandlerDefinition.FORMATTER.getName().equals(attributeName)) {
+                // If the named-formatter is defined in the model, remove it
+                final ModelNode m = model.getModel();
+                if (m.hasDefined(AbstractHandlerDefinition.NAMED_FORMATTER.getName())) {
+                    m.get(AbstractHandlerDefinition.NAMED_FORMATTER.getName()).clear();
+                }
+            }
         }
     }
 
     /**
      * A step handler to remove a handler
      */
-    static final OperationStepHandler CHANGE_LEVEL = new HandlerUpdateOperationStepHandler(LEVEL);
+    static final OperationStepHandler CHANGE_LEVEL = new HandlerUpdateOperationStepHandler(PropertySorter.NO_OP, LEVEL);
 
     /**
      * A step handler to remove a handler
@@ -397,14 +451,13 @@ final class HandlerOperations {
     static final OperationStepHandler ADD_SUBHANDLER = new HandlerUpdateOperationStepHandler() {
         @Override
         public void updateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
-            HANDLER_NAME.validateAndSet(operation, model);
             model.get(SUBHANDLERS.getName()).add(operation.get(HANDLER_NAME.getName()));
         }
 
         @Override
-        public void performRuntime(final OperationContext context, final HandlerConfiguration configuration, final String name, final ModelNode model) throws OperationFailedException {
+        public void performRuntime(final OperationContext context, final HandlerConfiguration configuration, final ModelNode operation, final String name, final ModelNode model) throws OperationFailedException {
             // Get the handler name
-            final String handlerName = HANDLER_NAME.resolveModelAttribute(context, model).asString();
+            final String handlerName = HANDLER_NAME.resolveModelAttribute(context, operation).asString();
             if (name.equals(handlerName)) {
                 throw createOperationFailure(LoggingMessages.MESSAGES.cannotAddHandlerToSelf(configuration.getName()));
             }
@@ -421,8 +474,7 @@ final class HandlerOperations {
     static final OperationStepHandler REMOVE_SUBHANDLER = new HandlerUpdateOperationStepHandler() {
         @Override
         public void updateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
-            HANDLER_NAME.validateAndSet(operation, model);
-            final String handlerName = model.get(HANDLER_NAME.getName()).asString();
+            final String handlerName = operation.get(HANDLER_NAME.getName()).asString();
             // Create a new handler list for the model
             boolean found = false;
             final List<ModelNode> handlers = model.get(SUBHANDLERS.getName()).asList();
@@ -440,15 +492,15 @@ final class HandlerOperations {
         }
 
         @Override
-        public void performRuntime(final OperationContext context, final HandlerConfiguration configuration, final String name, final ModelNode model) throws OperationFailedException {
-            configuration.removeHandlerName(HANDLER_NAME.resolveModelAttribute(context, model).asString());
+        public void performRuntime(final OperationContext context, final HandlerConfiguration configuration, final ModelNode operation, final String name, final ModelNode model) throws OperationFailedException {
+            configuration.removeHandlerName(HANDLER_NAME.resolveModelAttribute(context, operation).asString());
         }
     };
 
     /**
      * Changes the file for a file handler.
      */
-    static final OperationStepHandler CHANGE_FILE = new HandlerUpdateOperationStepHandler(FILE);
+    static final OperationStepHandler CHANGE_FILE = new HandlerUpdateOperationStepHandler(PropertySorter.NO_OP, FILE);
 
     static final LoggingOperations.LoggingUpdateOperationStepHandler ENABLE_HANDLER = new LoggingOperations.LoggingUpdateOperationStepHandler() {
         @Override
@@ -521,15 +573,53 @@ final class HandlerOperations {
             configuration.setEncoding(resolvedValue);
         } else if (attribute.getName().equals(FORMATTER.getName())) {
             final String formatterName = configuration.getName();
-            final FormatterConfiguration fmtConfig;
-            if (logContextConfiguration.getFormatterNames().contains(formatterName)) {
-                fmtConfig = logContextConfiguration.getFormatterConfiguration(formatterName);
+            // Use a formatter only if a named-formatter is not defined, note too that if explicitly undefining the named-formatter
+            // the formatter pattern will be used
+            if (model.hasDefined(NAMED_FORMATTER.getName())) {
+                final ModelNode valueNode = (resolveValue ? NAMED_FORMATTER.resolveModelAttribute(context, model) : model);
+                final String resolvedValue = (valueNode.isDefined() ? valueNode.asString() : null);
+                configuration.setFormatterName(resolvedValue);
+                // Check the current formatter name, if it's the same name as the handler, remove the old formatter
+                if (!formatterName.equals(resolvedValue) && logContextConfiguration.getFormatterNames().contains(formatterName)) {
+                    logContextConfiguration.removeFormatterConfiguration(formatterName);
+                }
             } else {
-                fmtConfig = logContextConfiguration.addFormatterConfiguration(null, PatternFormatter.class.getName(), formatterName, "pattern");
+                // Use a formatter only if a named-formatter is not defined or the named-formatter was explicitly undefined
+                final FormatterConfiguration fmtConfig;
+                if (logContextConfiguration.getFormatterNames().contains(formatterName)) {
+                    fmtConfig = logContextConfiguration.getFormatterConfiguration(formatterName);
+                } else {
+                    fmtConfig = logContextConfiguration.addFormatterConfiguration(null, PatternFormatter.class.getName(), formatterName, PATTERN.getPropertyName());
+                }
+                final String resolvedValue = (resolveValue ? FORMATTER.resolvePropertyValue(context, model) : model.asString());
+                fmtConfig.setPropertyValueString(PATTERN.getPropertyName(), resolvedValue);
+                configuration.setFormatterName(formatterName);
             }
-            final String resolvedValue = (resolveValue ? FORMATTER.resolvePropertyValue(context, model) : model.asString());
-            fmtConfig.setPropertyValueString("pattern", resolvedValue);
-            configuration.setFormatterName(formatterName);
+        } else if (attribute.getName().equals(NAMED_FORMATTER.getName())) {
+            final String formatterName = configuration.getName();
+            final ModelNode valueNode = (resolveValue ? NAMED_FORMATTER.resolveModelAttribute(context, model) : model);
+            // If the value not is undefined, this may have come from a undefine-attribute operation
+            if (valueNode.isDefined()) {
+                final String resolvedValue = valueNode.asString();
+                configuration.setFormatterName(resolvedValue);
+                // Check the current formatter name, if it's the same name as the handler, remove the old formatter
+                if (!formatterName.equals(resolvedValue) && logContextConfiguration.getFormatterNames().contains(formatterName)) {
+                    logContextConfiguration.removeFormatterConfiguration(formatterName);
+                }
+            } else {
+                // If the current formatter name already equals the name defined in the configuration, there is no need to process
+                if (!formatterName.equals(configuration.getFormatterName())) {
+                    // Use a formatter only if a named-formatter is not defined or the named-formatter was explicitly undefined
+                    final FormatterConfiguration fmtConfig;
+                    if (logContextConfiguration.getFormatterNames().contains(formatterName)) {
+                        fmtConfig = logContextConfiguration.getFormatterConfiguration(formatterName);
+                    } else {
+                        fmtConfig = logContextConfiguration.addFormatterConfiguration(null, PatternFormatter.class.getName(), formatterName, PATTERN.getPropertyName());
+                    }
+                    fmtConfig.setPropertyValueString(PATTERN.getPropertyName(), FORMATTER.resolvePropertyValue(context, model));
+                    configuration.setFormatterName(formatterName);
+                }
+            }
         } else if (attribute.getName().equals(FILTER_SPEC.getName())) {
             final ModelNode valueNode = (resolveValue ? FILTER_SPEC.resolveModelAttribute(context, model) : model);
             final String resolvedValue = (valueNode.isDefined() ? valueNode.asString() : null);
@@ -616,15 +706,25 @@ final class HandlerOperations {
             result = (resolvedValue == null ? currentValue == null : resolvedValue.equals(currentValue));
         } else if (attribute.getName().equals(FORMATTER.getName())) {
             final String formatterName = configuration.getName();
-            final FormatterConfiguration fmtConfig;
-            if (logContextConfiguration.getFormatterNames().contains(formatterName)) {
-                fmtConfig = logContextConfiguration.getFormatterConfiguration(formatterName);
-                final String resolvedValue = FORMATTER.resolvePropertyValue(context, model);
-                final String currentValue = fmtConfig.getPropertyValueString("pattern");
-                result = (resolvedValue == null ? currentValue == null : resolvedValue.equals(currentValue));
+            // Only check the pattern if the name matches the currently configured name
+            if (formatterName.equals(configuration.getFormatterNameValueExpression().getResolvedValue())) {
+                final FormatterConfiguration fmtConfig;
+                if (logContextConfiguration.getFormatterNames().contains(formatterName)) {
+                    fmtConfig = logContextConfiguration.getFormatterConfiguration(formatterName);
+                    final String resolvedValue = FORMATTER.resolvePropertyValue(context, model);
+                    final String currentValue = fmtConfig.getPropertyValueString(PATTERN_FORMATTER.getName());
+                    result = (resolvedValue == null ? currentValue == null : resolvedValue.equals(currentValue));
+                } else {
+                    result = false;
+                }
             } else {
                 result = false;
             }
+        } else if (attribute.getName().equals(NAMED_FORMATTER.getName())) {
+            final ModelNode valueNode = NAMED_FORMATTER.resolveModelAttribute(context, model);
+            final String resolvedValue = (valueNode.isDefined() ? valueNode.asString() : null);
+            final String currentValue = configuration.getFormatterName();
+            result = (resolvedValue == null ? currentValue == null : resolvedValue.equals(currentValue));
         } else if (attribute.getName().equals(FILTER_SPEC.getName())) {
             final ModelNode valueNode = FILTER_SPEC.resolveModelAttribute(context, model);
             final String resolvedValue = (valueNode.isDefined() ? valueNode.asString() : null);
@@ -666,9 +766,9 @@ final class HandlerOperations {
                 }
             }
         } else {
-            if (attribute instanceof PropertyAttributeDefinition) {
-                final PropertyAttributeDefinition propAttribute = ((PropertyAttributeDefinition) attribute);
-                final String resolvedValue = propAttribute.resolvePropertyValue(context, model);
+            if (attribute instanceof ConfigurationProperty) {
+                final ConfigurationProperty<?> propAttribute = ((ConfigurationProperty<?>) attribute);
+                final String resolvedValue = String.valueOf(propAttribute.resolvePropertyValue(context, model));
                 final String currentValue = configuration.getPropertyValueString(propAttribute.getPropertyName());
                 result = (resolvedValue == null ? currentValue == null : resolvedValue.equals(currentValue));
             } else {
@@ -682,7 +782,7 @@ final class HandlerOperations {
     /**
      * Checks to see if a handler is disabled
      *
-     * @param handlerName   the name of the handler to enable.
+     * @param handlerName the name of the handler to enable.
      */
     static boolean isDisabledHandler(final LogContext logContext, final String handlerName) {
         final Map<String, String> disableHandlers = logContext.getAttachment(CommonAttributes.ROOT_LOGGER_NAME, DISABLED_HANDLERS_KEY);
@@ -749,4 +849,16 @@ final class HandlerOperations {
         }
     }
 
+    private static void addOrderPropertiesStep(final OperationContext context, final PropertySorter propertySorter, final PropertyConfigurable configuration) {
+        if (propertySorter.isReorderRequired(configuration)) {
+            context.addStep(new OperationStepHandler() {
+                @Override
+                public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
+                    propertySorter.sort(configuration);
+                    // Nothing to really rollback, properties are only reordered
+                    context.completeStep(ResultHandler.NOOP_RESULT_HANDLER);
+                }
+            }, Stage.RUNTIME);
+        }
+    }
 }

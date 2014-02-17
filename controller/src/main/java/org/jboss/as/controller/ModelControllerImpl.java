@@ -22,11 +22,14 @@
 
 package org.jboss.as.controller;
 
+import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.controller.ControllerLogger.MGMT_OP_LOGGER;
 import static org.jboss.as.controller.ControllerLogger.ROOT_LOGGER;
 import static org.jboss.as.controller.ControllerMessages.MESSAGES;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ACCESS_MECHANISM;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ALLOW_RESOURCE_SERVICE_RESTART;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CANCELLED;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DOMAIN_UUID;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
@@ -38,6 +41,8 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RES
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ROLLBACK_ON_RUNTIME_FAILURE;
 
 import java.io.IOException;
+import java.security.AccessControlContext;
+import java.security.PrivilegedAction;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -51,6 +56,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.jboss.as.controller.access.Authorizer;
+import org.jboss.as.controller.audit.AuditLogger;
+import org.jboss.as.controller.audit.ManagedAuditLogger;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.client.Operation;
 import org.jboss.as.controller.client.OperationAttachments;
@@ -62,12 +70,16 @@ import org.jboss.as.controller.persistence.ConfigurationPersistenceException;
 import org.jboss.as.controller.persistence.ConfigurationPersister;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.as.controller.registry.Resource;
+import org.jboss.as.core.security.AccessMechanism;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.threads.AsyncFuture;
 import org.jboss.threads.AsyncFutureTask;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
+
 
 /**
  * Default {@link ModelController} implementation.
@@ -90,14 +102,20 @@ class ModelControllerImpl implements ModelController {
     private final ControlledProcessState processState;
     private final ExecutorService executorService;
     private final ExpressionResolver expressionResolver;
+    private final Authorizer authorizer;
 
-    private final ConcurrentMap<Integer, OperationContext> activeOperations = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Integer, AbstractOperationContext> activeOperations = new ConcurrentHashMap<>();
+    private final ManagedAuditLogger auditLogger;
+
+    /** Tracks the relationship between domain resources and hosts and server groups */
+    private final HostServerGroupTracker hostServerGroupTracker;
 
     ModelControllerImpl(final ServiceRegistry serviceRegistry, final ServiceTarget serviceTarget, final ManagementResourceRegistration rootRegistration,
                         final ContainerStateMonitor stateMonitor, final ConfigurationPersister persister,
                         final ProcessType processType, final RunningModeControl runningModeControl,
                         final OperationStepHandler prepareStep, final ControlledProcessState processState, final ExecutorService executorService,
-                        final ExpressionResolver expressionResolver) {
+                        final ExpressionResolver expressionResolver, final Authorizer authorizer,
+                        final ManagedAuditLogger auditLogger) {
         this.serviceRegistry = serviceRegistry;
         this.serviceTarget = serviceTarget;
         this.rootRegistration = rootRegistration;
@@ -110,6 +128,10 @@ class ModelControllerImpl implements ModelController {
         this.serviceTarget.addListener(stateMonitor);
         this.executorService = executorService;
         this.expressionResolver = expressionResolver;
+        this.authorizer = authorizer;
+        this.auditLogger = auditLogger;
+        this.hostServerGroupTracker = processType.isManagedDomain() ? new HostServerGroupTracker() : null;
+        auditLogger.startBoot();
     }
 
     /**
@@ -142,10 +164,10 @@ class ModelControllerImpl implements ModelController {
         }
 
         // Get the primary context to delegate the reads to
-        final OperationContext delegateContext = activeOperations.get(operationId);
+        final AbstractOperationContext delegateContext = activeOperations.get(operationId);
         if(delegateContext == null) {
             // TODO we might just allow this case too, but for now it's just wrong (internal) usage
-            throw new IllegalStateException("no context to delegate with id: " + operationId);
+            throw MESSAGES.noContextToDelegateTo(operationId);
         }
         final ModelNode response = new ModelNode();
         final OperationTransactionControl originalResultTxControl = control == null ? null : new OperationTransactionControl() {
@@ -202,7 +224,6 @@ class ModelControllerImpl implements ModelController {
         if (restartResourceServices) {
             contextFlags.add(OperationContextImpl.ContextFlag.ALLOW_RESOURCE_SERVICE_RESTART);
         }
-
         final ModelNode response = new ModelNode();
         // Report the correct operation response, otherwise the preparedResult would only contain
         // the result of the last active step in a composite operation
@@ -213,10 +234,26 @@ class ModelControllerImpl implements ModelController {
             }
         };
 
+        AccessAuditContext accessContext = SecurityActions.currentAccessAuditContext();
+        if (accessContext != null) {
+            if (operation.hasDefined(OPERATION_HEADERS)) {
+                ModelNode operationHeaders = operation.get(OPERATION_HEADERS);
+                if (operationHeaders.hasDefined(DOMAIN_UUID)) {
+                    accessContext.setDomainUuid(operationHeaders.get(DOMAIN_UUID).asString());
+                }
+                if (operationHeaders.hasDefined(ACCESS_MECHANISM)) {
+                    accessContext
+                            .setAccessMechanism(AccessMechanism.valueOf(operationHeaders.get(ACCESS_MECHANISM).asString()));
+                }
+            }
+        }
+
         for (;;) {
             // Create a random operation-id
             final Integer operationID = new Random(new SecureRandom().nextLong()).nextInt();
-            final OperationContextImpl context = new OperationContextImpl(this, processType, runningModeControl.getRunningMode(), contextFlags, handler, attachments, model, originalResultTxControl, processState, bootingFlag.get(), operationID);
+            final OperationContextImpl context = new OperationContextImpl(this, processType, runningModeControl.getRunningMode(),
+                    contextFlags, handler, attachments, model, originalResultTxControl, processState, auditLogger,
+                    bootingFlag.get(), operationID, hostServerGroupTracker);
             // Try again if the operation-id is already taken
             if(activeOperations.putIfAbsent(operationID, context) == null) {
                 CurrentOperationIdHolder.setCurrentOperationID(operationID);
@@ -267,7 +304,7 @@ class ModelControllerImpl implements ModelController {
                 ? EnumSet.of(OperationContextImpl.ContextFlag.ROLLBACK_ON_FAIL)
                 : EnumSet.noneOf(OperationContextImpl.ContextFlag.class);
         final OperationContextImpl context = new OperationContextImpl(this, processType, runningModeControl.getRunningMode(),
-                contextFlags, handler, null, model, control, processState, bootingFlag.get(), operationID);
+                contextFlags, handler, null, model, control, processState, auditLogger, bootingFlag.get(), operationID, hostServerGroupTracker);
 
         // Add to the context all ops prior to the first ExtensionAddHandler as well as all ExtensionAddHandlers; save the rest.
         // This gets extensions registered before proceeding to other ops that count on these registrations
@@ -279,7 +316,7 @@ class ModelControllerImpl implements ModelController {
 
             // Success. Now any extension handlers are registered. Continue with remaining ops
             final OperationContextImpl postExtContext = new OperationContextImpl(this, processType, runningModeControl.getRunningMode(),
-                    contextFlags, handler, null, model, control, processState, bootingFlag.get(), operationID);
+                    contextFlags, handler, null, model, control, processState, auditLogger, bootingFlag.get(), operationID, hostServerGroupTracker);
 
             for (ParsedBootOp parsedOp : postExtensionOps) {
                 final OperationStepHandler stepHandler = parsedOp.handler == null ? rootRegistration.getOperationHandler(parsedOp.address, parsedOp.operationName) : parsedOp.handler;
@@ -398,6 +435,8 @@ class ModelControllerImpl implements ModelController {
     }
 
     void finishBoot() {
+        // Notify the audit logger that we're done booting
+        auditLogger.bootDone();
         bootingFlag.set(false);
     }
 
@@ -497,11 +536,19 @@ class ModelControllerImpl implements ModelController {
                     }
                 }
                 final OpTask opTask = new OpTask();
+                final AccessControlContext acc = doPrivileged(GetAccessControlContextAction.getInstance());
                 executor.execute(new Runnable() {
                     public void run() {
                         try {
                             if (opThread.compareAndSet(null, Thread.currentThread())) {
-                                ModelNode response = ModelControllerImpl.this.execute(operation, messageHandler, OperationTransactionControl.COMMIT, attachments);
+                                ModelNode response = doPrivileged(new PrivilegedAction<ModelNode>() {
+
+                                    @Override
+                                    public ModelNode run() {
+                                        return ModelControllerImpl.this.execute(operation, messageHandler,
+                                                OperationTransactionControl.COMMIT, attachments);
+                                    }
+                                }, acc);
                                 opTask.handleResult(response);
                             }
                         } finally {
@@ -518,12 +565,17 @@ class ModelControllerImpl implements ModelController {
     }
 
     ConfigurationPersister.PersistenceResource writeModel(final Resource resource, Set<PathAddress> affectedAddresses) throws ConfigurationPersistenceException {
-        final ModelNode newModel = Resource.Tools.readModel(resource);  // Get the model representation
+        final ModelNode newModel = Resource.Tools.readModel(resource);
         final ConfigurationPersister.PersistenceResource delegate = persister.store(newModel, affectedAddresses);
         return new ConfigurationPersister.PersistenceResource() {
 
             @Override
             public void commit() {
+                // Discard the tracker first, so if there's any race the new OperationContextImpl
+                // gets a cleared tracker
+                if (hostServerGroupTracker != null) {
+                    hostServerGroupTracker.invalidate();
+                }
                 model.set(resource);
                 delegate.commit();
             }
@@ -577,9 +629,12 @@ class ModelControllerImpl implements ModelController {
         return serviceTarget;
     }
 
-
     ModelNode resolveExpressions(ModelNode node) throws OperationFailedException {
         return expressionResolver.resolveExpressions(node);
+    }
+
+    Authorizer getAuthorizer() {
+        return authorizer;
     }
 
     private void logNoHandler(ParsedBootOp parsedOp) {
@@ -592,19 +647,24 @@ class ModelControllerImpl implements ModelController {
 
     }
 
+    AuditLogger getAuditLogger() {
+        return auditLogger;
+    }
+
     private class DefaultPrepareStepHandler implements OperationStepHandler {
 
         @Override
         public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
             if (MGMT_OP_LOGGER.isTraceEnabled()) {
-                MGMT_OP_LOGGER.trace("Executing " + operation.get(OP) + " " + operation.get(OP_ADDR));
+                MGMT_OP_LOGGER.tracef("Executing %s %s", operation.get(OP), operation.get(OP_ADDR));
             }
             final PathAddress address = PathAddress.pathAddress(operation.get(OP_ADDR));
             final String operationName =  operation.require(OP).asString();
-            final OperationStepHandler stepHandler = rootRegistration.getOperationHandler(address, operationName);
+            final OperationStepHandler stepHandler = resolveOperationHandler(address, operationName);
             if(stepHandler != null) {
                 context.addStep(stepHandler, OperationContext.Stage.MODEL);
             } else {
+
                 ImmutableManagementResourceRegistration child = rootRegistration.getSubModel(address);
                 if (child == null) {
                     context.getFailureDescription().set(MESSAGES.noSuchResourceType(address));
@@ -616,6 +676,40 @@ class ModelControllerImpl implements ModelController {
         }
     }
 
+    private OperationStepHandler resolveOperationHandler(final PathAddress address, final String operationName) {
+        OperationStepHandler result = rootRegistration.getOperationHandler(address, operationName);
+        if (result == null && address.size() > 0) {
+            // For wildcard elements, check specific registrations where the same OSH is used
+            // for all such registrations
+            PathElement pe = address.getLastElement();
+            if (pe.isWildcard()) {
+                String type = pe.getKey();
+                PathAddress parent = address.subAddress(0, address.size() - 1);
+                Set<PathElement> children = rootRegistration.getChildAddresses(parent);
+                if (children != null) {
+                    OperationStepHandler found = null;
+                    for (PathElement child : children) {
+                        if (type.equals(child.getKey())) {
+                            OperationEntry oe = rootRegistration.getOperationEntry(parent.append(child), operationName);
+                            OperationStepHandler osh = oe == null ? null : oe.getOperationHandler();
+                            if (osh == null || (found != null && !found.equals(osh))) {
+                                // Not all children have the same handler; give up
+                                found = null;
+                                break;
+                            }
+                            // We have a candidate OSH
+                            found = osh;
+                        }
+                    }
+                    if (found != null) {
+                        result = found;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
     /**
      * The root resource, maintains a read-only reference to the current model. All write operations have to performed
      * after acquiring the write lock on a clone of the underlying model.
@@ -624,6 +718,11 @@ class ModelControllerImpl implements ModelController {
 
         private final AtomicReference<Resource> modelReference = new AtomicReference<Resource>(Resource.Factory.create());
 
+        /**
+         * Publishes the new version of the model to any handlers that have a reference to this object.
+         * Thereafter any calls to the methods of this object will delegate to the new version.
+         * TODO handlers with a local variable reference to children of this resource will see the old model.
+         */
         void set(Resource resource){
             modelReference.set(resource);
         }
@@ -699,5 +798,7 @@ class ModelControllerImpl implements ModelController {
         }
 
     }
+
+
 
 }

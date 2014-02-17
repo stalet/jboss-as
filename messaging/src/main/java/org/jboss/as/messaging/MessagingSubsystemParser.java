@@ -129,6 +129,8 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
             case MESSAGING_1_1:
             case MESSAGING_1_2:
             case MESSAGING_1_3:
+            case MESSAGING_1_4:
+            case MESSAGING_2_0:
                 processHornetQServers(reader, address, list);
                 break;
             default:
@@ -281,6 +283,11 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 case THREAD_POOL_MAX_SIZE: {
                     // Use the "server" variant
                     handleElementText(reader, element, "server", operation);
+                    break;
+                }
+                case MESSAGE_COUNTER_ENABLED: {
+                    MessagingLogger.ROOT_LOGGER.deprecatedXMLElement(element.toString(), Element.STATISTICS_ENABLED.toString());
+                    handleElementText(reader, element, operation);
                     break;
                 }
                 case HORNETQ_SERVER:
@@ -627,7 +634,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                     break;
                 }
                 default: {
-                    throw ParseUtils.unexpectedElement(reader);
+                    handleUnknownGroupingHandlerAttribute(reader, element, groupingHandlerAdd);
                 }
             }
         }
@@ -637,6 +644,11 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
 
         updates.add(groupingHandlerAdd);
+    }
+
+    protected void handleUnknownGroupingHandlerAttribute(XMLExtendedStreamReader reader, Element element, ModelNode operation)
+            throws XMLStreamException {
+        throw ParseUtils.unexpectedElement(reader);
     }
 
     private void processRemotingInterceptors(XMLExtendedStreamReader reader, ModelNode operation) throws XMLStreamException {
@@ -833,7 +845,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
        }
     }
 
-    static void processAcceptors(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
+   void processAcceptors(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             String name = null;
             String socketBinding = null;
@@ -1063,7 +1075,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         return reader.getListAttributeValue(index);
     }
 
-    static void processConnectors(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
+     void processConnectors(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             String name = null;
             String socketBinding = null;
@@ -1131,7 +1143,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
     }
 
-    static void processAddressSettings(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> operations) throws XMLStreamException {
+    protected void processAddressSettings(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> operations) throws XMLStreamException {
         String localName = null;
         do {
             reader.nextTag();
@@ -1152,7 +1164,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         } while (reader.hasNext() && localName.equals(Element.ADDRESS_SETTING.getLocalName()));
     }
 
-    static ModelNode parseAddressSettings(final XMLExtendedStreamReader reader) throws XMLStreamException {
+    protected ModelNode parseAddressSettings(final XMLExtendedStreamReader reader) throws XMLStreamException {
         final ModelNode addressSettingsSpec = new ModelNode();
 
         String localName;
@@ -1161,7 +1173,6 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
             localName = reader.getLocalName();
             final Element element = Element.forName(localName);
 
-            SWITCH:
             switch (element) {
                 case DEAD_LETTER_ADDRESS:
                 case EXPIRY_ADDRESS:
@@ -1176,8 +1187,9 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 case REDISTRIBUTION_DELAY:
                 case SEND_TO_DLA_ON_NO_ROUTE: {
                     handleElementText(reader, element, addressSettingsSpec);
-                    break SWITCH;
+                    break;
                 } default: {
+                    handleUnknownAddressSetting(reader, element, addressSettingsSpec);
                     break;
                 }
             }
@@ -1186,7 +1198,12 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         return addressSettingsSpec;
     }
 
-    static void parseTransportConfiguration(final XMLExtendedStreamReader reader, final ModelNode operation, final boolean generic) throws XMLStreamException {
+    protected void handleUnknownAddressSetting(XMLExtendedStreamReader reader, Element element, ModelNode addressSettingsAdd)
+            throws XMLStreamException {
+        // do nothing
+    }
+
+    void parseTransportConfiguration(final XMLExtendedStreamReader reader, final ModelNode operation, final boolean generic) throws XMLStreamException {
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             Element element = Element.forName(reader.getLocalName());
             switch(element) {

@@ -27,6 +27,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.JTree;
 import javax.swing.text.JTextComponent;
 import org.jboss.as.cli.gui.ManagementModelNode.UserObject;
+import org.jboss.as.cli.gui.metacommand.ExploreNodeAction;
 import org.jboss.dmr.ModelNode;
 
 /**
@@ -60,6 +61,8 @@ public class OperationMenu extends JPopupMenu {
      */
     public void show(ManagementModelNode node, int x, int y) {
         removeAll();
+        addExploreOption(node);
+
         String addressPath = node.addressPath();
         try {
             ModelNode  opNames = executor.doCommand(addressPath + ":read-operation-names");
@@ -81,6 +84,12 @@ public class OperationMenu extends JPopupMenu {
         }
 
         super.show(invoker, x, y);
+    }
+
+    private void addExploreOption(ManagementModelNode node) {
+        if (node.isLeaf()) return;
+        add(new ExploreNodeAction(cliGuiCtx));
+        addSeparator();
     }
 
     private ModelNode getResourceDescription(String addressPath, String name) {
@@ -116,10 +125,18 @@ public class OperationMenu extends JPopupMenu {
             }
         }
 
+        private boolean isNoArgOperation(ModelNode requestProperties) {
+            // add operation has implicit 'name' param
+            if (opName.equals("add")) return false;
+
+            return (requestProperties == null) || (!requestProperties.isDefined()) || requestProperties.asList().isEmpty();
+        }
+
         public void actionPerformed(ActionEvent ae) {
             JTextComponent cmdText = cliGuiCtx.getCommandLine().getCmdText();
             ModelNode requestProperties = opDescription.get("result", "request-properties");
-            if ((requestProperties == null) || (!requestProperties.isDefined()) || requestProperties.asList().isEmpty()) {
+
+            if (isNoArgOperation(requestProperties)) {
                 cmdText.setText(addressPath + ":" + opName);
                 cmdText.requestFocus();
                 return;

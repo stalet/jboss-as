@@ -20,7 +20,7 @@ import org.jboss.invocation.ContextClassLoaderInterceptor;
 import org.jboss.invocation.ImmediateInterceptorFactory;
 import org.jboss.invocation.InterceptorFactory;
 import org.jboss.invocation.Interceptors;
-import org.jboss.invocation.PrivilegedInterceptor;
+import org.jboss.invocation.PrivilegedWithCombinerInterceptor;
 import org.jboss.invocation.proxy.MethodIdentifier;
 import org.jboss.modules.Module;
 
@@ -34,7 +34,6 @@ class DefaultComponentConfigurator extends AbstractComponentConfigurator impleme
     public void configure(final DeploymentPhaseContext context, final ComponentDescription description, final ComponentConfiguration configuration) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = context.getDeploymentUnit();
         final DeploymentReflectionIndex deploymentReflectionIndex = deploymentUnit.getAttachment(REFLECTION_INDEX);
-        final Object instanceKey = BasicComponentInstance.INSTANCE_KEY;
         final Module module = deploymentUnit.getAttachment(org.jboss.as.server.deployment.Attachments.MODULE);
         final EEApplicationClasses applicationClasses = deploymentUnit.getAttachment(Attachments.EE_APPLICATION_CLASSES_DESCRIPTION);
         final EEModuleDescription moduleDescription = deploymentUnit.getAttachment(Attachments.EE_MODULE_DESCRIPTION);
@@ -71,12 +70,12 @@ class DefaultComponentConfigurator extends AbstractComponentConfigurator impleme
         }
 
 
-        destructors.addLast(new ManagedReferenceReleaseInterceptorFactory(instanceKey));
+        destructors.addLast(new ImmediateInterceptorFactory(new ManagedReferenceReleaseInterceptor(BasicComponentInstance.INSTANCE_KEY)));
 
         new ClassDescriptionTraversal(configuration.getComponentClass(), applicationClasses) {
             @Override
             public void handle(Class<?> clazz, EEModuleClassDescription classDescription) throws DeploymentUnitProcessingException {
-                mergeInjectionsForClass(clazz, configuration.getComponentClass(), classDescription, moduleDescription, deploymentReflectionIndex, description, configuration, context, injectors, instanceKey, uninjectors, metadataComplete);
+                mergeInjectionsForClass(clazz, configuration.getComponentClass(), classDescription, moduleDescription, deploymentReflectionIndex, description, configuration, context, injectors, BasicComponentInstance.INSTANCE_KEY, uninjectors, metadataComplete);
             }
         }.run();
 
@@ -87,17 +86,20 @@ class DefaultComponentConfigurator extends AbstractComponentConfigurator impleme
 
                 final InterceptorClassDescription interceptorConfig = InterceptorClassDescription.merge(ComponentDescription.mergeInterceptorConfig(clazz, classDescription, description, metadataComplete), moduleDescription.getInterceptorClassOverride(clazz.getName()));
 
-                handleClassMethod(clazz, interceptorConfig.getPostConstruct(), userPostConstruct, true, true);
-                handleClassMethod(clazz, interceptorConfig.getPreDestroy(), userPreDestroy, true, true);
                 handleClassMethod(clazz, interceptorConfig.getAroundInvoke(), componentUserAroundInvoke, false, false);
 
                 if (description.isTimerServiceRequired()) {
                     handleClassMethod(clazz, interceptorConfig.getAroundTimeout(), componentUserAroundTimeout, false, false);
                 }
+                if (!description.isIgnoreLifecycleInterceptors()) {
+                    handleClassMethod(clazz, interceptorConfig.getPostConstruct(), userPostConstruct, true, true);
+                    handleClassMethod(clazz, interceptorConfig.getPreDestroy(), userPreDestroy, true, true);
 
-                if (description.isPassivationApplicable()) {
-                    handleClassMethod(clazz, interceptorConfig.getPrePassivate(), componentUserPrePassivate, false, false);
-                    handleClassMethod(clazz, interceptorConfig.getPostActivate(), componentUserPostActivate, false, false);
+
+                    if (description.isPassivationApplicable()) {
+                        handleClassMethod(clazz, interceptorConfig.getPrePassivate(), componentUserPrePassivate, false, false);
+                        handleClassMethod(clazz, interceptorConfig.getPostActivate(), componentUserPostActivate, false, false);
+                    }
                 }
             }
 
@@ -105,7 +107,7 @@ class DefaultComponentConfigurator extends AbstractComponentConfigurator impleme
                 if (methodIdentifier != null) {
                     final Method method = ClassReflectionIndexUtil.findRequiredMethod(deploymentReflectionIndex, clazz, methodIdentifier);
                     if (isNotOverriden(clazz, method, configuration.getComponentClass(), deploymentReflectionIndex)) {
-                        InterceptorFactory interceptorFactory = new ManagedReferenceLifecycleMethodInterceptorFactory(instanceKey, method, changeMethod, lifecycleMethod);
+                        InterceptorFactory interceptorFactory = new ImmediateInterceptorFactory(new ManagedReferenceLifecycleMethodInterceptor(BasicComponentInstance.INSTANCE_KEY, method, changeMethod, lifecycleMethod));
                         interceptors.add(interceptorFactory);
                     }
                 }
@@ -114,7 +116,7 @@ class DefaultComponentConfigurator extends AbstractComponentConfigurator impleme
 
         final ClassLoader classLoader = module.getClassLoader();
         final InterceptorFactory tcclInterceptor = new ImmediateInterceptorFactory(new ContextClassLoaderInterceptor(classLoader));
-        final InterceptorFactory privilegedInterceptor = PrivilegedInterceptor.getFactory();
+        final InterceptorFactory privilegedInterceptor = PrivilegedWithCombinerInterceptor.getFactory();
 
 
         if (!injectors.isEmpty()) {
@@ -127,7 +129,6 @@ class DefaultComponentConfigurator extends AbstractComponentConfigurator impleme
         configuration.addPostConstructInterceptor(Interceptors.getTerminalInterceptorFactory(), InterceptorOrder.ComponentPostConstruct.TERMINAL_INTERCEPTOR);
         configuration.addPostConstructInterceptor(tcclInterceptor, InterceptorOrder.ComponentPostConstruct.TCCL_INTERCEPTOR);
         configuration.addPostConstructInterceptor(privilegedInterceptor, InterceptorOrder.ComponentPostConstruct.PRIVILEGED_INTERCEPTOR);
-
 
         // Apply pre-destroy
         if (!uninjectors.isEmpty()) {
@@ -150,7 +151,6 @@ class DefaultComponentConfigurator extends AbstractComponentConfigurator impleme
             configuration.addPrePassivateInterceptor(Interceptors.getTerminalInterceptorFactory(), InterceptorOrder.ComponentPassivation.TERMINAL_INTERCEPTOR);
             configuration.addPrePassivateInterceptor(tcclInterceptor, InterceptorOrder.ComponentPassivation.TCCL_INTERCEPTOR);
             configuration.addPrePassivateInterceptor(privilegedInterceptor, InterceptorOrder.ComponentPassivation.PRIVILEGED_INTERCEPTOR);
-
             if (!componentUserPostActivate.isEmpty()) {
                 configuration.addPostActivateInterceptor(weaved(componentUserPostActivate), InterceptorOrder.ComponentPassivation.COMPONENT_USER_INTERCEPTORS);
             }
@@ -167,7 +167,7 @@ class DefaultComponentConfigurator extends AbstractComponentConfigurator impleme
                 //now add the interceptor that initializes and the interceptor that actually invokes to the end of the interceptor chain
 
                 configuration.addComponentInterceptor(method, Interceptors.getInitialInterceptorFactory(), InterceptorOrder.Component.INITIAL_INTERCEPTOR);
-                configuration.addComponentInterceptor(method, new ManagedReferenceMethodInterceptorFactory(instanceKey, method), InterceptorOrder.Component.TERMINAL_INTERCEPTOR);
+                configuration.addComponentInterceptor(method, new ImmediateInterceptorFactory(new ManagedReferenceMethodInterceptor(BasicComponentInstance.INSTANCE_KEY, method)), InterceptorOrder.Component.TERMINAL_INTERCEPTOR);
 
                 final MethodIdentifier identifier = MethodIdentifier.getIdentifier(method.getReturnType(), method.getName(), method.getParameterTypes());
 

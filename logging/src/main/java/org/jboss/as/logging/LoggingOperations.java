@@ -41,6 +41,7 @@ import org.jboss.as.server.ServerEnvironment;
 import org.jboss.dmr.ModelNode;
 import org.jboss.logmanager.LogContext;
 import org.jboss.logmanager.config.LogContextConfiguration;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
@@ -81,14 +82,14 @@ final class LoggingOperations {
     }
 
     private static final class CommitOperationStepHandler implements OperationStepHandler {
-        private static AttachmentKey<Boolean> WRITTEN_KEY = AttachmentKey.create(Boolean.class);
+        private static final AttachmentKey<Boolean> WRITTEN_KEY = AttachmentKey.create(Boolean.class);
         private final ConfigurationPersistence configurationPersistence;
         private final boolean persistConfig;
 
         @SuppressWarnings("deprecation")
         CommitOperationStepHandler(final ConfigurationPersistence configurationPersistence) {
             this.configurationPersistence = configurationPersistence;
-            persistConfig = Boolean.parseBoolean(SecurityActions.getSystemProperty(ServerEnvironment.JBOSS_PERSIST_SERVER_CONFIG, Boolean.toString(true)));
+            persistConfig = Boolean.parseBoolean(WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.JBOSS_PERSIST_SERVER_CONFIG, Boolean.toString(true)));
         }
 
         @Override
@@ -156,6 +157,8 @@ final class LoggingOperations {
             final LogContextConfiguration logContextConfiguration = configurationPersistence.getLogContextConfiguration();
 
             execute(context, operation, name, logContextConfiguration);
+            // This should only check that it's a server for the commit step. The logging.properties may need to be written
+            // in ADMIN_ONLY mode
             if (context.getProcessType().isServer()) {
                 addCommitStep(context, configurationPersistence);
                 // Add rollback handler in case rollback is invoked before a commit step is invoked
@@ -197,7 +200,7 @@ final class LoggingOperations {
             final Resource resource = context.createResource(PathAddress.EMPTY_ADDRESS);
             final ModelNode model = resource.getModel();
             updateModel(operation, model);
-            if (context.getProcessType().isServer()) {
+            if (context.isNormalServer()) {
                 context.addStep(new OperationStepHandler() {
                     @Override
                     public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
@@ -231,7 +234,7 @@ final class LoggingOperations {
             final Resource resource = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS);
             final ModelNode model = resource.getModel();
             updateModel(operation, model);
-            if (context.getProcessType().isServer()) {
+            if (context.isNormalServer()) {
                 context.addStep(new OperationStepHandler() {
                     @Override
                     public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
@@ -266,7 +269,7 @@ final class LoggingOperations {
             final ModelNode model = Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS));
 
             performRemove(context, operation, logContextConfiguration, name, model);
-            if (context.getProcessType().isServer()) {
+            if (context.isNormalServer()) {
                 context.addStep(new OperationStepHandler() {
                     @Override
                     public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {

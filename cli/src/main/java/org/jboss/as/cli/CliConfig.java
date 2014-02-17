@@ -32,16 +32,52 @@ public interface CliConfig {
     /**
      * The default server controller host to connect to.
      *
+     * @deprecated Use {@link CliConfig#getDefaultControllerAddress()} instead.
+     *
      * @return default server controller host to connect to
      */
+    @Deprecated
     String getDefaultControllerHost();
 
     /**
      * The default server controller port to connect to.
      *
+     * @deprecated Use {@link CliConfig#getDefaultControllerAddress()} instead.
+     *
      * @return  default server controller port to connect to
      */
+    @Deprecated
     int getDefaultControllerPort();
+
+    /**
+     * The default server controller protocol for addresses where no protocol is specified.
+     *
+     * @return default server controller protocol
+     */
+    String getDefaultControllerProtocol();
+
+    /**
+     * If {@code true} then for addresses specified without a protocol but with a port number of 9999 the
+     * protocol should be assumed to be 'remoting://'
+     *
+     * @return use legacy override option.
+     */
+    boolean isUseLegacyOverride();
+
+    /**
+     * The default address of the controller from the configuration.
+     *
+     * @return The default address.
+     */
+    ControllerAddress getDefaultControllerAddress();
+
+    /**
+     * Obtain the {@link ControllerAddress} for a given alias.
+     *
+     * @param alias - The alias if the address mapping.
+     * @return The {@link ControllerAddress} if defined, otherwise {@code null}
+     */
+    ControllerAddress getAliasedControllerAddress(String alias);
 
     /**
      * Whether the record the history of executed commands and operations.
@@ -122,4 +158,13 @@ public interface CliConfig {
      * @return
      */
     boolean isSilent();
+
+    /**
+     * Whether the role based access control should be used
+     * to check the availability of the commands (for tab-completion).
+     *
+     * @return  true if command availability checks should include RBAC,
+     *          otherwise - false
+     */
+    boolean isAccessControl();
 }

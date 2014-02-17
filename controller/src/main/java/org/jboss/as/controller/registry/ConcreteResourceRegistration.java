@@ -25,9 +25,11 @@ package org.jboss.as.controller.registry;
 import static org.jboss.as.controller.ControllerMessages.MESSAGES;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ATTRIBUTES;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
@@ -41,6 +43,9 @@ import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.ResourceDefinition;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
+import org.jboss.as.controller.access.management.AccessConstraintUtilizationRegistry;
+import org.jboss.as.controller.access.management.ConstrainedResourceDefinition;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.registry.AttributeAccess.AccessType;
 import org.jboss.as.controller.registry.AttributeAccess.Storage;
@@ -56,26 +61,29 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
     @SuppressWarnings("unused")
     private volatile Map<String, OperationEntry> operations;
 
-    @SuppressWarnings("unused")
-    private volatile ResourceDefinition resourceDefinition;
+    private final ResourceDefinition resourceDefinition;
+    private final List<AccessConstraintDefinition> accessConstraintDefinitions;
 
     @SuppressWarnings("unused")
     private volatile Map<String, AttributeAccess> attributes;
 
     private final AtomicBoolean runtimeOnly = new AtomicBoolean();
+    private final AccessConstraintUtilizationRegistry constraintUtilizationRegistry;
 
     private static final AtomicMapFieldUpdater<ConcreteResourceRegistration, String, NodeSubregistry> childrenUpdater = AtomicMapFieldUpdater.newMapUpdater(AtomicReferenceFieldUpdater.newUpdater(ConcreteResourceRegistration.class, Map.class, "children"));
     private static final AtomicMapFieldUpdater<ConcreteResourceRegistration, String, OperationEntry> operationsUpdater = AtomicMapFieldUpdater.newMapUpdater(AtomicReferenceFieldUpdater.newUpdater(ConcreteResourceRegistration.class, Map.class, "operations"));
     private static final AtomicMapFieldUpdater<ConcreteResourceRegistration, String, AttributeAccess> attributesUpdater = AtomicMapFieldUpdater.newMapUpdater(AtomicReferenceFieldUpdater.newUpdater(ConcreteResourceRegistration.class, Map.class, "attributes"));
-    private static final AtomicReferenceFieldUpdater<ConcreteResourceRegistration, ResourceDefinition> descriptionProviderUpdater = AtomicReferenceFieldUpdater.newUpdater(ConcreteResourceRegistration.class, ResourceDefinition.class, "resourceDefinition");
 
-    ConcreteResourceRegistration(final String valueString, final NodeSubregistry parent, final ResourceDefinition provider, final boolean runtimeOnly) {
+    ConcreteResourceRegistration(final String valueString, final NodeSubregistry parent, final ResourceDefinition definition,
+                                 AccessConstraintUtilizationRegistry constraintUtilizationRegistry, final boolean runtimeOnly) {
         super(valueString, parent);
+        this.constraintUtilizationRegistry = constraintUtilizationRegistry;
         childrenUpdater.clear(this);
         operationsUpdater.clear(this);
         attributesUpdater.clear(this);
-        descriptionProviderUpdater.set(this, provider);
+        this.resourceDefinition = definition;
         this.runtimeOnly.set(runtimeOnly);
+        this.accessConstraintDefinitions = buildAccessConstraints();
     }
 
     @Override
@@ -94,6 +102,30 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
     public boolean isRemote() {
         checkPermission();
         return false;
+    }
+
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        checkPermission();
+        return accessConstraintDefinitions;
+    }
+
+    private List<AccessConstraintDefinition> buildAccessConstraints() {
+        AbstractResourceRegistration reg = this;
+        List<AccessConstraintDefinition> list = new ArrayList<AccessConstraintDefinition>();
+        while (reg != null) {
+            reg.addAccessConstraints(list);
+            NodeSubregistry parent = reg.getParent();
+            reg = parent == null ? null : parent.getParent();
+        }
+        return Collections.unmodifiableList(list);
+    }
+
+    @Override
+    void addAccessConstraints(List<AccessConstraintDefinition> list) {
+        if (resourceDefinition instanceof ConstrainedResourceDefinition) {
+            list.addAll(((ConstrainedResourceDefinition) resourceDefinition).getAccessConstraints());
+        }
     }
 
     @Override
@@ -118,12 +150,24 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
         resourceDefinition.registerAttributes(resourceRegistration);
         resourceDefinition.registerOperations(resourceRegistration);
         resourceDefinition.registerChildren(resourceRegistration);
+        if (constraintUtilizationRegistry != null && resourceDefinition instanceof ConstrainedResourceDefinition) {
+            PathAddress childAddress = getPathAddress().append(address);
+            List<AccessConstraintDefinition> constraintDefinitions = ((ConstrainedResourceDefinition) resourceDefinition).getAccessConstraints();
+            for (AccessConstraintDefinition acd : constraintDefinitions) {
+                constraintUtilizationRegistry.registerAccessConstraintResourceUtilization(acd.getKey(), childAddress);
+            }
+        }
         return resourceRegistration;
     }
 
     @Override
     public void registerOperationHandler(OperationDefinition definition, OperationStepHandler handler, boolean inherited) {
-        registerOperationHandler(definition.getName(), handler, definition.getDescriptionProvider(), inherited, definition.getEntryType(), definition.getFlags());
+        checkPermission();
+        if (operationsUpdater.putIfAbsent(this, definition.getName(), new OperationEntry(handler, definition.getDescriptionProvider(), inherited, definition.getEntryType(),
+                definition.getFlags(), definition.getAccessConstraints())) != null) {
+            throw alreadyRegistered("operation handler", definition.getName());
+        }
+        registerOperationAccessConstraints(definition);
     }
 
     public void unregisterSubModel(final PathElement address) throws IllegalArgumentException {
@@ -132,6 +176,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
         if (subregistry != null) {
             subregistry.unregisterSubModel(address.getValue());
         }
+        unregisterAccessConstraints(address);
     }
 
     @Override
@@ -207,7 +252,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
     @Override
     public void registerOperationHandler(final String operationName, final OperationStepHandler handler, final DescriptionProvider descriptionProvider, final boolean inherited, EntryType entryType, EnumSet<OperationEntry.Flag> flags) {
         checkPermission();
-        if (operationsUpdater.putIfAbsent(this, operationName, new OperationEntry(handler, descriptionProvider, inherited, entryType, flags)) != null) {
+        if (operationsUpdater.putIfAbsent(this, operationName, new OperationEntry(handler, descriptionProvider, inherited, entryType, flags, null)) != null) {
             throw alreadyRegistered("operation handler", operationName);
         }
     }
@@ -249,6 +294,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
         if (attributesUpdater.putIfAbsent(this, attributeName, aa) != null) {
             throw alreadyRegistered("attribute", attributeName);
         }
+        registerAttributeAccessConstraints(definition);
     }
 
     @Override
@@ -280,6 +326,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
         if (attributesUpdater.putIfAbsent(this, attributeName, aa) != null) {
             throw alreadyRegistered("attribute", attributeName);
         }
+        registerAttributeAccessConstraints(definition);
     }
 
     @Override
@@ -308,6 +355,29 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
         AttributeAccess aa = new AttributeAccess(AccessType.METRIC, AttributeAccess.Storage.RUNTIME, metricHandler, null, definition, definition.getFlags());
         if (attributesUpdater.putIfAbsent(this, definition.getName(), aa) != null) {
             throw alreadyRegistered("attribute", definition.getName());
+        }
+        registerAttributeAccessConstraints(definition);
+    }
+
+    private void registerAttributeAccessConstraints(AttributeDefinition ad) {
+        if (constraintUtilizationRegistry != null) {
+            for (AccessConstraintDefinition acd : ad.getAccessConstraints()) {
+                constraintUtilizationRegistry.registerAccessConstraintAttributeUtilization(acd.getKey(), getPathAddress(), ad.getName());
+            }
+        }
+    }
+
+    private void registerOperationAccessConstraints(OperationDefinition od) {
+        if (constraintUtilizationRegistry != null) {
+            for (AccessConstraintDefinition acd : od.getAccessConstraints()) {
+                constraintUtilizationRegistry.registerAccessConstraintOperationUtilization(acd.getKey(), getPathAddress(), od.getName());
+            }
+        }
+    }
+
+    private void unregisterAccessConstraints(PathElement childAddress) {
+        if (constraintUtilizationRegistry != null) {
+            constraintUtilizationRegistry.unregisterAccessConstraintUtilizations(getPathAddress().append(childAddress));
         }
     }
 
@@ -351,7 +421,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
                 return subregistry;
             } else {
                 checkPermission();
-                final NodeSubregistry newRegistry = new NodeSubregistry(key, this);
+                final NodeSubregistry newRegistry = new NodeSubregistry(key, this, constraintUtilizationRegistry);
                 final NodeSubregistry appearing = childrenUpdater.putAtomic(this, key, newRegistry, snapshot);
                 if (appearing == null) {
                     return newRegistry;

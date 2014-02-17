@@ -42,6 +42,8 @@ import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.RunningModeControl;
+import org.jboss.as.controller.access.management.DelegatingConfigurableAuthorizer;
+import org.jboss.as.controller.audit.AuditLogger;
 import org.jboss.as.controller.client.OperationAttachments;
 import org.jboss.as.controller.client.OperationMessageHandler;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
@@ -58,8 +60,9 @@ import org.jboss.msc.service.StartException;
 import org.junit.Assert;
 
 /**
- * Internal class used by test framework.
- * Boots up the model controller used for the test
+ * Internal class used by test framework.Boots up the model controller used for the test.
+ * While the super class {@link AbstractControllerService} exists here in the main code source, for the legacy controllers it is got from the
+ * xxxx/test-controller-xxx jars instead (see the constructor javadocs for more information)
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
@@ -74,8 +77,12 @@ public abstract class ModelTestModelControllerService extends AbstractController
     private volatile Throwable error;
     private volatile boolean bootSuccess;
 
+    /**
+     * This is the constructor to use for the legacy controller using core-model-test/test-controller-7.1.x and subsystem-test/test-controller-7.1.x
+     */
     protected ModelTestModelControllerService(final ProcessType processType, final RunningModeControl runningModeControl, final TransformerRegistry transformerRegistry,
-                           final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter, final DescriptionProvider rootDescriptionProvider, ControlledProcessState processState) {
+                           final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter,
+                           final DescriptionProvider rootDescriptionProvider, ControlledProcessState processState, Controller71x version) {
         // Fails in core-model-test transformation testing if ExpressionResolver.TEST_RESOLVER is used because not present in 7.1.x
         super(processType, runningModeControl, persister,
                 processState == null ? new ControlledProcessState(true) : processState, rootDescriptionProvider, null, ExpressionResolver.DEFAULT);
@@ -85,11 +92,59 @@ public abstract class ModelTestModelControllerService extends AbstractController
         this.runningModeControl = runningModeControl;
     }
 
+    /**
+     * This is the constructor to use for core-model/test-controller-7.2.x
+     */
     protected ModelTestModelControllerService(final ProcessType processType, final RunningModeControl runningModeControl, final TransformerRegistry transformerRegistry,
-            final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter, final DelegatingResourceDefinition rootResourceDefinition, ControlledProcessState processState) {
+            final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter,
+            final DelegatingResourceDefinition rootResourceDefinition, ControlledProcessState processState, Controller72x version) {
+        super(processType, runningModeControl, persister,
+                processState == null ? new ControlledProcessState(true) : processState, rootResourceDefinition, null, ExpressionResolver.DEFAULT);
+        this.persister = persister;
+        this.transformerRegistry = transformerRegistry;
+        this.validateOpsFilter = validateOpsFilter;
+        this.runningModeControl = runningModeControl;
+    }
+
+    /**
+     * This is the constructor to use for subsystem-test/test-controller-7.2.x
+     */
+    protected ModelTestModelControllerService(final ProcessType processType, final RunningModeControl runningModeControl, final TransformerRegistry transformerRegistry,
+            final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter,
+            final DescriptionProvider rootDescriptionProvider, ControlledProcessState processState, Controller72x version) {
+        super(processType, runningModeControl, persister,
+                processState == null ? new ControlledProcessState(true) : processState, rootDescriptionProvider, null, ExpressionResolver.DEFAULT);
+        this.persister = persister;
+        this.transformerRegistry = transformerRegistry;
+        this.validateOpsFilter = validateOpsFilter;
+        this.runningModeControl = runningModeControl;
+    }
+
+
+    /**
+     * This is the constructor to use for master's core model test
+     */
+    protected ModelTestModelControllerService(final ProcessType processType, final RunningModeControl runningModeControl, final TransformerRegistry transformerRegistry,
+            final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter,
+            final DelegatingResourceDefinition rootResourceDefinition, ControlledProcessState processState, Controller80x version) {
         super(processType, runningModeControl, persister,
                 processState == null ? new ControlledProcessState(true) : processState, rootResourceDefinition, null,
-                ExpressionResolver.TEST_RESOLVER);
+                ExpressionResolver.TEST_RESOLVER, AuditLogger.NO_OP_LOGGER, new DelegatingConfigurableAuthorizer());
+        this.persister = persister;
+        this.transformerRegistry = transformerRegistry;
+        this.validateOpsFilter = validateOpsFilter;
+        this.runningModeControl = runningModeControl;
+    }
+
+    /**
+     * THis is the constructor to
+     */
+    protected ModelTestModelControllerService(final ProcessType processType, final RunningModeControl runningModeControl, final TransformerRegistry transformerRegistry,
+            final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter,
+            final DescriptionProvider rootDescriptionProvider, ControlledProcessState processState, Controller80x version) {
+        // Fails in core-model-test transformation testing if ExpressionResolver.TEST_RESOLVER is used because not present in 7.1.x
+        super(processType, runningModeControl, persister,
+         processState == null ? new ControlledProcessState(true) : processState, rootDescriptionProvider, null, ExpressionResolver.DEFAULT);
         this.persister = persister;
         this.transformerRegistry = transformerRegistry;
         this.validateOpsFilter = validateOpsFilter;
@@ -275,5 +330,25 @@ public abstract class ModelTestModelControllerService extends AbstractController
             return delegate.getDescriptionProvider(resourceRegistration);
         }
     };
+
+    //These are here to overload the constuctor used for the different legacy controllers
+
+    public static class Controller71x {
+        public static Controller71x INSTANCE = new Controller71x();
+        private Controller71x() {
+        }
+    }
+
+    public static class Controller72x {
+        public static Controller72x INSTANCE = new Controller72x();
+        private Controller72x() {
+        }
+    }
+
+    public static class Controller80x {
+        public static Controller80x INSTANCE = new Controller80x();
+        private Controller80x() {
+        }
+    }
 
 }

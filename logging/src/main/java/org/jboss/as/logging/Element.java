@@ -35,6 +35,7 @@ enum Element {
     UNKNOWN((String) null),
 
     ACCEPT(CommonAttributes.ACCEPT),
+    ADD_LOGGING_API_DEPENDENCIES(LoggingRootResource.ADD_LOGGING_API_DEPENDENCIES),
     ALL(CommonAttributes.ALL),
     ANY(CommonAttributes.ANY),
     APP_NAME(SyslogHandlerResourceDefinition.APP_NAME),
@@ -42,6 +43,7 @@ enum Element {
     ASYNC_HANDLER(AsyncHandlerResourceDefinition.ASYNC_HANDLER),
     CHANGE_LEVEL(CommonAttributes.CHANGE_LEVEL),
     CONSOLE_HANDLER(ConsoleHandlerResourceDefinition.CONSOLE_HANDLER),
+    CUSTOM_FORMATTER(CustomFormatterResourceDefinition.CUSTOM_FORMATTER),
     CUSTOM_HANDLER(CustomHandlerResourceDefinition.CUSTOM_HANDLER),
     DENY(CommonAttributes.DENY),
     ENCODING(CommonAttributes.ENCODING),
@@ -50,7 +52,7 @@ enum Element {
     FILE_HANDLER(FileHandlerResourceDefinition.FILE_HANDLER),
     FILTER(CommonAttributes.FILTER),
     FILTER_SPEC(CommonAttributes.FILTER_SPEC),
-    FORMATTER(CommonAttributes.FORMATTER),
+    FORMATTER(AbstractHandlerDefinition.FORMATTER),
     HANDLER(CommonAttributes.HANDLER),
     HANDLERS(CommonAttributes.HANDLERS),
     HOSTNAME(SyslogHandlerResourceDefinition.HOSTNAME),
@@ -61,12 +63,13 @@ enum Element {
     LOGGING_PROFILES(CommonAttributes.LOGGING_PROFILES),
     MATCH(CommonAttributes.MATCH),
     MAX_BACKUP_INDEX(SizeRotatingHandlerResourceDefinition.MAX_BACKUP_INDEX),
+    NAMED_FORMATTER(AbstractHandlerDefinition.NAMED_FORMATTER),
     NOT(CommonAttributes.NOT),
     OVERFLOW_ACTION(AsyncHandlerResourceDefinition.OVERFLOW_ACTION),
-    PATTERN_FORMATTER(CommonAttributes.PATTERN_FORMATTER),
+    PATTERN_FORMATTER(PatternFormatterResourceDefinition.PATTERN_FORMATTER),
     PERIODIC_ROTATING_FILE_HANDLER(PeriodicHandlerResourceDefinition.PERIODIC_ROTATING_FILE_HANDLER),
     PORT(SyslogHandlerResourceDefinition.PORT),
-    PROPERTIES(CustomHandlerResourceDefinition.PROPERTIES),
+    PROPERTIES(CommonAttributes.PROPERTIES),
     PROPERTY("property"),
     QUEUE_LENGTH(AsyncHandlerResourceDefinition.QUEUE_LENGTH),
     REPLACE(CommonAttributes.REPLACE),
@@ -78,7 +81,9 @@ enum Element {
     SUFFIX(PeriodicHandlerResourceDefinition.SUFFIX),
     SYSLOG_FORMATTER(SyslogHandlerResourceDefinition.SYSLOG_FORMATTER),
     SYSLOG_HANDLER(SyslogHandlerResourceDefinition.SYSLOG_HANDLER),
-    TARGET(ConsoleHandlerResourceDefinition.TARGET),;
+    TARGET(ConsoleHandlerResourceDefinition.TARGET),
+    USE_DEPLOYMENT_LOGGING_CONFIG(LoggingRootResource.USE_DEPLOYMENT_LOGGING_CONFIG),
+    ;
 
     private final String name;
     private final AttributeDefinition definition;

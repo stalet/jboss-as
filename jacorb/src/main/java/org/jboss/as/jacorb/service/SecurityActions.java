@@ -22,15 +22,9 @@
 
 package org.jboss.as.jacorb.service;
 
-import org.jboss.as.util.security.CreateThreadAction;
-import org.jboss.as.util.security.GetClassLoaderAction;
-import org.jboss.as.util.security.GetContextClassLoaderAction;
-import org.jboss.as.util.security.SetContextClassLoaderAction;
-import org.jboss.as.util.security.WritePropertyAction;
+import org.wildfly.security.manager.action.CreateThreadAction;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
-import static java.lang.System.getSecurityManager;
-import static java.lang.System.setProperty;
-import static java.lang.Thread.currentThread;
 import static java.security.AccessController.doPrivileged;
 
 /**
@@ -44,56 +38,6 @@ class SecurityActions {
 
     /**
      * <p>
-     * Sets a system property with the specified key and value.
-     * </p>
-     *
-     * @param key   the system property key.
-     * @param value the system property value.
-     */
-    static String setSystemProperty(final String key, final String value) {
-        return getSecurityManager() == null ? setProperty(key, value) : doPrivileged(new WritePropertyAction(key, value));
-    }
-
-    /**
-     * <p>
-     * Obtains the current thread context class loader.
-     * </p>
-     *
-     * @return a reference to the current thread context {@code ClassLoader}.
-     */
-    static ClassLoader getThreadContextClassLoader() {
-        return getSecurityManager() == null ? currentThread().getContextClassLoader() : doPrivileged(GetContextClassLoaderAction.getInstance());
-    }
-
-    /**
-     * <p>
-     * Sets the specified {@code ClassLoader} as the current thread context class loader.
-     * </p>
-     *
-     * @param loader the {@code ClassLoader} to be set.
-     */
-    static void setThreadContextClassLoader(final ClassLoader loader) {
-        if (getSecurityManager() == null) {
-            currentThread().setContextClassLoader(loader);
-        } else {
-            doPrivileged(new SetContextClassLoaderAction(loader));
-        }
-    }
-
-    /**
-     * <p>
-     * Gets the {@code ClassLoader} of the specified {@code Class}.
-     * </p>
-     *
-     * @param clazz the {@code Class} whose {@code ClassLoader} is to be returned.
-     * @return the {@code ClassLoader} of the specified {@code Class} object.
-     */
-    static ClassLoader getClassLoader(final Class<?> clazz) {
-        return getSecurityManager() == null ? clazz.getClassLoader() : doPrivileged(new GetClassLoaderAction(clazz));
-    }
-
-    /**
-     * <p>
      * Creates a thread with the specified {@code Runnable} and name.
      * </p>
      *
@@ -102,6 +46,6 @@ class SecurityActions {
      * @return the construct {@code Thread} instance.
      */
     static Thread createThread(final Runnable runnable, final String threadName) {
-        return getSecurityManager() == null ? new Thread(runnable, threadName) : doPrivileged(new CreateThreadAction(runnable, threadName));
+        return ! WildFlySecurityManager.isChecking() ? new Thread(runnable, threadName) : doPrivileged(new CreateThreadAction(runnable, threadName));
     }
 }

@@ -23,17 +23,23 @@
 package org.jboss.as.domain.management;
 
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.util.Set;
 
 import javax.naming.NamingException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.xml.stream.Location;
+import javax.xml.stream.XMLStreamException;
 
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.controller.PathAddress;
+import org.jboss.as.controller.PathElement;
+import org.jboss.as.domain.management.security.password.PasswordValidationException;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Param;
 import org.jboss.msc.service.StartException;
 
@@ -87,8 +93,8 @@ public interface DomainManagementMessages {
      *
      * @return an {@link IllegalStateException} for the error.
      */
-    @Message(id = 15223, value = "No authentication mechanism defined in security realm.")
-    IllegalStateException noAuthenticationDefined();
+    //@Message(id = 15223, value = "No authentication mechanism defined in security realm.")
+    //IllegalStateException noAuthenticationDefined();
 
     /**
      * Creates an exception indicating no username was provided.
@@ -166,7 +172,7 @@ public interface DomainManagementMessages {
      * @return an {@link IOException} for the error.
      */
     @Message(id = 15231, value = "User '%s' not found in directory.")
-    IOException userNotFoundInDirectory(String username);
+    NamingException userNotFoundInDirectory(String username);
 
     /**
      * Creates an exception indicating that no java.io.Console is available.
@@ -181,8 +187,8 @@ public interface DomainManagementMessages {
      *
      * @return a {@link String} for the message.
      */
-    @Message(id = 15233, value = "JBOSS_HOME environment variable not set.")
-    String jbossHomeNotSet();
+    //@Message(id = 15233, value = "JBOSS_HOME environment variable not set.")
+    //String jbossHomeNotSet();
 
     /**
      * A message indicating no mgmt-users.properties have been found.
@@ -453,8 +459,8 @@ public interface DomainManagementMessages {
      *
      * @param count - The number of RealmUser instances found.
      */
-    @Message(id = 15250, value = "An unexpected number (%d) of RealmUsers are associated with the SecurityContext.")
-    String unexpectedNumberOfRealmUsers(int count);
+    //@Message(id = 15250, value = "An unexpected number (%d) of RealmUsers are associated with the SecurityContext.")
+    //String unexpectedNumberOfRealmUsers(int count);
 
     /**
      * Prompt for the file to update in add-users
@@ -463,24 +469,24 @@ public interface DomainManagementMessages {
     String filePrompt();
 
     /**
-     * Prompt the user for the roles to add the user to
+     * Prompt the user for the groups to add the user to
      * @return
      */
-    @Message(id = Message.NONE, value = "What roles do you want this user to belong to? (Please enter a comma separated list, or leave blank for none)")
-    String rolesPrompt();
+    @Message(id = Message.NONE, value = "What groups do you want this user to belong to? (Please enter a comma separated list, or leave blank for none)")
+    String groupsPrompt();
 
 
     /**
-     * Message to inform user that the new user has been added to the roles file identified.
+     * Message to inform user that the new user has been added to the groups file identified.
      *
      * @param username - The new username.
-     * @param roles - The new roles.
+     * @param groups - The new groups.
      * @param fileName - The file the user has been added to.
      *
      * @return a {@link String} for the message.
      */
-    @Message(id = Message.NONE, value = "Added user '%s' with roles %s to file '%s'")
-    String addedRoles(String username, String roles, String fileName);
+    @Message(id = Message.NONE, value = "Added user '%s' with groups %s to file '%s'")
+    String addedGroups(String username, String groups, String fileName);
 
     /**
      * The error message if the choice response is invalid.
@@ -493,14 +499,24 @@ public interface DomainManagementMessages {
     String invalidChoiceResponse();
 
     /**
-     * Confirmation if the current user password and roles is about to be updated.
+     * Confirmation if the current user (enabled) is about to be updated.
      *
      * @param user - The name of the user.
      *
      * @return a {@link String} for the message.
      */
-    @Message(id = Message.NONE, value = "User '%s' already exits, would you like to update the existing user password and roles")
-    String aboutToUpdateUser(String user);
+    @Message(id = Message.NONE, value = "User '%s' already exits and is enabled, would you like to... %n a) Update the existing user password and roles %n b) Disable the existing user %n c) Type a new username")
+    String aboutToUpdateEnabledUser(String user);
+
+    /**
+     * Confirmation if the current user (disabled) is about to be updated.
+     *
+     * @param user - The name of the user.
+     *
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "User '%s' already exits and is disabled, would you like to... %n a) Update the existing user password and roles %n b) Enable the existing user %n c) Type a new username")
+    String aboutToUpdateDisabledUser(String user);
 
     /**
      * Message to inform user that the user has been updated to the file identified.
@@ -512,8 +528,6 @@ public interface DomainManagementMessages {
      */
     @Message(id = Message.NONE, value = "Updated user '%s' to file '%s'")
     String updateUser(String userName, String canonicalPath);
-
-
 
     /**
      * The error message if updating user to the file fails.
@@ -527,16 +541,16 @@ public interface DomainManagementMessages {
     String unableToUpdateUser(String absolutePath, String message);
 
     /**
-     * Message to inform user that the user has been updated to the roles file identified.
+     * Message to inform user that the user has been updated to the groups file identified.
      *
      * @param username - The new username.
-     * @param roles - The new roles.
+     * @param groups - The new groups.
      * @param fileName - The file the user has been added to.
      *
      * @return a {@link String} for the message.
      */
-    @Message(id = Message.NONE, value = "Updated user '%s' with roles %s to file '%s'")
-    String updatedRoles(String username, String roles, String fileName);
+    @Message(id = Message.NONE, value = "Updated user '%s' with groups %s to file '%s'")
+    String updatedGroups(String username, String groups, String fileName);
 
     /**
      * IOException to indicate the user attempting to use local authentication has been rejected.
@@ -619,118 +633,502 @@ public interface DomainManagementMessages {
      *
      * @param password - password value.
      *
-     * @return a {@link String} for the message.
+     * @return a {@link PasswordValidationException} for the message.
      */
     @Message(id = 152565, value = "Password must not be equal to '%s', this value is restricted.")
-    String passwordMustNotBeEqual(String password);
+    PasswordValidationException passwordMustNotBeEqual(String password);
 
     /**
-     * The error message for password which has no digit.
-     *
+     * The error message for password which has not enough digit.
+     * @param minDigit - minimum digit values.
      * @return a {@link String} for the message.
      */
-    @Message(id = 15266, value = "Password must have at least one digit.")
-    String passwordMustHaveDigit();
+    @Message(id = 15266, value = "Password must have at least %d digit.")
+    String passwordMustHaveDigit(int minDigit);
 
     /**
-     * The error message for password which has no symbol.
-     *
+     * The error message for password which has not enough symbol.
+     * @param minSymbol - minimum symbol values.
      * @return a {@link String} for the message.
      */
-    @Message(id = 15267, value = "Password must have at least one non-alphanumeric symbol.")
-    String passwordMustHaveSymbol();
+    @Message(id = 15267, value = "Password must have at least %s non-alphanumeric symbol.")
+    String passwordMustHaveSymbol(int minSymbol);
 
     /**
-     * The error message for password which has no alpha numerical values.
-     *
+     * The error message for password which has not enough alpha numerical values.
+     * @param minAlpha - minimum alpha numerical values.
      * @return a {@link String} for the message.
      */
-    @Message(id = 15268, value = "Password must have at least one alphanumeric character.")
-    String passwordMustHaveAlpha();
+    @Message(id = 15268, value = "Password must have at least %d alphanumeric character.")
+    String passwordMustHaveAlpha(int minAlpha);
 
     /**
      * The error message for password which is not long enough.
      * @param desiredLength - desired length of password.
+     * @return a {@link PasswordValidationException} for the message.
+     */
+    @Message(id = 15269, value = "Password must have at least %s characters!")
+    PasswordValidationException passwordNotLongEnough(int desiredLength);
+
+    @Message(id = 15270, value = "Unable to load key trust file.")
+    IllegalStateException unableToLoadKeyTrustFile(@Cause Throwable t);
+
+    @Message(id = 15271, value = "Unable to operate on trust store.")
+    IllegalStateException unableToOperateOnTrustStore(@Cause GeneralSecurityException gse);
+
+    @Message(id = 15272, value = "Unable to create delegate trust manager.")
+    IllegalStateException unableToCreateDelegateTrustManager();
+
+    @Message(id = 15273, value = "The syslog-handler can only contain one protocol %s")
+    XMLStreamException onlyOneSyslogHandlerProtocol(Location location);
+
+    @Message(id = 15274, value = "There is no handler called '%s'")
+    IllegalStateException noHandlerCalled(String name);
+
+    @Message(id = 15275, value = "There is already a protocol configured for the syslog handler at %s")
+    OperationFailedException sysLogProtocolAlreadyConfigured(PathAddress append);
+
+    @Message(id = 15276, value = "No syslog protocol was given")
+    OperationFailedException noSyslogProtocol();
+
+    @Message(id = 15277, value = "There is no formatter called '%s'")
+    OperationFailedException noFormatterCalled(String formatterName);
+
+    @Message(id = 15278, value = "Can not remove formatter, it is still referenced by the hander '%s'")
+    OperationFailedException cannotRemoveReferencedFormatter(PathElement pathElement);
+
+    @Message(id = 15279, value = "Handler names must be unique. There is already a handler called '%s' at %s")
+    OperationFailedException handlerAlreadyExists(String name, PathAddress append);
+
+    /**
+     * Parsing the user property file different realm names have been detected, the add-user utility requires the same realm
+     * name to be used across all propery files a user is being added to.
+     */
+    @Message(id = 15280, value = "Different realm names detected '%s', '%s' reading user property files, all realms must be equal.")
+    String multipleRealmsDetected(final String realmOne, final String realmTwo);
+
+    /**
+     * The user has supplied a realm name but the supplied name does not match the name discovered from the property files.
+     */
+    @Message(id = 15281, value = "The user supplied realm name '%s' does not match the realm name discovered from the property file(s) '%s'.")
+    String userRealmNotMatchDiscovered(final String supplied, final String discovered);
+
+    /**
+     * The user has supplied a group properties file name but no user propertites file name.
+     */
+    @Message(id = 15282, value = "A group properties file '%s' has been specified, however no user properties has been specified.")
+    String groupPropertiesButNoUserProperties(final String groupProperties);
+
+    /**
+     * There is no default realm name and the user has not specified one either.
+     */
+    @Message(id = 15283, value = "A realm name must be specified.")
+    String realmMustBeSpecified();
+
+    /**
+     * Creates an exception indicating that RBAC has been enabled but it is not possible for users to be mapped to roles.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15284, value = "The current operation(s) would result in role based access control being enabled but leave it impossible for authenticated users to be assigned roles.")
+    OperationFailedException inconsistentRbacConfiguration();
+
+    /**
+     * Creates an exception indicating that the runtime role mapping state is inconsistent.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15285, value = "The runtime role mapping configuration is inconsistent, the server must be restarted.")
+    OperationFailedException inconsistentRbacRuntimeState();
+
+    /**
+     * The error message if the choice response is invalid to the update user state.
+     *
      * @return a {@link String} for the message.
      */
-    @Message(id = 15269, value = "Password must have at least '%s' characters!")
-    String passwordNotLongEnough(int desiredLength);
+    @Message(id = 15286, value = "Invalid response. (Valid responses are A, a, B, b, C or c)")
+    String invalidChoiceUpdateUserResponse();
+
+    @Message(id = 15287, value = "Role '%s' already contains an %s for type=%s, name=%s, realm=%s.")
+    OperationFailedException duplicateIncludeExclude(String roleName, String incExcl, String type, String name, String realm);
+
+    /**
+     * Error message if more than one authorization configuration is defined.
+     *
+     * @param realmName the name of the security realm
+     * @param configurations the set of configurations .
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15288, value = "Configuration for security realm '%s' includes multiple authorization configurations (%s). Only one is allowed")
+    OperationFailedException multipleAuthorizationConfigurationsDefined(String realmName, Set<String> configurations);
+
+    /**
+     * Error message if more than one username-to-dn resource is defined.
+     *
+     * @param realmName the name of the security realm
+     * @param configurations the set of configurations .
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15289, value = "Configuration for security realm '%s' includes multiple username-to-dn resources within the authorization=ldap resource (%s). Only one is allowed")
+    OperationFailedException multipleUsernameToDnConfigurationsDefined(String realmName, Set<String> configurations);
+
+    /**
+     * Error message if no group-search resource is defined.
+     *
+     * @param realmName the name of the security realm
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15290, value = "Configuration for security realm '%s' does not contain any group-search resource within the authorization=ldap resource.")
+    OperationFailedException noGroupSearchDefined(String realmName);
+
+    /**
+     * Error message if more than one group-search resource is defined.
+     *
+     * @param realmName the name of the security realm
+     * @param configurations the set of configurations .
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15291, value = "Configuration for security realm '%s' includes multiple group-search resources within the authorization=ldap resource (%s). Only one is allowed")
+    OperationFailedException multipleGroupSearchConfigurationsDefined(String realmName, Set<String> configurations);
+
+    /**
+     * Error message if the name of a role mapping being added is invalid.
+     *
+     * @param roleName - The name of the role.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15292, value = "The role name '%s' is not a valid standard role.")
+    OperationFailedException invalidRoleName(String roleName);
+
+    /**
+     * Error message if the name of a role mapping being added is invalid.
+     *
+     * @param roleName - The name of the role.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15293, value = "The role name '%s' is not a valid standard role and is not a host scoped role or a server group scoped role.")
+    OperationFailedException invalidRoleNameDomain(String roleName);
+
+    /**
+     * Error message if the name of a scoped role can not be removed as the role mapping remains.
+     *
+     * @param roleName - The name of the role.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15294, value = "The scoped role '%s' can not be removed as a role mapping still exists.")
+    OperationFailedException roleMappingRemaining(String roleName);
+
+    /**
+     * Error message if a scoped role already exists with the same name.
+     *
+     * @param scopeType - The type of scoped role.
+     * @param roleName - The name of the role.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15295, value = "A %s already exists with name '%s'")
+    OperationFailedException duplicateScopedRole(String scopeType, String roleName);
+
+    /**
+     * Error message if a scoped role name matches a standard role.
+     *
+     * @param scopedRole - The name of the scoped role.
+     * @param standardRole - The name of the standard role.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15296, value = "The name '%s' conflicts with the standard role name of '%s' - comparison is case insensitive.")
+    OperationFailedException scopedRoleStandardName(String scopedRole, String standardRole);
+
+    /**
+     * Error message if the base-role is not one of the standard roles.
+     *
+     * @param baseRole - The base-role supplied.
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 15297, value = "The base-role '%s' is not one of the standard roles for the current authorization provider.")
+    OperationFailedException badBaseRole(String baseRole);
+
+    /**
+     * Error message if the password and username match.
+     *
+     * @return an {@link PasswordValidationException} for the error.
+     */
+    @Message(id = 15298, value = "The password must be different from the username")
+    PasswordValidationException passwordUsernameMatchError();
+
+    /**
+     * Create an exception indicating that there are no keys in the keystore.
+     *
+     * @return a {@link StartException} for the error.
+     */
+    @Message(id = 15299, value = "The KeyStore %s does not contain any keys.")
+    StartException noKey(String path);
+
+    /**
+     * Create an exception indicating that the alias specified is not a key.
+     *
+     * @return a {@link StartException} for the error.
+     */
+    @Message(id = 21000, value = "The alias specified '%s' is not a Key, valid aliases are %s")
+    StartException aliasNotKey(String alias, String validList);
+
+    /**
+     * Create an exception indicating that the alias specified was not found.
+     *
+     * @return a {@link StartException} for the error.
+     */
+    @Message(id = 21001, value = "The alias specified '%s' does not exist in the KeyStore, valid aliases are %s")
+    StartException aliasNotFound(String alias, String validList);
+
+    /**
+     * Create an exception indicating that the keystore was not found.
+     *
+     * @return a {@link StartException} for the error.
+     */
+    @Message(id = 21002, value = "The KeyStore can not be found at %s")
+    StartException keyStoreNotFound(String path);
+
+    /**
+     * Error message if more than one cache is defined.
+     *
+     * @param realmName the name of the security realm
+     * @param configurations the set of configurations .
+     *
+     * @return an {@link OperationFailedException} for the error.
+     */
+    @Message(id = 21003, value = "Configuration for security realm '%s' includes multiple cache definitions at the same position in the hierarchy. Only one is allowed")
+    OperationFailedException multipleCacheConfigurationsDefined(String realmName);
+
+    /**
+     * Creates an exception indicating that is was not possible to load a username for the supplied username.
+     *
+     * @param name the supplied username.
+     *
+     * @return a {@link NamingException} for the error.
+     */
+    @Message(id = 21004, value = "Unable to load username for supplied username '%s'")
+    NamingException usernameNotLoaded(String name);
+
+    /*
+     * Logging IDs 15200-15299 and 21000-21099 are reserved for domain management
+     *
+     * The file DomainManagementLogger also contains messages in this range 15200-15220.
+     */
+
+    /**
+     * Information message saying the username and password must be different.
+     *
+     * @return an {@link String} for the error.
+     */
+    @Message(id = Message.NONE, value = "The password must be different from the username")
+    String passwordUsernameMustMatchInfo();
+
+    /**
+     * Information message saying the username and password should be different.
+     *
+     * @return an {@link String} for the error.
+     */
+    @Message(id = Message.NONE, value = "The password should be different from the username")
+    String passwordUsernameShouldMatchInfo();
+
+    /**
+     * Information message saying the password must not equal any of the restricted values.
+     *
+     * @param restricted - A list of restricted values.
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "The password must not be one of the following restricted values {%s}")
+    String passwordMustNotEqualInfo(String restricted);
+
+    /**
+     * Information message saying the password should not equal any of the restricted values.
+     *
+     * @param restricted - A list of restricted values.
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "The password should not be one of the following restricted values {%s}")
+    String passwordShouldNotEqualInfo(String restricted);
+
+    /**
+     * Information message to describe how many characters need to be in the password.
+     *
+     * @param desiredLength - desired length of password.
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "%s characters")
+    String passwordLengthInfo(int desiredLength);
+
+    /**
+     * Information message for the number of alphanumerical characters required in a password.
+     *
+     * @param minAlpha - minimum alpha numerical values.
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "%d alphanumeric character(s)")
+    String passwordMustHaveAlphaInfo(int minAlpha);
+
+    /**
+     * Information message for the number of digits required in a password.
+     *
+     * @param minDigit - minimum digit values.
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "%d digit(s)")
+    String passwordMustHaveDigitInfo(int minDigit);
+
+    /**
+     * Information message for the number of non alphanumerical symbols required in a password.
+     *
+     * @param minSymbol - minimum symbol values.
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "%s non-alphanumeric symbol(s)")
+    String passwordMustHaveSymbolInfo(int minSymbol);
+
+    /**
+     * Information message to describe what a password must contain.
+     *
+     * @param requirements - The requirements list to contain in the message.
+     *
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "The password must contain at least %s")
+    String passwordMustContainInfo(String requirements);
+
+    /**
+     * Information message to describe what a password should contain.
+     *
+     * @param requirements - The requirements list to contain in the message.
+     *
+     * @return a {@link String} for the message.
+     */
+    @Message(id = Message.NONE, value = "The password should contain at least %s")
+    String passwordShouldContainInfo(String requirements);
 
     /**
      * A prompt to double check the user is really sure they want to set password.
      *
-     * @param password - The new password.
-     *
      * @return a {@link String} for the message.
      */
-    @Message(id = Message.NONE, value = "Are you sure you want to set password '%s' yes/no?")
-    String sureToSetPassword(String password);
+    @Message(id = Message.NONE, value = "Are you sure you want to use the password entered yes/no?")
+    String sureToSetPassword();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#USAGE} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#USAGE} command line argument.
      * @return the message.
      */
     @Message(id = Message.NONE, value = "Usage: ./add-user.sh [args...]%nwhere args include:")
     String argUsage();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#APPLICATION_USERS} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#APPLICATION_USERS} command line argument.
      * @return the message.
      */
     @Message(id = Message.NONE, value = "If set add an application user instead of a management user")
     String argApplicationUsers();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#DOMAIN_CONFIG_DIR_USERS} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#DOMAIN_CONFIG_DIR_USERS} command line argument.
      * @return the message.
      */
-    @Message(id = Message.NONE, value = "Define the system property to use for the domain config directory (default is \"jboss.domain.config.dir\")")
+    @Message(id = Message.NONE, value = "Define the location of the domain config directory.")
     String argDomainConfigDirUsers();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#SERVER_CONFIG_DIR_USERS} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#SERVER_CONFIG_DIR_USERS} command line argument.
      * @return the message.
      */
-    @Message(id = Message.NONE, value = "Define the system property to use for the server config directory (default is \"jboss.server.config.dir\")")
+    @Message(id = Message.NONE, value = "Define the location the server config directory.")
     String argServerConfigDirUsers();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#PASSWORD} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#USER_PROPERTIES} command line argument.
+     * @return the message.
+     */
+    @Message(id = Message.NONE, value = "The file name of the user properties file which can be an absolute path.")
+    String argUserProperties();
+
+    /**
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#GROUP_PROPERTIES} command line argument.
+     * @return the message.
+     */
+    @Message(id = Message.NONE, value = "The file name of the group properties file which can be an absolute path. (If group properties is specified then user properties MUST also be specified).")
+    String argGroupProperties();
+
+    /**
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#PASSWORD} command line argument.
      * @return the message.
      */
     @Message(id = Message.NONE, value = "Password of the user. Should not be same as the username")
     String argPassword();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#USER} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#USER} command line argument.
      * @return the message.
      */
     @Message(id = Message.NONE, value = "Name of the user")
     String argUser();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#REALM} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#REALM} command line argument.
      * @return the message.
      */
     @Message(id = Message.NONE, value = "Name of the realm used to secure the management interfaces (default is \"ManagementRealm\")")
     String argRealm();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#SILENT} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#SILENT} command line argument.
      * @return the message.
      */
     @Message(id = Message.NONE, value = "Activate the silent mode (no output to the console)")
     String argSilent();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#ROLE} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#ROLE} command line argument.
      * @return the message.
      */
-    @Message(id = Message.NONE, value = "Comma-separated list of roles for the user (only for application users, see -a)")
+    @Message(id = Message.NONE, value = "Comma-separated list of roles for the user.")
     String argRole();
 
     /**
-     * Instructions for the {@link org.jboss.as.domain.management.security.AddPropertiesUser.CommandLineArgument#HELP} command line argument.
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#GROUPS} command line argument.
+     * @return the message.
+     */
+    @Message(id = Message.NONE, value = "Comma-separated list of groups for the user.")
+    String argGroup();
+
+    /**
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#ENABLE} command line argument.
+     * @return the message.
+     */
+    @Message(id = Message.NONE, value = "Enable the user")
+    String argEnable();
+
+    /**
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#DISABLE} command line argument.
+     * @return the message.
+     */
+    @Message(id = Message.NONE, value = "Disable the user")
+    String argDisable();
+
+    /**
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#CONFIRM_WARNING} command line argument.
+     * @return the message.
+     */
+    @Message(id = Message.NONE, value = "Automatically confirm warning in interactive mode")
+    String argConfirmWarning();
+
+    /**
+     * Instructions for the {@link org.jboss.as.domain.management.security.adduser.AddUser.CommandLineArgument#HELP} command line argument.
      * @return the message.
      */
     @Message(id = Message.NONE, value = "Display this message and exit")
@@ -796,8 +1194,31 @@ public interface DomainManagementMessages {
     @Message(id = Message.NONE, value = "Are you sure you want to set the realm to '%s'")
     String realmConfirmation(final String chosenRealm);
 
-    /*
-     * Logging IDs 15200 to 15299 are reserved for domain management, the file DomainManagementLogger also contains messages in
-     * this range commencing 15200.
+    /**
+     * Display password requirements and the command line argument option to modify these restrictions
      */
+    @Message(id = Message.NONE, value = "Password requirements are listed below. To modify these restrictions edit the add-user.properties configuration file.")
+    String passwordRequirements();
+
+    /**
+     * Display password recommendations and the command line argument option to modify these restrictions
+     */
+    @Message(id = Message.NONE, value = "Password recommendations are listed below. To modify these restrictions edit the add-user.properties configuration file.")
+    String passwordRecommendations();
+
+    /**
+     * Message stating command line supplied realm name in use.
+     */
+    @Message(id = Message.NONE, value = "Using realm '%s' as specified on the command line.")
+    String userSuppliedRealm(final String realmName);
+
+    /**
+     * Message stating discovered realm name in use.
+     */
+    @Message(id = Message.NONE, value = "Using realm '%s' as discovered from the existing property files.")
+    String discoveredRealm(final String realmName);
+
+
+
+    //PUT YOUR NUMBERED MESSAGES ABOVE THE id=NONE ones!
 }

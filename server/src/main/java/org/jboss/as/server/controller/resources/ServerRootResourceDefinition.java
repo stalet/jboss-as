@@ -21,14 +21,7 @@
 */
 package org.jboss.as.server.controller.resources;
 
-import org.jboss.as.controller.NoopOperationStepHandler;
-import org.jboss.as.controller.OperationDefinition;
-import org.jboss.as.controller.OperationStepHandler;
-import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CORE_SERVICE;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RUNNING_SERVER;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVICE_CONTAINER;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBDEPLOYMENT;
 
 import org.jboss.as.controller.AttributeDefinition;
@@ -38,14 +31,16 @@ import org.jboss.as.controller.ModelOnlyWriteAttributeHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.PropertiesAttributeDefinition;
+import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.RunningModeControl;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleMapAttributeDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.management.DelegatingConfigurableAuthorizer;
+import org.jboss.as.controller.audit.ManagedAuditLogger;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CoreManagementDefinition;
 import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.extension.ExtensionResourceDefinition;
 import org.jboss.as.controller.operations.common.NamespaceAddHandler;
@@ -68,13 +63,12 @@ import org.jboss.as.controller.operations.validation.ParameterValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.persistence.ExtensibleConfigurationPersister;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.as.controller.resource.InterfaceDefinition;
 import org.jboss.as.controller.resource.SocketBindingGroupResourceDefinition;
 import org.jboss.as.controller.services.path.PathManagerService;
 import org.jboss.as.controller.services.path.PathResourceDefinition;
-import org.jboss.as.domain.management.connections.ldap.LdapConnectionResourceDefinition;
-import org.jboss.as.domain.management.security.SecurityRealmResourceDefinition;
+import org.jboss.as.domain.management.CoreManagementResourceDefinition;
+import org.jboss.as.domain.management.audit.EnvironmentNameReader;
 import org.jboss.as.domain.management.security.WhoAmIOperation;
 import org.jboss.as.platform.mbean.PlatformMBeanResourceRegistrar;
 import org.jboss.as.repository.ContentRepository;
@@ -96,7 +90,6 @@ import org.jboss.as.server.deploymentoverlay.service.DeploymentOverlayPriority;
 import org.jboss.as.server.mgmt.HttpManagementResourceDefinition;
 import org.jboss.as.server.mgmt.NativeManagementResourceDefinition;
 import org.jboss.as.server.mgmt.NativeRemotingManagementResourceDefinition;
-import org.jboss.as.server.operations.DumpServicesHandler;
 import org.jboss.as.server.operations.LaunchTypeHandler;
 import org.jboss.as.server.operations.ProcessTypeHandler;
 import org.jboss.as.server.operations.RootResourceHack;
@@ -106,6 +99,7 @@ import org.jboss.as.server.operations.ServerProcessReloadHandler;
 import org.jboss.as.server.operations.ServerRestartRequiredHandler;
 import org.jboss.as.server.operations.ServerShutdownHandler;
 import org.jboss.as.server.operations.ServerVersionOperations.DefaultEmptyListAttributeHandler;
+import org.jboss.as.server.operations.SetServerGroupHostHandler;
 import org.jboss.as.server.services.net.BindingGroupAddHandler;
 import org.jboss.as.server.services.net.LocalDestinationOutboundSocketBindingResourceDefinition;
 import org.jboss.as.server.services.net.NetworkInterfaceRuntimeHandler;
@@ -138,6 +132,13 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
     public static final SimpleAttributeDefinition NAME = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.NAME, ModelType.STRING, true)
             .setValidator(new StringLengthValidator(1, true))
             .build();
+
+    public static final SimpleAttributeDefinition SERVER_GROUP = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.SERVER_GROUP, ModelType.STRING)
+            .build();
+
+    public static final SimpleAttributeDefinition HOST = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.HOST, ModelType.STRING)
+            .build();
+
     public static final SimpleAttributeDefinition RELEASE_VERSION = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.RELEASE_VERSION, ModelType.STRING, false)
             .setValidator(NOT_NULL_STRING_LENGTH_ONE_VALIDATOR)
             .build();
@@ -193,6 +194,8 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
     private final boolean parallelBoot;
     private final PathManagerService pathManager;
     private final DomainServerCommunicationServices.OperationIDUpdater operationIDUpdater;
+    private final DelegatingConfigurableAuthorizer authorizer;
+    private final ManagedAuditLogger auditLogger;
 
     public ServerRootResourceDefinition(
             final ContentRepository contentRepository,
@@ -204,8 +207,10 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
             final ExtensionRegistry extensionRegistry,
             final boolean parallelBoot,
             final PathManagerService pathManager,
-            final DomainServerCommunicationServices.OperationIDUpdater operationIDUpdater) {
-        super(PathElement.pathElement("this-will-be-ignored-since-we-are-root"), ServerDescriptions.getResourceDescriptionResolver(SERVER, false));
+            final DomainServerCommunicationServices.OperationIDUpdater operationIDUpdater,
+            final DelegatingConfigurableAuthorizer authorizer,
+            final ManagedAuditLogger auditLogger) {
+        super(null, ServerDescriptions.getResourceDescriptionResolver(SERVER, false));
         this.contentRepository = contentRepository;
         this.extensibleConfigurationPersister = extensibleConfigurationPersister;
         this.serverEnvironment = serverEnvironment;
@@ -216,8 +221,10 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
         this.parallelBoot = parallelBoot;
         this.pathManager = pathManager;
         this.operationIDUpdater = operationIDUpdater;
+        this.auditLogger = auditLogger;
 
-        isDomain = serverEnvironment == null || serverEnvironment.getLaunchType() == LaunchType.DOMAIN;
+        this.isDomain = serverEnvironment == null || serverEnvironment.getLaunchType() == LaunchType.DOMAIN;
+        this.authorizer = authorizer;
     }
 
     @Override
@@ -260,7 +267,7 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
         resourceRegistration.registerOperationHandler(ResolveExpressionHandler.DEFINITION, ResolveExpressionHandler.INSTANCE, false);
 
         resourceRegistration.registerOperationHandler(SpecifiedInterfaceResolveHandler.DEFINITION, SpecifiedInterfaceResolveHandler.INSTANCE);
-        resourceRegistration.registerOperationHandler(WhoAmIOperation.DEFINITION, WhoAmIOperation.INSTANCE, true);
+        resourceRegistration.registerOperationHandler(WhoAmIOperation.DEFINITION, WhoAmIOperation.createOperation(authorizer), true);
 
         //Hack to be able to access the registry for the jmx facade
         resourceRegistration.registerOperationHandler(RootResourceHack.DEFINITION, RootResourceHack.INSTANCE);
@@ -272,6 +279,7 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
             final ServerDomainProcessReloadHandler reloadHandler = new ServerDomainProcessReloadHandler(Services.JBOSS_AS, runningModeControl, processState, operationIDUpdater);
             resourceRegistration.registerOperationHandler(ServerDomainProcessReloadHandler.DOMAIN_DEFINITION, reloadHandler, false);
 
+            resourceRegistration.registerOperationHandler(SetServerGroupHostHandler.DEFINITION, SetServerGroupHostHandler.INSTANCE);
 //            // Trick the resource-description for domain servers to be included in the server-resource
 //            resourceRegistration.registerOperationHandler(getOperationDefinition("start"), NOOP);
 //            resourceRegistration.registerOperationHandler(getOperationDefinition("stop"), NOOP);
@@ -326,6 +334,11 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
 
         resourceRegistration.registerReadOnlyAttribute(NAMESPACES, DefaultEmptyListAttributeHandler.INSTANCE);
         resourceRegistration.registerReadOnlyAttribute(SCHEMA_LOCATIONS, DefaultEmptyListAttributeHandler.INSTANCE);
+
+        if (isDomain) {
+            resourceRegistration.registerReadOnlyAttribute(HOST, null);
+            resourceRegistration.registerReadOnlyAttribute(SERVER_GROUP, null);
+        }
     }
 
     @Override
@@ -339,18 +352,39 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
 
         // Central Management
         // Start with the base /core-service=management MNR. The Resource for this is added by ServerService itself, so there is no add/remove op handlers
-        ManagementResourceRegistration management = resourceRegistration.registerSubModel(CoreManagementDefinition.INSTANCE);
+        final EnvironmentNameReader environmentReader = new EnvironmentNameReader() {
+            public boolean isServer() {
+                return true;
+            }
 
-        management.registerSubModel(SecurityRealmResourceDefinition.INSTANCE);
-        management.registerSubModel(LdapConnectionResourceDefinition.INSTANCE);
-        management.registerSubModel(NativeManagementResourceDefinition.INSTANCE);
-        management.registerSubModel(NativeRemotingManagementResourceDefinition.INSTANCE);
-        management.registerSubModel(HttpManagementResourceDefinition.INSTANCE);
+            public String getServerName() {
+                return serverEnvironment.getServerName();
+            }
+
+            public String getHostName() {
+                return serverEnvironment.getHostControllerName();
+            }
+
+
+            public String getProductName() {
+                if (serverEnvironment.getProductConfig() != null && serverEnvironment.getProductConfig().getProductName() != null) {
+                    return serverEnvironment.getProductConfig().getProductName();
+                }
+                return null;
+            }
+        };
+        final ResourceDefinition managementDefinition;
+        if (isDomain) {
+            managementDefinition = CoreManagementResourceDefinition.forDomainServer(authorizer, auditLogger, pathManager, environmentReader);
+        } else {
+            managementDefinition = CoreManagementResourceDefinition.forStandaloneServer(authorizer, auditLogger, pathManager, environmentReader,
+                    NativeManagementResourceDefinition.INSTANCE, NativeRemotingManagementResourceDefinition.INSTANCE,
+                    HttpManagementResourceDefinition.INSTANCE);
+        }
+        resourceRegistration.registerSubModel(managementDefinition);
 
         // Other core services
-        ManagementResourceRegistration serviceContainer = resourceRegistration.registerSubModel(
-                new SimpleResourceDefinition(PathElement.pathElement(CORE_SERVICE, SERVICE_CONTAINER), ServerDescriptions.getResourceDescriptionResolver("core", SERVICE_CONTAINER)));
-        serviceContainer.registerOperationHandler(DumpServicesHandler.DEFINITION, DumpServicesHandler.INSTANCE);
+        resourceRegistration.registerSubModel(new ServiceContainerResourceDefinition());
 
         resourceRegistration.registerSubModel(new ModuleLoadingResourceDefinition());
 
@@ -396,19 +430,7 @@ public class ServerRootResourceDefinition extends SimpleResourceDefinition {
 
         // Util
         resourceRegistration.registerOperationHandler(DeployerChainAddHandler.DEFINITION, DeployerChainAddHandler.INSTANCE, false);
-    }
 
-    private static final OperationStepHandler NOOP = NoopOperationStepHandler.WITH_RESULT;
-
-    private static final AttributeDefinition BLOCKING = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.BLOCKING, ModelType.BOOLEAN, true)
-        .build();
-
-    static final OperationDefinition getOperationDefinition(String name) {
-        return new SimpleOperationDefinitionBuilder(name, ServerDescriptions.getResourceDescriptionResolver(RUNNING_SERVER))
-            .setParameters(BLOCKING)
-            .setReplyType(ModelType.STRING)
-            .withFlags(OperationEntry.Flag.HOST_CONTROLLER_ONLY, OperationEntry.Flag.RUNTIME_ONLY)
-            .build();
     }
 
 }

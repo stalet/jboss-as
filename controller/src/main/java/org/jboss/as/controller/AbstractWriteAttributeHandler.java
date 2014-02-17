@@ -33,6 +33,7 @@ import java.util.Map;
 
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.validation.ParametersValidator;
+import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
 
@@ -79,12 +80,15 @@ public abstract class AbstractWriteAttributeHandler<T> implements OperationStepH
         final ModelNode currentValue = submodel.get(attributeName).clone();
 
         final AttributeDefinition attributeDefinition = getAttributeDefinition(attributeName);
+        final ModelNode defaultValue;
         if (attributeDefinition != null) {
+            defaultValue = attributeDefinition.getDefaultValue();
             final ModelNode syntheticOp = new ModelNode();
             syntheticOp.get(attributeName).set(newValue);
             attributeDefinition.validateAndSet(syntheticOp, submodel);
             newValue = submodel.get(attributeName);
         } else {
+            defaultValue = null;
             submodel.get(attributeName).set(newValue);
         }
 
@@ -100,13 +104,20 @@ public abstract class AbstractWriteAttributeHandler<T> implements OperationStepH
                     final HandbackHolder<T> handback = new HandbackHolder<T>();
                     final boolean reloadRequired = applyUpdateToRuntime(context, operation, attributeName, resolvedValue, currentValue, handback);
                     if (reloadRequired) {
-                        context.reloadRequired();
+                        if (attributeDefinition != null && attributeDefinition.getFlags().contains(AttributeAccess.Flag.RESTART_JVM)){
+                            context.restartRequired();
+                        }else{
+                            context.reloadRequired();
+                        }
                     }
 
                     context.completeStep(new OperationContext.RollbackHandler() {
                         @Override
                         public void handleRollback(OperationContext context, ModelNode operation) {
                             ModelNode valueToRestore = currentValue.resolve();
+                            if (valueToRestore.isDefined() == false && defaultValue != null) {
+                                valueToRestore = defaultValue;
+                            }
                             try {
                                 revertUpdateToRuntime(context, operation, attributeName, valueToRestore, resolvedValue, handback.handback);
                             } catch (Exception e) {
@@ -115,7 +126,12 @@ public abstract class AbstractWriteAttributeHandler<T> implements OperationStepH
                                         PathAddress.pathAddress(operation.get(ModelDescriptionConstants.OP_ADDR)));
                             }
                             if (reloadRequired) {
-                                context.revertReloadRequired();
+                                if (attributeDefinition != null && attributeDefinition.getFlags().contains(AttributeAccess.Flag.RESTART_JVM)) {
+                                    context.revertRestartRequired();
+                                } else {
+                                    context.revertReloadRequired();
+                                }
+
                             }
                         }
                     });

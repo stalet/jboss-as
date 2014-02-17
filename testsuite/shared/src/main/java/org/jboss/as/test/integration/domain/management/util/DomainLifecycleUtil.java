@@ -83,23 +83,30 @@ public class DomainLifecycleUtil {
     // A shared domain client
     private DomainTestClient domainClient;
 
-    private Map<ServerIdentity, ControlledProcessState.State> serverStatuses = new HashMap<ServerIdentity, ControlledProcessState.State>();
+//    private Map<ServerIdentity, ControlledProcessState.State> serverStatuses = new HashMap<ServerIdentity, ControlledProcessState.State>();
     private ExecutorService executor;
 
     private final JBossAsManagedConfiguration configuration;
     private final DomainControllerClientConfig clientConfiguration;
     private final PathAddress address;
+    private final boolean closeClientConfig;
 
     public DomainLifecycleUtil(final JBossAsManagedConfiguration configuration) throws IOException {
-        this(configuration, DomainControllerClientConfig.create());
+        this(configuration, DomainControllerClientConfig.create(), true);
     }
 
     public DomainLifecycleUtil(final JBossAsManagedConfiguration configuration, final DomainControllerClientConfig clientConfiguration) {
+        this(configuration, clientConfiguration, false);
+    }
+
+    private DomainLifecycleUtil(final JBossAsManagedConfiguration configuration,
+                                final DomainControllerClientConfig clientConfiguration, final boolean closeClientConfig) {
         assert configuration != null : "configuration is null";
         assert clientConfiguration != null : "clientConfiguration is null";
         this.configuration = configuration;
         this.clientConfiguration = clientConfiguration;
         this.address = PathAddress.pathAddress(PathElement.pathElement(ModelDescriptionConstants.HOST, configuration.getHostName()));
+        this.closeClientConfig = closeClientConfig;
     }
 
     public JBossAsManagedConfiguration getConfiguration() {
@@ -116,7 +123,8 @@ public class DomainLifecycleUtil {
 
             final String address = NetworkUtils.formatPossibleIpv6Address(configuration.getHostControllerManagementAddress());
             final int port = configuration.getHostControllerManagementPort();
-            final URI connectionURI = new URI("remote://" + address + ":" + port);
+            final URI connectionURI = new URI(configuration.getHostControllerManagementProtocol() + "://"
+                    + address + ":" + port);
             // Create the connection - this will try to connect on the first request
             connection = clientConfiguration.createConnection(connectionURI, configuration.getCallbackHandler());
 
@@ -152,18 +160,32 @@ public class DomainLifecycleUtil {
                 modulePath = jbossHomeDir + File.separatorChar + "modules";
             }
 
-            // No point backing up the file in a test scenario, just write what we need.
-            File usersFile = new File(domainPath + "/configuration/mgmt-users.properties");
-            FileOutputStream fos = new FileOutputStream(usersFile);
-            PrintWriter pw = new PrintWriter(fos, true);
-            pw.println("slave=" + new UsernamePasswordHashUtil().generateHashedHexURP("slave", "ManagementRealm", SLAVE_HOST_PASSWORD.toCharArray()));
-            pw.close();
-            fos.close();
-
+            if (configuration.getMgmtUsersFile() != null) {
+                copyConfigFile(new File(configuration.getMgmtUsersFile()), new File(configuration.getDomainDirectory(), "configuration"), null);
+            } else {
+                // No point backing up the file in a test scenario, just write what we need.
+                File usersFile = new File(domainPath + "/configuration/mgmt-users.properties");
+                FileOutputStream fos = new FileOutputStream(usersFile);
+                PrintWriter pw = new PrintWriter(fos, true);
+                pw.println("slave=" + new UsernamePasswordHashUtil().generateHashedHexURP("slave", "ManagementRealm", SLAVE_HOST_PASSWORD.toCharArray()));
+                pw.close();
+                fos.close();
+            }
+            if (configuration.getMgmtGroupsFile() != null) {
+                copyConfigFile(new File(configuration.getMgmtGroupsFile()), new File(configuration.getDomainDirectory(), "configuration"), null);
+            } else {
+                // Put out empty mgmt-groups.properties.
+                File mgmtGroupsProps = new File(domainPath + "/configuration/mgmt-groups.properties");
+                FileOutputStream fos = new FileOutputStream(mgmtGroupsProps);
+                PrintWriter pw = new PrintWriter(fos, true);
+                pw.println("# Management groups");
+                pw.close();
+                fos.close();
+            }
             // Put out empty application realm properties files so servers don't complain
             File appUsersProps = new File(domainPath + "/configuration/application-users.properties");
-            fos = new FileOutputStream(appUsersProps);
-            pw = new PrintWriter(fos, true);
+            FileOutputStream fos = new FileOutputStream(appUsersProps);
+            PrintWriter pw = new PrintWriter(fos, true);
             pw.println("# Application users");
             pw.close();
             fos.close();
@@ -254,6 +276,8 @@ public class DomainLifecycleUtil {
             awaitHostController(start);
             log.info("HostController started in " + (System.currentTimeMillis() - start) + " ms");
 
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException("Could not start container", e);
         }
@@ -273,10 +297,15 @@ public class DomainLifecycleUtil {
         return getExecutorService().submit(c);
     }
 
+    public int getProcessExitCode() {
+        return process.getExitValue();
+    }
+
     /**
      * Stop and wait for the process to exit.
      */
-    public void stop() {
+    public synchronized void stop() {
+        RuntimeException toThrow = null;
         try {
             if (process != null) {
                 process.stop();
@@ -284,7 +313,7 @@ public class DomainLifecycleUtil {
                 process = null;
             }
         } catch (Exception e) {
-            throw new RuntimeException("Could not stop container", e);
+            toThrow = new RuntimeException("Could not stop container", e);
         } finally {
             closeConnection();
             final ExecutorService exec = executor;
@@ -292,6 +321,19 @@ public class DomainLifecycleUtil {
                 exec.shutdownNow();
                 executor = null;
             }
+            if (closeClientConfig) {
+                try {
+                    clientConfiguration.close();
+                } catch (Exception e) {
+                    if (toThrow == null) {
+                        toThrow = new RuntimeException("Could not stop client configuration", e);
+                    }
+                }
+            }
+        }
+
+        if (toThrow != null) {
+            throw toThrow;
         }
     }
 
@@ -434,7 +476,7 @@ public class DomainLifecycleUtil {
         }
     }
 
-    private void awaitHostController(long start) throws InterruptedException, TimeoutException {
+    public void awaitHostController(long start) throws InterruptedException, TimeoutException {
 
         boolean hcAvailable = false;
         long deadline = start + configuration.getStartupTimeoutInSeconds() * 1000;
@@ -472,7 +514,7 @@ public class DomainLifecycleUtil {
         return executor;
     }
 
-    private boolean areServersStarted() {
+    public boolean areServersStarted() {
         try {
             Map<ServerIdentity, ControlledProcessState.State> statuses = getServerStatuses();
             for (Map.Entry<ServerIdentity, ControlledProcessState.State> entry : statuses.entrySet()) {
@@ -484,7 +526,7 @@ public class DomainLifecycleUtil {
                         return false;
                 }
             }
-            serverStatuses.putAll(statuses);
+//            serverStatuses.putAll(statuses);
             return true;
         } catch (Exception ignored) {
             // ignore, as we will get exceptions until the management comm services start
@@ -492,7 +534,7 @@ public class DomainLifecycleUtil {
         return false;
     }
 
-    private boolean isHostControllerStarted() {
+    public boolean isHostControllerStarted() {
         try {
             ModelNode address = new ModelNode();
             address.add("host", configuration.getHostName());
@@ -535,13 +577,18 @@ public class DomainLifecycleUtil {
             if (!readAttribute("auto-start", address).resolve().asBoolean()) {
                 continue;
             }
+            // Make sure the server is started before trying to contact it
+            final ServerIdentity id = new ServerIdentity(configuration.getHostName(), group, server);
+            if (!readAttribute("status", address).asString().equals("STARTED")) {
+                result.put(id, ControlledProcessState.State.STARTING);
+                continue;
+            }
 
             address = new ModelNode();
             address.add("host", configuration.getHostName());
             address.add("server", server);
 
             ControlledProcessState.State status = Enum.valueOf(ControlledProcessState.State.class, readAttribute("server-state", address).asString().toUpperCase(Locale.ENGLISH));
-            ServerIdentity id = new ServerIdentity(configuration.getHostName(), group, server);
             result.put(id, status);
         }
 
@@ -593,7 +640,12 @@ public class DomainLifecycleUtil {
     }
 
     private String copyConfigFile(File file, File dir) {
-        File newFile = new File(dir, "testing-" + file.getName());
+        return copyConfigFile(file, dir, "testing-");
+    }
+
+    private String copyConfigFile(File file, File dir, String prefix) {
+        prefix = prefix == null ? "" : prefix;
+        File newFile = new File(dir, prefix + file.getName());
         if (newFile.exists()) {
             newFile.delete();
         }

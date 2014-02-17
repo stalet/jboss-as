@@ -27,14 +27,14 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-arquillian</artifactId>
+    <artifactId>wildfly-arquillian</artifactId>
 
-    <name>JBoss Application Server: Arquillian</name>
+    <name>WildFly: Arquillian</name>
 
     <modules>
         <module>common</module>
@@ -48,11 +48,6 @@
         <module>common-domain</module>
         <module>container-remote-domain</module>
         <module>container-managed-domain</module>
-
-        <!--
-        <module>protocol-servlet</module>
-        <module>processor-jsfunit</module>
-        -->
     </modules>
 
     <packaging>pom</packaging>

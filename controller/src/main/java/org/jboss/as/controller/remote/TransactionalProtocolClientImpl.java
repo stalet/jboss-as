@@ -22,16 +22,30 @@
 
 package org.jboss.as.controller.remote;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CANCELLED;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
+import static org.jboss.as.protocol.mgmt.ProtocolUtils.expectHeader;
+
+import javax.security.auth.Subject;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInput;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Serializable;
+import java.security.Principal;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.client.MessageSeverity;
 import org.jboss.as.controller.client.OperationAttachments;
 import org.jboss.as.controller.client.OperationMessageHandler;
 import org.jboss.as.controller.client.impl.AbstractDelegatingAsyncFuture;
 import org.jboss.as.controller.client.impl.ModelControllerProtocol;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CANCELLED;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
 import org.jboss.as.protocol.StreamUtils;
 import org.jboss.as.protocol.mgmt.AbstractManagementRequest;
 import org.jboss.as.protocol.mgmt.ActiveOperation;
@@ -43,22 +57,14 @@ import org.jboss.as.protocol.mgmt.ManagementRequestHandler;
 import org.jboss.as.protocol.mgmt.ManagementRequestHandlerFactory;
 import org.jboss.as.protocol.mgmt.ManagementRequestHeader;
 import org.jboss.as.protocol.mgmt.ManagementResponseHeader;
-import static org.jboss.as.protocol.mgmt.ProtocolUtils.expectHeader;
 import org.jboss.dmr.ModelNode;
 import org.jboss.threads.AsyncFuture;
-
-import java.io.ByteArrayOutputStream;
-import java.io.DataInput;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Base implementation for the transactional protocol.
  *
  * @author Emanuel Muckenhuber
+ * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
 class TransactionalProtocolClientImpl implements ManagementRequestHandlerFactory, TransactionalProtocolClient {
 
@@ -88,7 +94,8 @@ class TransactionalProtocolClientImpl implements ManagementRequestHandlerFactory
 
     @Override
     public <T extends Operation> AsyncFuture<ModelNode> execute(TransactionalOperationListener<T> listener, T operation) throws IOException {
-        final ExecuteRequestContext context = new ExecuteRequestContext(new OperationWrapper<T>(listener, operation));
+        final Subject subject = SecurityActions.getSubject();
+        final ExecuteRequestContext context = new ExecuteRequestContext(new OperationWrapper<T>(listener, operation), subject);
         final ActiveOperation<ModelNode, ExecuteRequestContext> op = channelAssociation.initializeOperation(context, context);
         final AsyncFuture<ModelNode> result = new AbstractDelegatingAsyncFuture<ModelNode>(op.getResult()) {
             @Override
@@ -136,6 +143,12 @@ class TransactionalProtocolClientImpl implements ManagementRequestHandlerFactory
             operation.writeExternal(output);
             output.write(ModelControllerProtocol.PARAM_INPUTSTREAMS_LENGTH);
             output.writeInt(inputStreamLength);
+
+            final Boolean sendSubject = channelAssociation.getAttachments().getAttachment(SEND_SUBJECT);
+            if (sendSubject != null && sendSubject) {
+                final Subject subject = context.getAttachment().getSerializableSubject();
+                writeSubject(output, subject);
+            }
         }
 
         @Override
@@ -288,9 +301,11 @@ class TransactionalProtocolClientImpl implements ManagementRequestHandlerFactory
     static class ExecuteRequestContext implements ActiveOperation.CompletedCallback<ModelNode> {
         final OperationWrapper<?> wrapper;
         final AtomicBoolean completed = new AtomicBoolean(false);
+        final Subject subject;
 
-        ExecuteRequestContext(OperationWrapper<?> operationWrapper) {
+        ExecuteRequestContext(OperationWrapper<?> operationWrapper, Subject subject) {
             this.wrapper = operationWrapper;
+            this.subject = subject;
         }
 
         void initialize(final AsyncFuture<ModelNode> result) {
@@ -315,6 +330,21 @@ class TransactionalProtocolClientImpl implements ManagementRequestHandlerFactory
                 return Collections.emptyList();
             }
             return attachments.getInputStreams();
+        }
+
+        Subject getSerializableSubject() {
+            if (subject != null) {
+                Subject toSend = new Subject();
+                Set<Principal> principals = toSend.getPrincipals();
+                for (Principal current : subject.getPrincipals()) {
+                    if (current instanceof Serializable) {
+                        principals.add(current);
+                    }
+                }
+                toSend.setReadOnly();
+                return toSend;
+            }
+            return null;
         }
 
         @Override
@@ -445,6 +475,10 @@ class TransactionalProtocolClientImpl implements ManagementRequestHandlerFactory
 
     static ModelNode getResponse(final String outcome) {
         return getFailureResponse(outcome, null);
+    }
+
+    static void writeSubject(final FlushableDataOutput output, final Subject subject) throws IOException {
+        SubjectProtocolUtil.write(output, subject);
     }
 
 }

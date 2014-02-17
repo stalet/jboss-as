@@ -24,6 +24,7 @@ package org.jboss.as.domain.management.security;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PASSWORD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.USER;
+import static org.jboss.as.domain.management.DomainManagementLogger.SECURITY_LOGGER;
 import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
 import static org.jboss.as.domain.management.RealmConfigurationConstants.DIGEST_PLAIN_TEXT;
 
@@ -43,20 +44,22 @@ import javax.security.sasl.AuthorizeCallback;
 import javax.security.sasl.RealmCallback;
 
 import org.jboss.as.domain.management.AuthMechanism;
+import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 
 /**
- * A CallbackHandler for users defined within the domain mode.
+ * A CallbackHandler for users defined within the domain model.
  *
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
 public class UserDomainCallbackHandler implements Service<CallbackHandlerService>, CallbackHandlerService, CallbackHandler {
 
-    public static final String SERVICE_SUFFIX = "users";
+    private static final String SERVICE_SUFFIX = "users";
 
     private final String realm;
 
@@ -154,16 +157,33 @@ public class UserDomainCallbackHandler implements Service<CallbackHandlerService
         // Second Pass - Now iterate the Callback(s) requiring a response.
         for (Callback current : toRespondTo) {
             if (current instanceof AuthorizeCallback) {
-                AuthorizeCallback authorizeCallback = (AuthorizeCallback) current;
-                // Don't support impersonating another identity
-                authorizeCallback.setAuthorized(authorizeCallback.getAuthenticationID().equals(authorizeCallback.getAuthorizationID()));
+                AuthorizeCallback acb = (AuthorizeCallback) current;
+                boolean authorized = acb.getAuthenticationID().equals(acb.getAuthorizationID());
+                if (authorized == false) {
+                    SECURITY_LOGGER.tracef(
+                            "Checking 'AuthorizeCallback', authorized=false, authenticationID=%s, authorizationID=%s.",
+                            acb.getAuthenticationID(), acb.getAuthorizationID());
+                }
+                acb.setAuthorized(authorized);
             } else if (current instanceof PasswordCallback) {
                 if (user == null) {
+                    SECURITY_LOGGER.tracef("User '%s' not found.", userName);
                     throw new UserNotFoundException(userName);
                 }
                 String password = user.require(PASSWORD).asString();
                 ((PasswordCallback) current).setPassword(password.toCharArray());
             }
+        }
+
+    }
+
+    public static final class ServiceUtil {
+
+        private ServiceUtil() {
+        }
+
+        public static ServiceName createServiceName(final String realmName) {
+            return SecurityRealm.ServiceUtil.createServiceName(realmName).append(SERVICE_SUFFIX);
         }
 
     }

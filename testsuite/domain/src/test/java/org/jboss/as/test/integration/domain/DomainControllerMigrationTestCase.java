@@ -28,10 +28,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URL;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.TimeoutException;
-
-import org.junit.Assert;
 
 import org.jboss.as.cli.operation.OperationFormatException;
 import org.jboss.as.controller.client.Operation;
@@ -41,11 +38,9 @@ import org.jboss.as.test.integration.domain.management.util.DomainControllerClie
 import org.jboss.as.test.integration.domain.management.util.DomainLifecycleUtil;
 import org.jboss.as.test.integration.domain.management.util.DomainTestUtils;
 import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfiguration;
-import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfigurationParameters;
 import org.jboss.as.test.integration.management.util.ModelUtil;
 import org.jboss.as.test.integration.management.util.SimpleServlet;
 import org.jboss.as.test.integration.management.util.WebUtil;
-import org.jboss.as.test.shared.RetryTaskExecutor;
 import org.jboss.dmr.ModelNode;
 import org.jboss.logging.Logger;
 import org.jboss.sasl.util.UsernamePasswordHashUtil;
@@ -54,6 +49,7 @@ import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.jboss.shrinkwrap.impl.base.exporter.zip.ZipExporterImpl;
 import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -74,15 +70,16 @@ public class DomainControllerMigrationTestCase {
     private static String slaveAddress = System.getProperty("jboss.test.host.slave.address");
     private static final String DEPLOYMENT_NAME = "SimpleServlet.war";
 
+    private static DomainControllerClientConfig domainControllerClientConfig;
     private static DomainLifecycleUtil[] hostUtils = new DomainLifecycleUtil[3];
 
     private static File warFile;
 
     @BeforeClass
     public static void setupDomain() throws Exception {
-        final DomainControllerClientConfig config = DomainControllerClientConfig.create();
+        domainControllerClientConfig = DomainControllerClientConfig.create();
         for (int k = 0; k<3; k++) {
-            hostUtils[k] = new DomainLifecycleUtil(getHostConfiguration(k+1), config);
+            hostUtils[k] = new DomainLifecycleUtil(getHostConfiguration(k+1), domainControllerClientConfig);
             hostUtils[k].start();
         }
 
@@ -96,9 +93,21 @@ public class DomainControllerMigrationTestCase {
     }
 
     @AfterClass
-    public static void shutdownDomain() {
-        hostUtils[1].stop();
-        hostUtils[2].stop();
+    public static void shutdownDomain() throws IOException {
+        try {
+            int i = 0;
+            for (; i < hostUtils.length; i++) {
+                try {
+                    hostUtils[i].stop();
+                } catch (Exception e) {
+                    log.error("Failed closing host util " + i, e);
+                }
+            }
+        } finally {
+            if (domainControllerClientConfig != null) {
+                domainControllerClientConfig.close();
+            }
+        }
 
         Assert.assertTrue(warFile.delete());
     }
@@ -112,7 +121,7 @@ public class DomainControllerMigrationTestCase {
         hostConfigDir.mkdirs();
 
         ClassLoader tccl = Thread.currentThread().getContextClassLoader();
-        final JBossAsManagedConfiguration hostConfig = new JBossAsManagedConfiguration(JBossAsManagedConfigurationParameters.STANDARD);
+        final JBossAsManagedConfiguration hostConfig = new JBossAsManagedConfiguration();
         hostConfig.setHostControllerManagementAddress(host == 1 ? masterAddress : slaveAddress);
         hostConfig.setHostCommandLineProperties("-Djboss.test.host.master.address=" + masterAddress + " -Djboss.test.host.slave.address=" + slaveAddress);
         URL url = tccl.getResource("domain-configs/domain-standard.xml");
@@ -233,16 +242,14 @@ public class DomainControllerMigrationTestCase {
     }
 
     private void waitUntilHostControllerReady(final DomainLifecycleUtil dcUtil) throws TimeoutException {
-        RetryTaskExecutor<Object> executor = new RetryTaskExecutor<Object>();
-        executor.retryTask(new Callable<Object>() {
-
-            public Object call() throws Exception {
-                ModelNode readOp = new ModelNode();
-                readOp.get(ModelDescriptionConstants.OP).set(ModelDescriptionConstants.READ_RESOURCE_OPERATION);
-                return dcUtil.executeForResult(readOp);
-            }
-        });
-
+        long now = System.currentTimeMillis();
+        try {
+            dcUtil.awaitHostController(now);
+            dcUtil.awaitServers(now);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        }
     }
 
     private Operation buildDeployOperation() throws IOException, OperationFormatException {

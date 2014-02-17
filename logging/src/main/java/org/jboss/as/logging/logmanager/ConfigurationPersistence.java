@@ -27,6 +27,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.channels.FileLock;
 import java.util.List;
 
 import org.jboss.as.controller.OperationContext;
@@ -54,7 +55,7 @@ import org.jboss.logmanager.config.PojoConfiguration;
  *
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  */
-public final class ConfigurationPersistence implements Configurator, LogContextConfiguration {
+public class ConfigurationPersistence implements Configurator, LogContextConfiguration {
 
     private static final Object LOCK = new Object();
     private static final String PROPERTIES_FILE = "logging.properties";
@@ -68,7 +69,11 @@ public final class ConfigurationPersistence implements Configurator, LogContextC
     }
 
     public ConfigurationPersistence(final LogContext logContext) {
-        config = new PropertyConfigurator(logContext);
+        this(new PropertyConfigurator(logContext));
+    }
+
+    public ConfigurationPersistence(final PropertyConfigurator config) {
+        this.config = config;
         delegate = config.getLogContextConfiguration();
     }
 
@@ -90,12 +95,28 @@ public final class ConfigurationPersistence implements Configurator, LogContextC
      */
     public static ConfigurationPersistence getOrCreateConfigurationPersistence(final LogContext logContext) {
         final Logger root = logContext.getLogger(CommonAttributes.ROOT_LOGGER_NAME);
-        ConfigurationPersistence result = (ConfigurationPersistence) root.getAttachment(Configurator.ATTACHMENT_KEY);
-        if (result == null) {
-            result = new ConfigurationPersistence(logContext);
-            ConfigurationPersistence existing = (ConfigurationPersistence) root.attachIfAbsent(Configurator.ATTACHMENT_KEY, result);
-            if (existing != null) {
-                result = existing;
+        final ConfigurationPersistence result;
+        synchronized (LOCK) {
+            Configurator configurator = root.getAttachment(Configurator.ATTACHMENT_KEY);
+            if (configurator == null) {
+                configurator = new ConfigurationPersistence(logContext);
+                Configurator existing = root.attachIfAbsent(Configurator.ATTACHMENT_KEY, configurator);
+                if (existing != null) {
+                    configurator = existing;
+                }
+            }
+            if (configurator instanceof ConfigurationPersistence) {
+                // We have the correct configurator
+                result = (ConfigurationPersistence) configurator;
+            } else if (configurator instanceof PropertyConfigurator) {
+                // Create a new configurator delegating to the configurator found
+                result = new ConfigurationPersistence((PropertyConfigurator) configurator);
+                root.attach(Configurator.ATTACHMENT_KEY, result);
+            } else {
+                // An unknown configurator, log a warning and replace
+                LoggingLogger.ROOT_LOGGER.replacingConfigurator(configurator);
+                result = new ConfigurationPersistence(logContext);
+                root.attach(Configurator.ATTACHMENT_KEY, result);
             }
         }
         return result;
@@ -223,7 +244,7 @@ public final class ConfigurationPersistence implements Configurator, LogContextC
     @Override
     public FilterConfiguration addFilterConfiguration(final String moduleName, final String className, final String filterName, final String... constructorProperties) {
         synchronized (LOCK) {
-            return delegate.addFilterConfiguration(moduleName,  className, filterName, constructorProperties);
+            return delegate.addFilterConfiguration(moduleName, className, filterName, constructorProperties);
         }
     }
 
@@ -372,9 +393,17 @@ public final class ConfigurationPersistence implements Configurator, LogContextC
                     FileOutputStream out = null;
                     try {
                         out = new FileOutputStream(configFile);
-                        out.write(NOTE_MESSAGE);
-                        config.writeConfiguration(out);
-                        out.close();
+                        final FileLock lock = out.getChannel().lock();
+                        try {
+                            out.write(NOTE_MESSAGE);
+                            config.writeConfiguration(out);
+                        } finally {
+                            // The write should close the stream which would release the lock this check ensures the
+                            // lock will be released
+                            if (lock.isValid()) {
+                                lock.release();
+                            }
+                        }
                         LoggingLogger.ROOT_LOGGER.tracef("Logging configuration file '%s' successfully written.", configFile.getAbsolutePath());
                     } catch (IOException e) {
                         throw LoggingMessages.MESSAGES.failedToWriteConfigurationFile(e, configFile);

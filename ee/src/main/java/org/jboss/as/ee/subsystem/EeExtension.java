@@ -43,11 +43,13 @@ import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.transform.TransformationContext;
 import org.jboss.as.controller.transform.description.AttributeConverter;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
 import org.jboss.as.controller.transform.description.RejectAttributeChecker;
 import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.as.controller.transform.description.TransformationDescription;
 import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
 import org.jboss.as.ee.EeMessages;
+import org.jboss.as.ee.component.deployers.DefaultBindingsConfigurationProcessor;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
@@ -69,7 +71,7 @@ public class EeExtension implements Extension {
     protected static final PathElement PATH_SUBSYSTEM = PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, SUBSYSTEM_NAME);
 
     static ResourceDescriptionResolver getResourceDescriptionResolver(final String keyPrefix) {
-        return new StandardResourceDescriptionResolver(keyPrefix, RESOURCE_NAME, EeExtension.class.getClassLoader(), true, false);
+        return new StandardResourceDescriptionResolver(keyPrefix, RESOURCE_NAME, EeExtension.class.getClassLoader(), true, true);
     }
 
     /**
@@ -85,6 +87,13 @@ public class EeExtension implements Extension {
 
         // Mandatory describe operation
         rootResource.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, GenericSubsystemDescribeHandler.INSTANCE);
+
+        // register submodels
+        rootResource.registerSubModel(ContextServiceResourceDefinition.INSTANCE);
+        rootResource.registerSubModel(ManagedThreadFactoryResourceDefinition.INSTANCE);
+        rootResource.registerSubModel(ManagedExecutorServiceResourceDefinition.INSTANCE);
+        rootResource.registerSubModel(ManagedScheduledExecutorServiceResourceDefinition.INSTANCE);
+        rootResource.registerSubModel(new DefaultBindingsResourceDefinition(new DefaultBindingsConfigurationProcessor()));
 
         subsystem.registerXMLElementWriter(EESubsystemXmlPersister.INSTANCE);
 
@@ -114,11 +123,18 @@ public class EeExtension implements Extension {
                         EeSubsystemRootResource.JBOSS_DESCRIPTOR_PROPERTY_REPLACEMENT)
                 // Deal with new attributes added to global-modules elements
                 .addRejectCheck(globalModulesRejecterConverter, GlobalModulesDefinition.INSTANCE)
-                .setValueConverter(globalModulesRejecterConverter, GlobalModulesDefinition.INSTANCE);
+                .setValueConverter(globalModulesRejecterConverter, GlobalModulesDefinition.INSTANCE)
+                // Deal with new attribute annotation-property-replacement
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(new ModelNode(false)), EeSubsystemRootResource.ANNOTATION_PROPERTY_REPLACEMENT)
+                .addRejectCheck(RejectAttributeChecker.DEFINED, EeSubsystemRootResource.ANNOTATION_PROPERTY_REPLACEMENT);
+        builder.rejectChildResource(PathElement.pathElement(EESubsystemModel.CONTEXT_SERVICE));
+        builder.rejectChildResource(PathElement.pathElement(EESubsystemModel.MANAGED_THREAD_FACTORY));
+        builder.rejectChildResource(PathElement.pathElement(EESubsystemModel.MANAGED_EXECUTOR_SERVICE));
+        builder.rejectChildResource(PathElement.pathElement(EESubsystemModel.MANAGED_SCHEDULED_EXECUTOR_SERVICE));
+        builder.discardChildResource(EESubsystemModel.DEFAULT_BINDINGS_PATH);
 
         TransformationDescription.Tools.register(builder.build(), subsystem, ModelVersion.create(1, 0, 0));
     }
-
 
     /**
      * Due to https://issues.jboss.org/browse/AS7-4892 the jboss-descriptor-property-replacement attribute

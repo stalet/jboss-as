@@ -26,6 +26,7 @@ import static org.jboss.logging.annotations.Message.INHERIT;
 
 import java.util.Collection;
 
+import javax.jms.IllegalStateRuntimeException;
 import javax.xml.stream.XMLStreamException;
 
 import org.jboss.as.controller.ModelVersion;
@@ -545,4 +546,27 @@ public interface MessagingMessages {
      */
     @Message(id = 11679, value = "The broadcast group '%s' defines reference to nonexistent connector '%s'. Available connectors '%s'.")
     OperationFailedException wrongConnectorRefInBroadCastGroup(final String bgName, final String connectorRef, final Collection<String> presentConnectors);
+
+
+    /**
+     * Create a exception when calling a method not allowed on injected JMSContext.
+     *
+     * @return an {@link IllegalStateRuntimeException} for the error.
+     */
+    @Message(id = 11680, value = "It is not permitted to call this method on injected JMSContext (see JMS 2.0 spec, §12.4.5).")
+    IllegalStateRuntimeException callNotPermittedOnInjectedJMSContext();
+
+    /**
+     * A message indicating the alternative attribute represented by the {@code name} parameter can not be undefined as the resource
+     * has not defined any other alternative .
+     *
+     * @param name the attribute name.
+     *
+     * @return the message.
+     */
+    @Message(id = 11681, value = "Attribute (%s) can not been undefined as the resource does not define any alternative to this attribute.")
+    String undefineAttributeWithoutAlternative(String name);
+
+    @Message(id = 11682, value = "Attributes %s is an alias for attribute %s; both cannot be set with conflicting values.")
+    OperationFailedException inconsistentStatisticsSettings(String attrOne, String attrTwo);
 }

@@ -113,7 +113,9 @@ public class HandlerLegacyOperationsTestCase extends AbstractOperationsTestCase 
         assertTrue("Subhandlers should be empty: " + result, SubsystemOperations.readResultAsList(result).isEmpty());
 
         // Write each attribute and check the value
-        testUpdateCommonHandlerAttributes(kernelServices, address);
+
+        testUpdateProperties(kernelServices, address, CommonAttributes.LEVEL, "TRACE");
+        testUpdateProperties(kernelServices, address, CommonAttributes.FILTER_SPEC, "deny");
         testUpdateProperties(kernelServices, address, AsyncHandlerResourceDefinition.OVERFLOW_ACTION, "BLOCK");
         testUpdateProperties(kernelServices, address, AsyncHandlerResourceDefinition.SUBHANDLERS, subhandlers);
         testUpdateProperties(kernelServices, address, AsyncHandlerResourceDefinition.QUEUE_LENGTH, 20);
@@ -304,7 +306,7 @@ public class HandlerLegacyOperationsTestCase extends AbstractOperationsTestCase 
         testUpdateProperties(kernelServices, address, CommonAttributes.LEVEL, "TRACE");
         testUpdateProperties(kernelServices, address, CommonAttributes.ENABLED, false);
         testUpdateProperties(kernelServices, address, CommonAttributes.ENCODING, "utf-8");
-        testUpdateProperties(kernelServices, address, CommonAttributes.FORMATTER, "[test] %d{HH:mm:ss,SSS} %-5p [%c] %s%E%n");
+        testUpdateProperties(kernelServices, address, AbstractHandlerDefinition.FORMATTER, "[test] %d{HH:mm:ss,SSS} %-5p [%c] %s%E%n");
         testUpdateProperties(kernelServices, address, CommonAttributes.FILTER_SPEC, "deny");
     }
 

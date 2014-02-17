@@ -26,17 +26,24 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.CodeSource;
+import java.security.PrivilegedAction;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.jar.Manifest;
 
 import org.jboss.as.server.ServerMessages;
 import org.jboss.modules.AbstractResourceLoader;
 import org.jboss.modules.ClassSpec;
+import org.jboss.modules.IterableResourceLoader;
 import org.jboss.modules.PackageSpec;
 import org.jboss.modules.PathUtils;
 import org.jboss.modules.Resource;
@@ -46,15 +53,20 @@ import org.jboss.vfs.VFS;
 import org.jboss.vfs.VFSUtils;
 import org.jboss.vfs.VirtualFile;
 import org.jboss.vfs.VirtualFileFilter;
+import org.jboss.vfs.VirtualFilePermission;
 import org.jboss.vfs.VisitorAttributes;
 import org.jboss.vfs.util.FilterVirtualFileVisitor;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Resource loader capable of loading resources from VFS archives.
  *
  * @author John Bailey
+ * @author Thomas.Diesler@jboss.com
  */
-public class VFSResourceLoader extends AbstractResourceLoader {
+public class VFSResourceLoader extends AbstractResourceLoader implements IterableResourceLoader {
 
     private final VirtualFile root;
     private final String rootName;
@@ -81,39 +93,76 @@ public class VFSResourceLoader extends AbstractResourceLoader {
      * @throws IOException if the manifest could not be read or the root URL is invalid
      */
     public VFSResourceLoader(final String rootName, final VirtualFile root, final boolean usePhysicalCodeSource) throws IOException {
+        final SecurityManager sm = System.getSecurityManager();
+        final boolean checking = WildFlySecurityManager.isChecking();
+        if (checking) {
+            sm.checkPermission(new VirtualFilePermission(root.getPathName(), "read"));
+        }
         this.root = root;
         this.rootName = rootName;
-        manifest = VFSUtils.getManifest(root);
+        try {
+            manifest = checking ? doPrivileged(new PrivilegedExceptionAction<Manifest>() {
+                public Manifest run() throws IOException {
+                    return VFSUtils.getManifest(root);
+                }
+            }) : VFSUtils.getManifest(root);
+        } catch (PrivilegedActionException pe) {
+            try {
+                throw pe.getException();
+            } catch (IOException | RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new UndeclaredThrowableException(e);
+            }
+        }
         rootUrl = usePhysicalCodeSource ? VFSUtils.getRootURL(root) : root.asFileURL();
     }
 
     /** {@inheritDoc} */
     public ClassSpec getClassSpec(final String name) throws IOException {
-        final VirtualFile file = root.getChild(name);
-        if (!file.exists()) {
-            return null;
-        }
-        final long size = file.getSize();
-        final ClassSpec spec = new ClassSpec();
-        final InputStream is = file.openStream();
         try {
-            if (size <= (long) Integer.MAX_VALUE) {
-                final int castSize = (int) size;
-                byte[] bytes = new byte[castSize];
-                int a = 0, res;
-                while ((res = is.read(bytes, a, castSize - a)) > 0) {
-                    a += res;
+            return doPrivileged(new PrivilegedExceptionAction<ClassSpec>() {
+                public ClassSpec run() throws Exception {
+                    final VirtualFile file = root.getChild(name);
+                    if (!file.exists()) {
+                        return null;
+                    }
+                    final long size = file.getSize();
+                    final ClassSpec spec = new ClassSpec();
+                    synchronized (VFSResourceLoader.this) {
+                        final InputStream is = file.openStream();
+                        try {
+                            if (size <= Integer.MAX_VALUE) {
+                                final int castSize = (int) size;
+                                byte[] bytes = new byte[castSize];
+                                int a = 0, res;
+                                while ((res = is.read(bytes, a, castSize - a)) > 0) {
+                                    a += res;
+                                }
+                                // consume remainder so that cert check doesn't fail in case of wonky JARs
+                                while (is.read() != -1) {}
+                                // done
+                                is.close();
+                                spec.setBytes(bytes);
+                                spec.setCodeSource(new CodeSource(rootUrl, file.getCodeSigners()));
+                                return spec;
+                            } else {
+                                throw ServerMessages.MESSAGES.resourceTooLarge();
+                            }
+                        } finally {
+                            VFSUtils.safeClose(is);
+                        }
+                    }
                 }
-                // done
-                is.close();
-                spec.setBytes(bytes);
-                spec.setCodeSource(new CodeSource(rootUrl, file.getCodeSigners()));
-                return spec;
-            } else {
-                throw ServerMessages.MESSAGES.resourceTooLarge();
+            });
+        } catch (PrivilegedActionException pe) {
+            try {
+                throw pe.getException();
+            } catch (IOException | Error | RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new UndeclaredThrowableException(e);
             }
-        } finally {
-            VFSUtils.safeClose(is);
         }
     }
 
@@ -139,16 +188,20 @@ public class VFSResourceLoader extends AbstractResourceLoader {
 
     /** {@inheritDoc} */
     public Resource getResource(final String name) {
-        try {
-            final VirtualFile file = root.getChild(PathUtils.canonicalize(name));
-            if (!file.exists()) {
-                return null;
+        return doPrivileged(new PrivilegedAction<Resource>() {
+            public Resource run() {
+                try {
+                    final VirtualFile file = root.getChild(PathUtils.canonicalize(name));
+                    if (!file.exists()) {
+                        return null;
+                    }
+                    return new VFSEntryResource(file.getPathNameRelativeTo(root), file, file.toURL());
+                } catch (MalformedURLException e) {
+                    // must be invalid...?  (todo: check this out)
+                    return null;
+                }
             }
-            return new VFSEntryResource(file, file.toURL());
-        } catch (MalformedURLException e) {
-            // must be invalid...?  (todo: check this out)
-            return null;
-        }
+        });
     }
 
     /** {@inheritDoc} */
@@ -194,17 +247,63 @@ public class VFSResourceLoader extends AbstractResourceLoader {
         return index;
     }
 
+    @Override
+    public Iterator<Resource> iterateResources(String startPath, boolean recursive) {
+        VirtualFile child = root.getChild(startPath);
+        if (startPath.length() > 1 && child == root) {
+            return Collections.<Resource>emptySet().iterator();
+        }
+        VirtualFileFilter filter = new VirtualFileFilter() {
+            @Override
+            public boolean accepts(VirtualFile file) {
+                return file.isFile();
+            }
+        };
+        final Iterator<VirtualFile> children;
+        try {
+            children = (recursive ? child.getChildrenRecursively(filter) : child.getChildren(filter)).iterator();
+        } catch (IOException ex) {
+            throw new IllegalStateException(ex);
+        }
+        return new Iterator<Resource>() {
+
+            @Override
+            public boolean hasNext() {
+                return children.hasNext();
+            }
+
+            @Override
+            public Resource next() {
+                VirtualFile file = children.next();
+                URL fileURL;
+                try {
+                    fileURL = file.toURL();
+                } catch (MalformedURLException ex) {
+                    throw new IllegalStateException(ex);
+                }
+                return new VFSEntryResource(file.getPathNameRelativeTo(root), file, fileURL);
+            }
+
+            @Override
+            public void remove() {
+                throw new UnsupportedOperationException();
+            }
+        };
+    }
+
     static class VFSEntryResource implements Resource {
+        private final String name;
         private final VirtualFile entry;
         private final URL resourceURL;
 
-        VFSEntryResource(final VirtualFile entry, final URL resourceURL) {
+        VFSEntryResource(final String name, final VirtualFile entry, final URL resourceURL) {
+            this.name = name;
             this.entry = entry;
             this.resourceURL = resourceURL;
         }
 
         public String getName() {
-            return entry.getName();
+            return name;
         }
 
         public URL getURL() {
@@ -220,5 +319,4 @@ public class VFSResourceLoader extends AbstractResourceLoader {
             return size == -1 ? 0 : size;
         }
     }
-
 }

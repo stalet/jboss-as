@@ -35,10 +35,11 @@ import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
 import org.jboss.modules.ModuleLoader;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 import static io.undertow.predicate.Predicates.not;
 import static io.undertow.predicate.Predicates.path;
-import static io.undertow.predicate.Predicates.suffixs;
+import static io.undertow.predicate.Predicates.suffixes;
 
 
 /**
@@ -144,10 +145,10 @@ public enum ConsoleMode {
                     .setAllowed(not(path("META-INF")))
                     .setResourceManager(resource)
                     .setDirectoryListingEnabled(false)
-                    .setCachable(not(suffixs(NOCACHE_JS, APP_HTML, INDEX_HTML)));
+                    .setCachable(not(suffixes(NOCACHE_JS, APP_HTML, INDEX_HTML)));
 
             //we also need to setup the default resource redirect
-            PredicateHandler predicateHandler = new PredicateHandler(path(""), new RedirectHandler(CONTEXT + DEFAULT_RESOURCE), handler);
+            PredicateHandler predicateHandler = new PredicateHandler(path("/"), new RedirectHandler(CONTEXT + DEFAULT_RESOURCE), handler);
             return new ResourceHandlerDefinition(CONTEXT, DEFAULT_RESOURCE, predicateHandler);
 
         }
@@ -195,7 +196,7 @@ public enum ConsoleMode {
                     .setCachable(Predicates.<HttpServerExchange>falsePredicate());
 
             //we also need to setup the default resource redirect
-            PredicateHandler predicateHandler = new PredicateHandler(path(""), new RedirectHandler(CONTEXT + resource), handler);
+            PredicateHandler predicateHandler = new PredicateHandler(path("/"), new RedirectHandler(CONTEXT + resource), handler);
             return new ResourceHandlerDefinition(CONTEXT, resource, predicateHandler);
         }
 
@@ -221,7 +222,7 @@ public enum ConsoleMode {
     static SortedSet<ConsoleVersion> findConsoleVersions(String moduleName) {
         String path = moduleName.replace('.', '/');
 
-        final String modulePath = SecurityActions.getProperty("module.path");
+        final String modulePath = WildFlySecurityManager.getPropertyPrivileged("module.path", null);
         File[] moduleRoots = getFiles(modulePath, 0, 0);
         SortedSet<ConsoleVersion> consoleVersions = new TreeSet<ConsoleVersion>();
         for (File root : moduleRoots) {

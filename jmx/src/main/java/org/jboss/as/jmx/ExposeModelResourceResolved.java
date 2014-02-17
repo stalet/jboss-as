@@ -21,8 +21,11 @@
 */
 package org.jboss.as.jmx;
 
+import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
+import org.jboss.as.controller.access.management.JmxAuthorizer;
+import org.jboss.as.controller.audit.ManagedAuditLogger;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
@@ -35,6 +38,8 @@ import org.jboss.dmr.ModelType;
  */
 public class ExposeModelResourceResolved extends ExposeModelResource {
 
+    public static final PathElement PATH_ELEMENT = PathElement.pathElement(CommonAttributes.EXPOSE_MODEL, CommonAttributes.RESOLVED);
+
     public static final SimpleAttributeDefinition DOMAIN_NAME = SimpleAttributeDefinitionBuilder.create(CommonAttributes.DOMAIN_NAME, ModelType.STRING, true)
             .setAllowExpression(true)
             .setDefaultValue(new ModelNode(CommonAttributes.DEFAULT_RESOLVED_DOMAIN))
@@ -45,10 +50,8 @@ public class ExposeModelResourceResolved extends ExposeModelResource {
             .setDefaultValue(new ModelNode(true))
             .build();
 
-    static final ExposeModelResourceResolved INSTANCE = new ExposeModelResourceResolved();
-
-    private ExposeModelResourceResolved() {
-        super(CommonAttributes.RESOLVED, DOMAIN_NAME, PROPER_PROPERTY_FORMAT);
+    ExposeModelResourceResolved(ManagedAuditLogger auditLoggerInfo, JmxAuthorizer authorizer) {
+        super(PATH_ELEMENT, auditLoggerInfo, authorizer, DOMAIN_NAME, PROPER_PROPERTY_FORMAT);
     }
 
     @Override

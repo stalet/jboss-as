@@ -56,6 +56,6 @@ public class PasswordCheckResult {
     }
 
     public enum Result {
-        REJECT, WARN, ACCEPT;
+        REJECT, WARN, ACCEPT
     }
 }

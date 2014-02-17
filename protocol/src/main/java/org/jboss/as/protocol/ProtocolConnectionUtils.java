@@ -45,7 +45,6 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Protocol Connection utils.
@@ -57,7 +56,6 @@ import java.util.concurrent.TimeUnit;
 public class ProtocolConnectionUtils {
 
     private static final String JBOSS_LOCAL_USER = "JBOSS-LOCAL-USER";
-    private static final String REMOTE_PROTOCOL = "remote";
 
     /**
      * Connect.
@@ -81,7 +79,7 @@ public class ProtocolConnectionUtils {
         } else {
             InetSocketAddress bindAddr = new InetSocketAddress(clientBindAddress, 0);
             InetSocketAddress destAddr = new InetSocketAddress(configuration.getUri().getHost(), configuration.getUri().getPort());
-            return endpoint.connect(REMOTE_PROTOCOL, bindAddr, destAddr, options, actualHandler, configuration.getSslContext());
+            return endpoint.connect(configuration.getUri().getScheme(), bindAddr, destAddr, options, actualHandler, configuration.getSslContext());
         }
     }
 
@@ -93,34 +91,24 @@ public class ProtocolConnectionUtils {
      * @throws IOException
      */
     public static Connection connectSync(final ProtocolConnectionConfiguration configuration) throws IOException {
-        final CallbackHandler handler = configuration.getCallbackHandler();
-        final CallbackHandler actualHandler = handler != null ? handler : new AnonymousCallbackHandler();
-        final WrapperCallbackHandler wrapperHandler = new WrapperCallbackHandler(actualHandler);
-        final IoFuture<Connection> future = connect(wrapperHandler, configuration);
         long timeoutMillis = configuration.getConnectionTimeout();
-        IoFuture.Status status = future.await(timeoutMillis, TimeUnit.MILLISECONDS);
-        while (status == IoFuture.Status.WAITING) {
-            if (wrapperHandler.isInCall()) {
-                // If there is currently an interaction with the user just wait again.
-                status = future.await(timeoutMillis, TimeUnit.MILLISECONDS);
-            } else {
-                long lastInteraction = wrapperHandler.getCallFinished();
-                if (lastInteraction > 0) {
-                    long now = System.currentTimeMillis();
-                    long timeSinceLast = now - lastInteraction;
-                    if (timeSinceLast < timeoutMillis) {
-                        // As this point we are setting the timeout based on the time of the last interaction
-                        // with the user, if there is any time left we will wait for that time but dont wait for
-                        // a full timeout.
-                        status = future.await(timeoutMillis - timeSinceLast, TimeUnit.MILLISECONDS);
-                    } else {
-                        status = null;
-                    }
-                } else {
-                    status = null; // Just terminate status processing.
-                }
-            }
+        CallbackHandler handler = configuration.getCallbackHandler();
+        final CallbackHandler actualHandler;
+        ProtocolTimeoutHandler timeoutHandler = configuration.getTimeoutHandler();
+        // Note: If a client supplies a ProtocolTimeoutHandler it is taking on full responsibility for timeout management.
+        if (timeoutHandler == null) {
+            GeneralTimeoutHandler defaultTimeoutHandler = new GeneralTimeoutHandler();
+            // No point wrapping our AnonymousCallbackHandler.
+            actualHandler = handler != null ? new WrapperCallbackHandler(defaultTimeoutHandler, handler)
+                    : new AnonymousCallbackHandler();
+            timeoutHandler = defaultTimeoutHandler;
+        } else {
+            actualHandler = handler != null ? handler : new AnonymousCallbackHandler();
         }
+
+        final IoFuture<Connection> future = connect(actualHandler, configuration);
+
+        IoFuture.Status status = timeoutHandler.await(future, timeoutMillis);
 
         if (status == IoFuture.Status.DONE) {
             return future.get();
@@ -134,12 +122,10 @@ public class ProtocolConnectionUtils {
     private static OptionMap getOptions(final ProtocolConnectionConfiguration configuration) {
         final Map<String, String> saslOptions = configuration.getSaslOptions();
         final OptionMap.Builder builder = OptionMap.builder();
-        builder.addAll(configuration.getOptionMap());
         builder.set(SASL_POLICY_NOANONYMOUS, Boolean.FALSE);
         builder.set(SASL_POLICY_NOPLAINTEXT, Boolean.FALSE);
-        if (isLocal(configuration.getUri()) == false) {
-            builder.set(Options.SASL_DISALLOWED_MECHANISMS, Sequence.of(JBOSS_LOCAL_USER));
-        }
+        builder.addAll(configuration.getOptionMap());
+        configureSaslMechnisms(saslOptions, isLocal(configuration.getUri()), builder);
         List<Property> tempProperties = new ArrayList<Property>(saslOptions != null ? saslOptions.size() : 1);
         tempProperties.add(Property.of("jboss.sasl.local-user.quiet-auth", "true"));
         if (saslOptions != null) {
@@ -152,6 +138,36 @@ public class ProtocolConnectionUtils {
         builder.set(Options.SSL_STARTTLS, true);
 
         return builder.getMap();
+    }
+
+    private static void configureSaslMechnisms(Map<String, String> saslOptions, boolean isLocal, OptionMap.Builder builder) {
+        String[] mechanisms = null;
+        String listed;
+        if (saslOptions != null && (listed = saslOptions.get(Options.SASL_DISALLOWED_MECHANISMS.getName())) != null) {
+            // Disallowed mechanisms were passed via the saslOptions map; need to convert to an XNIO option
+            String[] split = listed.split(" ");
+            if (isLocal) {
+                mechanisms = new String[split.length + 1];
+                mechanisms[0] = JBOSS_LOCAL_USER;
+                System.arraycopy(split, 0, mechanisms, 1, split.length);
+            } else {
+                mechanisms = split;
+            }
+        } else if (!isLocal) {
+            mechanisms = new String[]{ JBOSS_LOCAL_USER };
+        }
+
+        if (mechanisms != null) {
+            builder.set(Options.SASL_DISALLOWED_MECHANISMS, Sequence.of(mechanisms));
+        }
+
+        if (saslOptions != null && (listed = saslOptions.get(Options.SASL_MECHANISMS.getName())) != null) {
+            // SASL mechanisms were passed via the saslOptions map; need to convert to an XNIO option
+            String[] split = listed.split(" ");
+            if (split.length > 0) {
+                builder.set(Options.SASL_MECHANISMS, Sequence.of(split));
+            }
+        }
     }
 
     private static boolean isLocal(final URI uri) {
@@ -187,35 +203,40 @@ public class ProtocolConnectionUtils {
 
     private static final class WrapperCallbackHandler implements CallbackHandler {
 
-        private volatile boolean inCall = false;
-
-        private volatile long callFinished = -1;
-
+        private final GeneralTimeoutHandler timeoutHandler;
         private final CallbackHandler wrapped;
 
-        WrapperCallbackHandler(final CallbackHandler toWrap) {
+        WrapperCallbackHandler(final GeneralTimeoutHandler timeoutHandler, final CallbackHandler toWrap) {
+            this.timeoutHandler = timeoutHandler;
             this.wrapped = toWrap;
         }
 
-        public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
-            inCall = true;
+        public void handle(final Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+
             try {
-                wrapped.handle(callbacks);
-            } finally {
-                // Set the time first so if a read is made between these two calls it will say inCall=true until
-                // callFinished is set.
-                callFinished = System.currentTimeMillis();
-                inCall = false;
+                timeoutHandler.suspendAndExecute(new Runnable() {
+
+                    @Override
+                    public void run() {
+                        try {
+                            wrapped.handle(callbacks);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        } catch (UnsupportedCallbackException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                });
+            } catch (RuntimeException e) {
+                if (e.getCause() instanceof IOException) {
+                    throw (IOException) e.getCause();
+                } else if (e.getCause() instanceof UnsupportedCallbackException) {
+                    throw (UnsupportedCallbackException) e.getCause();
+                }
+                throw e;
             }
         }
 
-        boolean isInCall() {
-            return inCall;
-        }
-
-        long getCallFinished() {
-            return callFinished;
-        }
     }
 
     private static final class AnonymousCallbackHandler implements CallbackHandler {

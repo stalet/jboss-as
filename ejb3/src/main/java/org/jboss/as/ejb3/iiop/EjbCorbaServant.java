@@ -23,6 +23,7 @@ package org.jboss.as.ejb3.iiop;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.rmi.RemoteException;
 import java.security.AccessController;
 import java.security.Principal;
@@ -69,7 +70,7 @@ import org.omg.PortableServer.Current;
 import org.omg.PortableServer.CurrentPackage.NoContext;
 import org.omg.PortableServer.POA;
 import org.omg.PortableServer.Servant;
-
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * CORBA servant class for the <code>EJBObject</code>s of a given bean. An
@@ -235,10 +236,10 @@ public class EjbCorbaServant extends Servant implements InvokeHandler, LocalIIOP
             throw new BAD_OPERATION(opName);
         }
         final NamespaceContextSelector selector = componentView.getComponent().getNamespaceContextSelector();
-        final ClassLoader oldCl = SecurityActions.getContextClassLoader();
+        final ClassLoader oldCl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         NamespaceContextSelector.pushCurrentSelector(selector);
         try {
-            SecurityActions.setContextClassLoader(classLoader);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
             SecurityContext sc = null;
             org.omg.CORBA_2_3.portable.OutputStream out;
             try {
@@ -267,7 +268,7 @@ public class EjbCorbaServant extends Servant implements InvokeHandler, LocalIIOP
                             if ( incomingName != null && incomingName.length > 0) {
                                 //we have an identity token, which is a trust based mechanism
                                 if (incomingName.length > 0) {
-                                    String name = new String(incomingName, "UTF-8");
+                                    String name = new String(incomingName, StandardCharsets.UTF_8);
                                     int domainIndex = name.indexOf('@');
                                     if (domainIndex > 0)
                                         name = name.substring(0, domainIndex);
@@ -282,13 +283,13 @@ public class EjbCorbaServant extends Servant implements InvokeHandler, LocalIIOP
                                 final byte[] username = sasCurrent.get_incoming_username();
                                 final byte[] incomingPassword = sasCurrent.get_incoming_password();
                                 if(username.length > 0) {
-                                    String name = new String(username, "UTF-8");
+                                    String name = new String(username, StandardCharsets.UTF_8);
                                     int domainIndex = name.indexOf('@');
                                     if (domainIndex > 0) {
                                         name = name.substring(0, domainIndex);
                                     }
                                     principal = new SimplePrincipal(name);
-                                    credential = new String(incomingPassword, "UTF-8").toCharArray();
+                                    credential = new String(incomingPassword, StandardCharsets.UTF_8).toCharArray();
                                 }
                             }
 
@@ -355,7 +356,7 @@ public class EjbCorbaServant extends Servant implements InvokeHandler, LocalIIOP
             return out;
         } finally {
             NamespaceContextSelector.popCurrentSelector();
-            SecurityActions.setContextClassLoader(oldCl);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldCl);
         }
     }
 

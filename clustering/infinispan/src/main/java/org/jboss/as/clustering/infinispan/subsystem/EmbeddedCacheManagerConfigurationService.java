@@ -32,13 +32,16 @@ import org.infinispan.configuration.global.GlobalConfigurationBuilder;
 import org.infinispan.configuration.global.GlobalJmxStatisticsConfigurationBuilder;
 import org.infinispan.configuration.global.ShutdownHookBehavior;
 import org.infinispan.configuration.global.TransportConfigurationBuilder;
-import org.infinispan.marshall.Ids;
-import org.jboss.as.clustering.infinispan.ChannelProvider;
+import org.infinispan.marshall.core.Ids;
+import org.jboss.as.clustering.infinispan.ChannelTransport;
+import org.jboss.as.clustering.infinispan.InfinispanLogger;
 import org.jboss.as.clustering.infinispan.MBeanServerProvider;
 import org.jboss.as.clustering.infinispan.ManagedExecutorFactory;
 import org.jboss.as.clustering.infinispan.ManagedScheduledExecutorFactory;
 import org.jboss.as.clustering.infinispan.io.SimpleExternalizer;
 import org.jboss.as.clustering.jgroups.ChannelFactory;
+import org.jboss.as.clustering.jgroups.ProtocolStackConfiguration;
+import org.jboss.as.clustering.jgroups.RelayConfiguration;
 import org.jboss.as.clustering.jgroups.subsystem.ChannelService;
 import org.jboss.marshalling.ModularClassResolver;
 import org.jboss.modules.ModuleIdentifier;
@@ -54,11 +57,13 @@ import org.jboss.msc.service.StopContext;
  * @author Paul Ferraro
  */
 public class EmbeddedCacheManagerConfigurationService implements Service<EmbeddedCacheManagerConfiguration>, EmbeddedCacheManagerConfiguration {
+
     public static ServiceName getServiceName(String name) {
         return EmbeddedCacheManagerService.getServiceName(name).append("config");
     }
 
     interface TransportConfiguration {
+        String getClusterName();
         Long getLockTimeout();
         ChannelFactory getChannelFactory();
         Executor getExecutor();
@@ -75,13 +80,15 @@ public class EmbeddedCacheManagerConfigurationService implements Service<Embedde
 
     private final String name;
     private final String defaultCache;
+    private final boolean statistics;
     private final Dependencies dependencies;
     private final ModuleIdentifier moduleId;
     private volatile GlobalConfiguration config;
 
-    public EmbeddedCacheManagerConfigurationService(String name, String defaultCache, ModuleIdentifier moduleIdentifier, Dependencies dependencies) {
+    public EmbeddedCacheManagerConfigurationService(String name, String defaultCache, boolean statistics, ModuleIdentifier moduleIdentifier, Dependencies dependencies) {
         this.name = name;
         this.defaultCache = defaultCache;
+        this.statistics = statistics;
         this.moduleId = moduleIdentifier;
         this.dependencies = dependencies;
     }
@@ -122,6 +129,7 @@ public class EmbeddedCacheManagerConfigurationService implements Service<Embedde
             builder.classLoader(loader);
             int id = Ids.MAX_ID;
             for (SimpleExternalizer<?> externalizer: ServiceLoader.load(SimpleExternalizer.class, loader)) {
+                InfinispanLogger.ROOT_LOGGER.debugf("Cache container %s will use an externalizer for %s", this.name, externalizer.getTargetClass().getName());
                 builder.serialization().addAdvancedExternalizer(id++, externalizer);
             }
         } catch (ModuleLoadException e) {
@@ -133,13 +141,14 @@ public class EmbeddedCacheManagerConfigurationService implements Service<Embedde
         TransportConfigurationBuilder transportBuilder = builder.transport();
 
         if (transport != null) {
-            ChannelProvider.init(transportBuilder, ChannelService.getServiceName(this.name));
+            transportBuilder.transport(new ChannelTransport(context.getController().getServiceContainer(), ChannelService.getServiceName(this.name)));
             Long timeout = transport.getLockTimeout();
             if (timeout != null) {
                 transportBuilder.distributedSyncTimeout(timeout.longValue());
             }
             // Topology is retrieved from the channel
-            org.jboss.as.clustering.jgroups.TransportConfiguration.Topology topology = transport.getChannelFactory().getProtocolStackConfiguration().getTransport().getTopology();
+            ProtocolStackConfiguration stack = transport.getChannelFactory().getProtocolStackConfiguration();
+            org.jboss.as.clustering.jgroups.TransportConfiguration.Topology topology = stack.getTransport().getTopology();
             if (topology != null) {
                 String site = topology.getSite();
                 if (site != null) {
@@ -154,11 +163,18 @@ public class EmbeddedCacheManagerConfigurationService implements Service<Embedde
                     transportBuilder.machineId(machine);
                 }
             }
-            transportBuilder.clusterName(this.name);
+
+            String clusterName = transport.getClusterName();
+            transportBuilder.clusterName((clusterName != null) ? clusterName : this.name);
 
             Executor executor = transport.getExecutor();
             if (executor != null) {
                 builder.asyncTransportExecutor().factory(new ManagedExecutorFactory(executor));
+            }
+
+            RelayConfiguration relay = stack.getRelay();
+            if (relay != null) {
+                builder.site().localSite(relay.getSiteName());
             }
         }
 
@@ -179,7 +195,7 @@ public class EmbeddedCacheManagerConfigurationService implements Service<Embedde
 
         MBeanServer server = this.dependencies.getMBeanServer();
         if (server != null) {
-            jmxBuilder.enable()
+            jmxBuilder.enabled(this.statistics)
                 .mBeanServerLookup(new MBeanServerProvider(server))
                 .jmxDomain(EmbeddedCacheManagerService.getServiceName(null).getCanonicalName())
                 .allowDuplicateDomains(true)

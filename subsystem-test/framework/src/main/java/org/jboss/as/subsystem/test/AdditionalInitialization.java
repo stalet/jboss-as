@@ -19,12 +19,21 @@ import org.jboss.msc.service.ServiceTarget;
 public class AdditionalInitialization extends AdditionalParsers {
     public static final AdditionalInitialization MANAGEMENT = new ManagementAdditionalInitialization();
 
-    private static class ManagementAdditionalInitialization extends AdditionalInitialization implements Serializable {
+    public static final AdditionalInitialization ADMIN_ONLY_HC = new ManagementAdditionalInitialization() {
+        @Override
+        protected ProcessType getProcessType() {
+            return ProcessType.HOST_CONTROLLER;
+        }
+    };
+
+    public static class ManagementAdditionalInitialization extends AdditionalInitialization implements Serializable {
+        private static final long serialVersionUID = -509444465514822866L;
+
         @Override
         protected RunningMode getRunningMode() {
             return RunningMode.ADMIN_ONLY;
         }
-    };
+    }
 
     /**
      * The process type to be used for the installed controller
@@ -41,14 +50,14 @@ public class AdditionalInitialization extends AdditionalParsers {
      * runtime parts of the operation handlers should not get called since that will make {@link org.jboss.as.controller.OperationContext#isNormalServer()}
      * server return {@code false}
      *
-     * @retun the running mode
+     * @return the running mode
      */
     protected RunningMode getRunningMode() {
         return RunningMode.NORMAL;
     }
 
     /**
-     * Whether or not the runtime resources should be registered. If {@link RunningMode.ADMIN_ONLY} the runtime resources will not
+     * Whether or not the runtime resources should be registered. If {@link RunningMode#ADMIN_ONLY} the runtime resources will not
      * get registered since {@link org.jboss.as.controller.ExtensionContext#isRuntimeOnlyRegistrationValid()} will return false.
      *
      * @return the running mode

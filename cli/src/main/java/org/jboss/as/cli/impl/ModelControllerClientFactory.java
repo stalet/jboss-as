@@ -22,11 +22,15 @@
 package org.jboss.as.cli.impl;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Map;
 
 import javax.net.ssl.SSLContext;
 import javax.security.auth.callback.CallbackHandler;
 
+import org.jboss.as.cli.ControllerAddress;
 import org.jboss.as.controller.client.ModelControllerClient;
+import org.jboss.as.protocol.ProtocolTimeoutHandler;
 
 /**
  * @author Alexey Loubyansky
@@ -34,28 +38,39 @@ import org.jboss.as.controller.client.ModelControllerClient;
  */
 public interface ModelControllerClientFactory {
 
+    String SASL_DISALLOWED_MECHANISMS = "SASL_DISALLOWED_MECHANISMS";
+    String JBOSS_LOCAL_USER = "JBOSS-LOCAL-USER";
+
+    Map<String, String> DISABLED_LOCAL_AUTH = Collections.singletonMap(SASL_DISALLOWED_MECHANISMS, JBOSS_LOCAL_USER);
+    Map<String, String> ENABLED_LOCAL_AUTH = Collections.emptyMap();
+
     interface ConnectionCloseHandler {
         void handleClose();
     }
 
-    ModelControllerClient getClient(String hostName, int port, CallbackHandler handler,
-            SSLContext sslContext, int connectionTimeout, ConnectionCloseHandler closeHandler) throws IOException;
+    ModelControllerClient getClient(ControllerAddress address, CallbackHandler handler,
+            boolean disableLocalAuth, SSLContext sslContext, int connectionTimeout,
+            ConnectionCloseHandler closeHandler, ProtocolTimeoutHandler timeoutHandler) throws IOException;
 
     ModelControllerClientFactory DEFAULT = new ModelControllerClientFactory() {
         @Override
-        public ModelControllerClient getClient(String hostName, int port, CallbackHandler handler,
-                SSLContext sslContext, int connectionTimeout, ConnectionCloseHandler closeHandler) throws IOException {
-            return ModelControllerClient.Factory.create(hostName, port, handler, sslContext, connectionTimeout);
+        public ModelControllerClient getClient(ControllerAddress address, CallbackHandler handler,
+                boolean disableLocalAuth, SSLContext sslContext, int connectionTimeout,
+                ConnectionCloseHandler closeHandler, ProtocolTimeoutHandler timeoutHandler) throws IOException {
+            // TODO - Make use of the ProtocolTimeoutHandler
+            Map<String, String> saslOptions = disableLocalAuth ? DISABLED_LOCAL_AUTH : ENABLED_LOCAL_AUTH;
+            return ModelControllerClient.Factory.create(address.getProtocol(), address.getHost(), address.getPort(), handler, sslContext, connectionTimeout, saslOptions);
         }
     };
 
     ModelControllerClientFactory CUSTOM = new ModelControllerClientFactory() {
 
         @Override
-        public ModelControllerClient getClient(final String hostName, final int port,
-                final CallbackHandler handler, final SSLContext sslContext,
-                final int connectionTimeout, final ConnectionCloseHandler closeHandler) throws IOException {
-
-            return new CLIModelControllerClient(handler, hostName, connectionTimeout, closeHandler, port, sslContext);
+        public ModelControllerClient getClient(ControllerAddress address,
+                final CallbackHandler handler, boolean disableLocalAuth, final SSLContext sslContext,
+                final int connectionTimeout, final ConnectionCloseHandler closeHandler, ProtocolTimeoutHandler timeoutHandler) throws IOException {
+            Map<String, String> saslOptions = disableLocalAuth ? DISABLED_LOCAL_AUTH : ENABLED_LOCAL_AUTH;
+            return new CLIModelControllerClient(address, handler, connectionTimeout, closeHandler, saslOptions, sslContext, timeoutHandler);
         }};
+
 }

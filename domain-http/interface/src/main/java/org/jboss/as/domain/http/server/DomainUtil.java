@@ -23,17 +23,17 @@ package org.jboss.as.domain.http.server;
 
 import static io.undertow.util.Headers.HOST;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RESULT;
+
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.HeaderMap;
 import io.undertow.util.Headers;
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintWriter;
-
 import org.jboss.dmr.ModelNode;
-import org.xnio.IoUtils;
-import org.xnio.streams.ChannelOutputStream;
 
 /**
  * Utility methods used for HTTP based domain management.
@@ -42,37 +42,54 @@ import org.xnio.streams.ChannelOutputStream;
  */
 public class DomainUtil {
 
-    public static void writeResponse(HttpServerExchange exchange, boolean isGet, boolean pretty, ModelNode response, int status, boolean encode) {
-        final String contentType = encode ? Common.APPLICATION_DMR_ENCODED : Common.APPLICATION_JSON;
-        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, contentType  + ";" + Common.UTF_8);
+    public static void writeResponse(final HttpServerExchange exchange, final int status, ModelNode response,
+            OperationParameter operationParameter) {
+
         exchange.setResponseCode(status);
 
+        final HeaderMap responseHeaders = exchange.getResponseHeaders();
+        final String contentType = operationParameter.isEncode() ? Common.APPLICATION_DMR_ENCODED : Common.APPLICATION_JSON;
+        responseHeaders.put(Headers.CONTENT_TYPE, contentType + "; charset=" + Common.UTF_8);
 
-        //TODO Content-Length?
-        if (isGet && status == 200) {
+        writeCacheHeaders(exchange, status, operationParameter);
+
+        if (operationParameter.isGet() && status == 200) {
+            // For GET request the response is purley the model nodes result. The outcome
+            // is not send as part of the response but expressed with the HTTP status code.
             response = response.get(RESULT);
         }
-
-        OutputStream out = new ChannelOutputStream(exchange.getResponseChannel());
-        PrintWriter print = new PrintWriter(out);
         try {
-            try {
-                if (encode) {
-                    response.writeBase64(out);
-                } else {
-                    response.writeJSONString(print, !pretty);
-                }
-            } finally {
-                print.flush();
-                try {
-                    out.flush();
-                } finally {
-                    IoUtils.safeClose(print);
-                    IoUtils.safeClose(out);
-                }
-            }
+            byte[] data = getResponseBytes(response, operationParameter);
+            responseHeaders.put(Headers.CONTENT_LENGTH, data.length);
+            exchange.getResponseSender().send(ByteBuffer.wrap(data));
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private static byte[] getResponseBytes(final ModelNode modelNode, final OperationParameter operationParameter) throws IOException {
+        if (operationParameter.isEncode()) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            BufferedOutputStream out = new BufferedOutputStream(baos);
+            modelNode.writeBase64(out);
+            out.flush();
+            return baos.toByteArray();
+        } else {
+            String json = modelNode.toJSONString(!operationParameter.isPretty());
+            return json.getBytes(StandardCharsets.UTF_8);
+        }
+    }
+
+    public static void writeCacheHeaders(final HttpServerExchange exchange, final int status, final OperationParameter operationParameter) {
+        final HeaderMap responseHeaders = exchange.getResponseHeaders();
+
+        // No need to send this in a 304
+        // See http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.5
+        if (operationParameter.getMaxAge() > 0 && status != 304) {
+            responseHeaders.put(Headers.CACHE_CONTROL, "max-age=" + operationParameter.getMaxAge() + ", private, must-revalidate");
+        }
+        if (operationParameter.getEtag() != null) {
+            responseHeaders.put(Headers.ETAG, operationParameter.getEtag().toString());
         }
     }
 
@@ -86,9 +103,8 @@ public class DomainUtil {
     public static String constructUrl(final HttpServerExchange exchange, final String path) {
         final HeaderMap headers = exchange.getRequestHeaders();
         String host = headers.getFirst(HOST);
-        String protocol = exchange.getConnection().getSslSession() != null ? "https" : "http";
+        String protocol = exchange.getConnection().getSslSessionInfo() != null ? "https" : "http";
 
         return protocol + "://" + host + path;
     }
-
 }

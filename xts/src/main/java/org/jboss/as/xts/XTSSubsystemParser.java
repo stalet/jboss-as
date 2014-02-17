@@ -25,7 +25,9 @@ package org.jboss.as.xts;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.xts.XTSSubsystemDefinition.DEFAULT_CONTEXT_PROPAGATION;
 import static org.jboss.as.xts.XTSSubsystemDefinition.ENVIRONMENT_URL;
+import static org.jboss.as.xts.XTSSubsystemDefinition.HOST_NAME;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -58,38 +60,90 @@ class XTSSubsystemParser implements XMLStreamConstants, XMLElementReader<List<Mo
             throw ParseUtils.unexpectedAttribute(reader, 0);
         }
 
-        final ModelNode subsystem = Util.getEmptyOperation(ADD, PathAddress.pathAddress(XTSExtension.SUBSYSTEM_PATH).toModelNode());
+        final ModelNode subsystem = Util.getEmptyOperation(ADD, PathAddress.pathAddress(XTSExtension.SUBSYSTEM_PATH)
+                .toModelNode());
         list.add(subsystem);
 
-        // elements
         final EnumSet<Element> encountered = EnumSet.noneOf(Element.class);
+        final List<Element> expected = getExpectedElements(reader);
 
         while (reader.hasNext() && reader.nextTag() != END_ELEMENT) {
-            switch (Namespace.forUri(reader.getNamespaceURI())) {
-                case XTS_1_0: {
-                    final Element element = Element.forName(reader.getLocalName());
-                    if (!encountered.add(element)) {
-                        throw ParseUtils.unexpectedElement(reader);
-                    }
-                    switch (element) {
-                        case XTS_ENVIRONMENT: {
-                            parseXTSEnvironmentElement(reader,subsystem);
-                            break;
-                        }
-                        case DEFAULT_CONTEXT_PROPAGATION: {
-                            parseDefaultContextPropagationElement(reader, subsystem);
-                            break;
-                        }
-                        default: {
-                            throw ParseUtils.unexpectedElement(reader);
-                        }
-                    }
+            final Element element = Element.forName(reader.getLocalName());
+
+            if (!expected.contains(element) || !encountered.add(element)) {
+                throw ParseUtils.unexpectedElement(reader);
+            }
+
+            switch (element) {
+                case HOST: {
+                    parseHostElement(reader, subsystem);
+                    break;
+                }
+                case XTS_ENVIRONMENT: {
+                    parseXTSEnvironmentElement(reader,subsystem);
+                    break;
+                }
+                case DEFAULT_CONTEXT_PROPAGATION: {
+                    parseDefaultContextPropagationElement(reader, subsystem);
                     break;
                 }
                 default: {
                     throw ParseUtils.unexpectedElement(reader);
                 }
             }
+        }
+    }
+
+    /**
+     * {@inheritDoc}          XMLExtendedStreamReader reader
+     */
+    @Override
+    public void writeContent(XMLExtendedStreamWriter writer, SubsystemMarshallingContext context) throws XMLStreamException {
+        context.startSubsystemElement(Namespace.CURRENT.getUriString(), false);
+        ModelNode node = context.getModelNode();
+
+        if (node.hasDefined(HOST_NAME.getName())) {
+            writer.writeStartElement(Element.HOST.getLocalName());
+            HOST_NAME.marshallAsAttribute(node, writer);
+            writer.writeEndElement();
+        }
+
+        if (node.hasDefined(ENVIRONMENT_URL.getName())) {
+            writer.writeStartElement(Element.XTS_ENVIRONMENT.getLocalName());
+            ENVIRONMENT_URL.marshallAsAttribute(node, writer);
+            writer.writeEndElement();
+        }
+
+        if (node.hasDefined(DEFAULT_CONTEXT_PROPAGATION.getName())) {
+            writer.writeStartElement(Element.DEFAULT_CONTEXT_PROPAGATION.getLocalName());
+            DEFAULT_CONTEXT_PROPAGATION.marshallAsAttribute(node, writer);
+            writer.writeEndElement();
+        }
+
+        writer.writeEndElement();
+    }
+
+    private void parseHostElement(XMLExtendedStreamReader reader, ModelNode subsystem) throws XMLStreamException {
+        final EnumSet<Attribute> required = EnumSet.of(Attribute.NAME);
+        final int count = reader.getAttributeCount();
+        for (int i = 0; i < count; i++) {
+            ParseUtils.requireNoNamespaceAttribute(reader, i);
+            final String value = reader.getAttributeValue(i);
+            final Attribute attribute = Attribute.forName(reader.getAttributeLocalName(i));
+            required.remove(attribute);
+            switch (attribute) {
+                case NAME:
+                    HOST_NAME.parseAndSetParameter(value, subsystem, reader);
+                    break;
+                default:
+                    throw ParseUtils.unexpectedAttribute(reader, i);
+            }
+        }
+        // Handle elements
+        ParseUtils.requireNoContent(reader);
+
+        if (!required.isEmpty()) {
+            throw ParseUtils.missingRequired(reader, required);
         }
     }
 
@@ -103,7 +157,7 @@ class XTSSubsystemParser implements XMLStreamConstants, XMLElementReader<List<Mo
      * @throws javax.xml.stream.XMLStreamException
      *
      */
-    static void parseXTSEnvironmentElement(XMLExtendedStreamReader reader, ModelNode subsystem) throws XMLStreamException {
+    private void parseXTSEnvironmentElement(XMLExtendedStreamReader reader, ModelNode subsystem) throws XMLStreamException {
 
         final int count = reader.getAttributeCount();
         for (int i = 0; i < count; i++) {
@@ -129,7 +183,7 @@ class XTSSubsystemParser implements XMLStreamConstants, XMLElementReader<List<Mo
      * @param subsystem
      * @throws XMLStreamException
      */
-    static void parseDefaultContextPropagationElement(XMLExtendedStreamReader reader, ModelNode subsystem) throws XMLStreamException {
+    private void parseDefaultContextPropagationElement(XMLExtendedStreamReader reader, ModelNode subsystem) throws XMLStreamException {
         final int count = reader.getAttributeCount();
         for (int i = 0; i < count; i++) {
             ParseUtils.requireNoNamespaceAttribute(reader, i);
@@ -151,33 +205,18 @@ class XTSSubsystemParser implements XMLStreamConstants, XMLElementReader<List<Mo
         ParseUtils.requireNoContent(reader);
     }
 
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public void writeContent(XMLExtendedStreamWriter writer, SubsystemMarshallingContext context) throws XMLStreamException {
+    private List<Element> getExpectedElements(final XMLExtendedStreamReader reader) {
+        final Namespace namespace = Namespace.forUri(reader.getNamespaceURI());
+        final List<Element> elements = new ArrayList<>();
 
-        context.startSubsystemElement(Namespace.CURRENT.getUriString(), false);
+        if (Namespace.XTS_1_0.equals(namespace)) {
+            elements.add(Element.XTS_ENVIRONMENT);
+        } else if (Namespace.XTS_2_0.equals(namespace)) {
+            elements.add(Element.XTS_ENVIRONMENT);
+            elements.add(Element.HOST);
+            elements.add(Element.DEFAULT_CONTEXT_PROPAGATION);
+        }
 
-        ModelNode node = context.getModelNode();
-
-
-        writer.writeStartElement(Element.XTS_ENVIRONMENT.getLocalName());
-        ENVIRONMENT_URL.marshallAsAttribute(node, writer);
-        writer.writeEndElement();
-
-        writer.writeStartElement(Element.DEFAULT_CONTEXT_PROPAGATION.getLocalName());
-        DEFAULT_CONTEXT_PROPAGATION.marshallAsAttribute(node, writer);
-        writer.writeEndElement();
-
-        writer.writeEndElement();
-    }
-
-    private boolean has(ModelNode node, String name) {
-        return node.has(name) && node.get(name).isDefined();
-    }
-
-    private void writeAttribute(final XMLExtendedStreamWriter writer, final Attribute attr, final ModelNode value) throws XMLStreamException {
-        writer.writeAttribute(attr.getLocalName(), value.asString());
+        return elements;
     }
 }

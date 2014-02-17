@@ -21,32 +21,27 @@
  */
 package org.jboss.as.test.clustering.cluster.web;
 
+import static org.jboss.as.test.clustering.ClusterTestUtil.waitForReplication;
+
 import java.io.IOException;
 import java.net.URL;
-import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.http.HttpResponse;
-import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
-import org.jboss.arquillian.container.test.api.ContainerController;
-import org.jboss.arquillian.container.test.api.Deployer;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.container.test.api.OperateOnDeployment;
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.container.test.api.TargetsContainer;
 import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.arquillian.junit.InSequence;
 import org.jboss.arquillian.test.api.ArquillianResource;
-import org.jboss.as.test.clustering.NodeUtil;
 import org.jboss.as.test.clustering.cluster.ClusterAbstractTestCase;
 import org.jboss.as.test.clustering.single.web.SimpleServlet;
 import org.jboss.as.test.http.util.HttpClientUtils;
@@ -54,20 +49,11 @@ import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.junit.Assert;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import static org.jboss.as.test.clustering.ClusterTestUtil.waitForReplication;
-import static org.jboss.as.test.clustering.ClusteringTestConstants.CONTAINER_1;
-import static org.jboss.as.test.clustering.ClusteringTestConstants.CONTAINER_2;
-import static org.jboss.as.test.clustering.ClusteringTestConstants.DEPLOYMENTS;
-import static org.jboss.as.test.clustering.ClusteringTestConstants.DEPLOYMENT_1;
-import static org.jboss.as.test.clustering.ClusteringTestConstants.DEPLOYMENT_2;
-import static org.jboss.as.test.clustering.ClusteringTestConstants.GRACE_TIME_TO_REPLICATE;
-
 /**
- * Validate the <distributable/> works for a two-node cluster.
+ * Validate that <distributable/> works for a two-node cluster.
  *
  * @author Paul Ferraro
  * @author Radoslav Husar
@@ -98,15 +84,9 @@ public class ClusteredWebSimpleTestCase extends ClusterAbstractTestCase {
         return war;
     }
 
-    @Override
-    protected void setUp() {
-        super.setUp();
-        deploy(DEPLOYMENTS);
-    }
-
     @Test
     @OperateOnDeployment(DEPLOYMENT_1)
-    public void testSerialized(@ArquillianResource(SimpleServlet.class) URL baseURL) throws ClientProtocolException, IOException {
+    public void testSerialized(@ArquillianResource(SimpleServlet.class) URL baseURL) throws IOException {
         DefaultHttpClient client = HttpClientUtils.relaxedCookieHttpClient();
 
         // returns the URL of the deployment (http://127.0.0.1:8180/distributable)
@@ -136,7 +116,7 @@ public class ClusteredWebSimpleTestCase extends ClusterAbstractTestCase {
     public void testSessionReplication(
             @ArquillianResource(SimpleServlet.class) @OperateOnDeployment(DEPLOYMENT_1) URL baseURL1,
             @ArquillianResource(SimpleServlet.class) @OperateOnDeployment(DEPLOYMENT_2) URL baseURL2)
-            throws IllegalStateException, IOException, InterruptedException {
+            throws IOException {
         DefaultHttpClient client = HttpClientUtils.relaxedCookieHttpClient();
 
         String url1 = baseURL1.toString() + "simple";
@@ -182,7 +162,7 @@ public class ClusteredWebSimpleTestCase extends ClusterAbstractTestCase {
     @Test
     public void testGracefulServeOnUndeploy(
             @ArquillianResource(SimpleServlet.class) @OperateOnDeployment(DEPLOYMENT_1) URL baseURL1)
-            throws IllegalStateException, IOException, InterruptedException, Exception {
+            throws Exception {
         this.abstractGracefulServe(baseURL1, true);
     }
 
@@ -192,12 +172,12 @@ public class ClusteredWebSimpleTestCase extends ClusterAbstractTestCase {
     @Test
     public void testGracefulServeOnShutdown(
             @ArquillianResource(SimpleServlet.class) @OperateOnDeployment(DEPLOYMENT_1) URL baseURL1)
-            throws IllegalStateException, IOException, InterruptedException, Exception {
+            throws Exception {
         this.abstractGracefulServe(baseURL1, false);
     }
 
     private void abstractGracefulServe(URL baseURL1, boolean undeployOnly)
-            throws IllegalStateException, IOException, InterruptedException, Exception {
+            throws Exception {
 
         final DefaultHttpClient client = HttpClientUtils.relaxedCookieHttpClient();
         String url1 = baseURL1.toString() + "simple";
@@ -241,15 +221,6 @@ public class ClusteredWebSimpleTestCase extends ClusterAbstractTestCase {
             Assert.assertEquals("If we are only undeploying, then subsequent requests should return 404.",
                     HttpServletResponse.SC_NOT_FOUND, response.getStatusLine().getStatusCode());
             response.getEntity().getContent().close();
-        }
-
-        // Cleanup after test.
-        if (undeployOnly) {
-            // Redeploy the app only.
-            deploy(DEPLOYMENT_1);
-        } else {
-            // Startup server.
-            start(CONTAINER_1);
         }
     }
 

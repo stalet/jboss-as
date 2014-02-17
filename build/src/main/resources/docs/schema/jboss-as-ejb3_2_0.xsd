@@ -58,6 +58,7 @@
             <xs:element name="default-distinct-name" type="default-distinct-nameType" minOccurs="0" maxOccurs="1"/>
             <xs:element name="default-security-domain" type="default-security-domainType" minOccurs="0" maxOccurs="1"/>
             <xs:element name="default-missing-method-permissions-deny-access" type="default-missing-method-permissions-deny-accessType" minOccurs="0" maxOccurs="1" />
+            <xs:element name="disable-default-ejb-permissions" type="disable-default-ejb-permissionsType" minOccurs="0" maxOccurs="1" />
             <xs:element name="statistics" type="statisticsType" minOccurs="0" maxOccurs="1"/>
         </xs:all>
     </xs:complexType>
@@ -116,7 +117,14 @@
             </xs:annotation>
         </xs:attribute>
         <xs:attribute name="cache-ref" type="xs:string"/>
-        <xs:attribute name="clustered-cache-ref" type="xs:string" use="optional"/>
+        <xs:attribute name="clustered-cache-ref" type="xs:string" use="optional">
+            <xs:annotation>
+                <xs:documentation>
+                    Deprecated. Not supported on current version servers; only allowed in managed domain profiles for use
+                    on servers running earlier versions.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
         <xs:attribute name="passivation-disabled-cache-ref" type="xs:string" use="optional">
             <xs:annotation>
                 <xs:documentation>
@@ -181,19 +189,35 @@
 
     <xs:complexType name="passivation-storesType">
         <xs:choice minOccurs="0" maxOccurs="unbounded">
-            <xs:element name="file-passivation-store" type="file-passivation-storeType"/>
-            <xs:element name="cluster-passivation-store" type="cluster-passivation-storeType"/>
+            <xs:element name="passivation-store" type="passivation-storeType"/>
+            <xs:element name="file-passivation-store" type="file-passivation-storeType">
+                <xs:annotation>
+                    <xs:documentation>Deprecated. Use passivation-store instead.</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="cluster-passivation-store" type="cluster-passivation-storeType">
+                <xs:annotation>
+                    <xs:documentation>Deprecated. Use passivation-store instead.</xs:documentation>
+                </xs:annotation>
+            </xs:element>
         </xs:choice>
     </xs:complexType>
 
-    <xs:attributeGroup name="passivation-common">
+    <xs:complexType name="passivation-storeType">
+        <xs:attribute name="name" type="xs:string" use="required"/>
+        <xs:attribute name="cache-container" type="xs:string" default="ejb"/>
+        <xs:attribute name="bean-cache" type="xs:string"/>
+        <xs:attribute name="max-size" type="xs:positiveInteger" default="10000"/>
+    </xs:complexType>
+
+    <xs:attributeGroup name="legacy-passivation">
         <xs:attribute name="name" type="xs:string" use="required"/>
         <xs:attribute name="idle-timeout" type="xs:positiveInteger" default="300"/>
         <xs:attribute name="idle-timeout-unit" type="timeout-unitType" default="SECONDS"/>
     </xs:attributeGroup>
 
     <xs:complexType name="file-passivation-storeType">
-        <xs:attributeGroup ref="passivation-common"/>
+        <xs:attributeGroup ref="legacy-passivation"/>
         <xs:attribute name="max-size" type="xs:positiveInteger" default="100000"/>
         <xs:attribute name="relative-to" type="xs:string" default="jboss.server.data.dir"/>
         <xs:attribute name="sessions-path" type="xs:string" default="ejb3/sessions"/>
@@ -202,7 +226,7 @@
     </xs:complexType>
 
     <xs:complexType name="cluster-passivation-storeType">
-        <xs:attributeGroup ref="passivation-common"/>
+        <xs:attributeGroup ref="legacy-passivation"/>
         <xs:attribute name="max-size" type="xs:positiveInteger" default="10000"/>
         <xs:attribute name="passivate-events-on-replicate" type="xs:boolean" default="true"/>
         <xs:attribute name="cache-container" type="xs:string" default="ejb"/>
@@ -377,6 +401,19 @@
                    ]]>
                    </xs:documentation>
                </xs:annotation>
+        <xs:attribute name="value" type="xs:boolean"/>
+    </xs:complexType>
+
+
+    <xs:complexType name="disable-default-ejb-permissionsType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                       If this is enabled then the default security manager permissions required by spec will not
+                       be added to EJB deployments.
+                   ]]>
+            </xs:documentation>
+        </xs:annotation>
         <xs:attribute name="value" type="xs:boolean"/>
     </xs:complexType>
 </xs:schema>

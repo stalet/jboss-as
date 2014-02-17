@@ -22,6 +22,7 @@
 
 package org.jboss.as.domain.management.security;
 
+import static org.jboss.as.domain.management.DomainManagementLogger.SECURITY_LOGGER;
 import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
 import static org.jboss.as.domain.management.RealmConfigurationConstants.LOCAL_DEFAULT_USER;
 
@@ -38,7 +39,9 @@ import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.sasl.AuthorizeCallback;
 
 import org.jboss.as.domain.management.AuthMechanism;
+import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
@@ -50,7 +53,7 @@ import org.jboss.msc.service.StopContext;
  */
 class LocalCallbackHandlerService implements Service<CallbackHandlerService>, CallbackHandlerService, CallbackHandler {
 
-    public static final String SERVICE_SUFFIX = "local";
+    private static final String SERVICE_SUFFIX = "local";
 
     private final String defaultUser;
     private final String allowedUsers;
@@ -133,15 +136,33 @@ class LocalCallbackHandlerService implements Service<CallbackHandlerService>, Ca
                 NameCallback ncb = (NameCallback) current;
                 String userName = ncb.getDefaultName();
                 if ((allowAll || allowedUsersSet.contains(userName)) == false) {
+                    SECURITY_LOGGER.tracef("Username '%s' is not permitted for local authentication.", userName);
                     throw MESSAGES.invalidLocalUser(userName);
                 }
             } else if (current instanceof AuthorizeCallback) {
                 AuthorizeCallback acb = (AuthorizeCallback) current;
-                acb.setAuthorized(acb.getAuthenticationID().equals(acb.getAuthorizationID()));
+                boolean authorized = acb.getAuthenticationID().equals(acb.getAuthorizationID());
+                if (authorized == false) {
+                    SECURITY_LOGGER.tracef(
+                            "Checking 'AuthorizeCallback', authorized=false, authenticationID=%s, authorizationID=%s.",
+                            acb.getAuthenticationID(), acb.getAuthorizationID());
+                }
+                acb.setAuthorized(authorized);
             } else {
                 throw new UnsupportedCallbackException(current);
             }
         }
+    }
+
+    public static final class ServiceUtil {
+
+        private ServiceUtil() {
+        }
+
+        public static ServiceName createServiceName(final String realmName) {
+            return SecurityRealm.ServiceUtil.createServiceName(realmName).append(SERVICE_SUFFIX);
+        }
+
     }
 
 }

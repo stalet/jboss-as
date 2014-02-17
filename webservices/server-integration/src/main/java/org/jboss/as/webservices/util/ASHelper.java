@@ -21,12 +21,18 @@
  */
 package org.jboss.as.webservices.util;
 
+import static org.jboss.as.webservices.WSLogger.ROOT_LOGGER;
 import static org.jboss.as.webservices.util.DotNames.JAXWS_SERVICE_CLASS;
+import static org.jboss.as.webservices.util.DotNames.WEB_SERVICE_ANNOTATION;
+import static org.jboss.as.webservices.util.DotNames.WEB_SERVICE_PROVIDER_ANNOTATION;
 import static org.jboss.as.webservices.util.WSAttachmentKeys.JAXWS_ENDPOINTS_KEY;
 
+import java.lang.reflect.Modifier;
 import java.util.Collections;
 import java.util.List;
 
+import org.jboss.as.controller.OperationContext;
+import org.jboss.as.server.CurrentServiceContainer;
 import org.jboss.as.server.deployment.AttachmentKey;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentUnit;
@@ -35,7 +41,7 @@ import org.jboss.as.web.common.WarMetaData;
 import org.jboss.as.webservices.metadata.model.EJBEndpoint;
 import org.jboss.as.webservices.metadata.model.JAXWSDeployment;
 import org.jboss.as.webservices.metadata.model.POJOEndpoint;
-import org.jboss.as.webservices.webserviceref.WSReferences;
+import org.jboss.as.webservices.webserviceref.WSRefRegistry;
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
@@ -177,6 +183,38 @@ public final class ASHelper {
         return false;
     }
 
+    public static boolean hasClassesFromPackage(final Index index, final String pck) {
+        for (ClassInfo ci : index.getKnownClasses()) {
+            if (ci.name().toString().startsWith(pck)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean isJaxwsEndpoint(final ClassInfo clazz, final CompositeIndex index) {
+        // assert JAXWS endpoint class flags
+        final short flags = clazz.flags();
+        if (Modifier.isInterface(flags)) return false;
+        if (Modifier.isAbstract(flags)) return false;
+        if (!Modifier.isPublic(flags)) return false;
+        if (isJaxwsService(clazz, index)) return false;
+        final boolean hasWebServiceAnnotation = clazz.annotations().containsKey(WEB_SERVICE_ANNOTATION);
+        final boolean hasWebServiceProviderAnnotation = clazz.annotations().containsKey(WEB_SERVICE_PROVIDER_ANNOTATION);
+        if (!hasWebServiceAnnotation && !hasWebServiceProviderAnnotation) {
+            return false;
+        }
+        if (hasWebServiceAnnotation && hasWebServiceProviderAnnotation) {
+            ROOT_LOGGER.mutuallyExclusiveAnnotations(clazz.name().toString());
+            return false;
+        }
+        if (Modifier.isFinal(flags)) {
+            ROOT_LOGGER.finalEndpointClassDetected(clazz.name().toString());
+            return false;
+        }
+        return true;
+    }
+
     /**
      * Gets the JBossWebMetaData from the WarMetaData attached to the provided deployment unit, if any.
      *
@@ -209,15 +247,6 @@ public final class ASHelper {
             unit.putAttachment(JAXWS_ENDPOINTS_KEY, wsDeployment);
         }
         return wsDeployment;
-    }
-
-    public static WSReferences getWSRefRegistry(final DeploymentUnit unit) {
-        WSReferences refRegistry = unit.getAttachment(WSAttachmentKeys.WS_REFERENCES);
-        if (refRegistry == null) {
-            refRegistry = WSReferences.newInstance();
-            unit.putAttachment(WSAttachmentKeys.WS_REFERENCES, refRegistry);
-        }
-        return refRegistry;
     }
 
     /**
@@ -255,8 +284,23 @@ public final class ASHelper {
 
     @SuppressWarnings("unchecked")
     public static <T> T getMSCService(final ServiceName serviceName, final Class<T> clazz) {
-        ServiceController<T> service = (ServiceController<T>)WSServices.getContainerRegistry().getService(serviceName);
+        ServiceController<T> service = (ServiceController<T>) CurrentServiceContainer.getServiceContainer().getService(serviceName);
         return service != null ? service.getValue() : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> T getMSCService(final ServiceName serviceName, final Class<T> clazz, final OperationContext context) {
+        ServiceController<T> service = (ServiceController<T>)context.getServiceRegistry(false).getService(serviceName);
+        return service != null ? service.getValue() : null;
+    }
+
+    public static WSRefRegistry getWSRefRegistry(final DeploymentUnit unit) {
+        WSRefRegistry refRegistry = unit.getAttachment(WSAttachmentKeys.WS_REFREGISTRY);
+        if (refRegistry == null) {
+            refRegistry = WSRefRegistry.newInstance();
+            unit.putAttachment(WSAttachmentKeys.WS_REFREGISTRY, refRegistry);
+        }
+        return refRegistry;
     }
 
 }

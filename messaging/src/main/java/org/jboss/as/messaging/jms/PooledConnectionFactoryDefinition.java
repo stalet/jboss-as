@@ -23,7 +23,6 @@
 package org.jboss.as.messaging.jms;
 
 import static java.lang.System.arraycopy;
-import static org.jboss.as.messaging.CommonAttributes.CALL_FAILOVER_TIMEOUT;
 import static org.jboss.as.messaging.CommonAttributes.CALL_TIMEOUT;
 import static org.jboss.as.messaging.CommonAttributes.CLIENT_ID;
 import static org.jboss.as.messaging.CommonAttributes.HA;
@@ -64,7 +63,9 @@ import static org.jboss.as.messaging.jms.ConnectionFactoryAttributes.Pooled.USE_
 import static org.jboss.as.messaging.jms.ConnectionFactoryAttributes.Pooled.USE_LOCAL_TX;
 
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
@@ -120,8 +121,7 @@ public class PooledConnectionFactoryDefinition extends SimpleResourceDefinition 
     public static final AttributeDefinition[] ATTRIBUTES_ADDED_IN_1_2_0 = new AttributeDefinition[]{INITIAL_CONNECT_ATTEMPTS,
             INITIAL_MESSAGE_PACKET_SIZE,
             COMPRESS_LARGE_MESSAGES,
-            USE_AUTO_RECOVERY,
-            CALL_FAILOVER_TIMEOUT};
+            USE_AUTO_RECOVERY};
 
     // attributes with expression supported added *after* 1.1.0
     public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { ENTRIES, CALL_TIMEOUT,
@@ -140,11 +140,21 @@ public class PooledConnectionFactoryDefinition extends SimpleResourceDefinition 
         }
     };
 
-    private final boolean registerRuntimeOnly;
+    public static Map<String, ConnectionFactoryAttribute> getAttributes() {
+        Map<String, ConnectionFactoryAttribute> attrs = new HashMap<String, ConnectionFactoryAttribute>(ATTRIBUTES.length);
+        for (ConnectionFactoryAttribute attribute : ATTRIBUTES) {
+            attrs.put(attribute.getDefinition().getName(), attribute);
+        }
+        return attrs;
+    }
 
-    public PooledConnectionFactoryDefinition(final boolean registerRuntimeOnly) {
+    private final boolean registerRuntimeOnly;
+    private final boolean deployed;
+
+    public PooledConnectionFactoryDefinition(final boolean registerRuntimeOnly, final boolean deployed) {
         super(PATH, DESC);
         this.registerRuntimeOnly = registerRuntimeOnly;
+        this.deployed = deployed;
     }
 
     @Override
@@ -157,10 +167,14 @@ public class PooledConnectionFactoryDefinition extends SimpleResourceDefinition 
             // deprecated attribute
             if (attr == Common.DISCOVERY_INITIAL_WAIT_TIMEOUT ||
                     attr == Common.FAILOVER_ON_SERVER_SHUTDOWN) {
-                registry.registerReadWriteAttribute(attr, null, new DeprecatedAttributeWriteHandler(attr.getName()));
+                registry.registerReadWriteAttribute(attr, null, DeprecatedAttributeWriteHandler.INSTANCE);
             } else {
                 if (registerRuntimeOnly || !attr.getFlags().contains(AttributeAccess.Flag.STORAGE_RUNTIME)) {
-                    registry.registerReadWriteAttribute(attr.getName(), null, PooledConnectionFactoryWriteAttributeHandler.INSTANCE, flags);
+                    if (deployed) {
+                        registry.registerReadOnlyAttribute(attr, PooledConnectionFactoryConfigurationRuntimeHandler.INSTANCE);
+                    } else {
+                        registry.registerReadWriteAttribute(attr.getName(), null, PooledConnectionFactoryWriteAttributeHandler.INSTANCE, flags);
+                    }
                 }
             }
         }
@@ -170,8 +184,9 @@ public class PooledConnectionFactoryDefinition extends SimpleResourceDefinition 
     public void registerOperations(ManagementResourceRegistration registry) {
         super.registerOperations(registry);
 
-        super.registerAddOperation(registry, PooledConnectionFactoryAdd.INSTANCE, OperationEntry.Flag.RESTART_NONE);
-        super.registerRemoveOperation(registry, PooledConnectionFactoryRemove.INSTANCE,  OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
-
+        if (!deployed) {
+            super.registerAddOperation(registry, PooledConnectionFactoryAdd.INSTANCE, OperationEntry.Flag.RESTART_NONE);
+            super.registerRemoveOperation(registry, PooledConnectionFactoryRemove.INSTANCE,  OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
+        }
     }
 }

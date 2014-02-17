@@ -22,10 +22,13 @@
 
 package org.jboss.as.domain.controller.plan;
 
-import org.jboss.as.controller.remote.TransactionalProtocolClient;
-import org.jboss.as.domain.controller.ServerIdentity;
-
 import java.util.List;
+
+import javax.security.auth.Subject;
+
+import org.jboss.as.controller.remote.TransactionalProtocolClient;
+import org.jboss.as.domain.controller.DomainControllerLogger;
+import org.jboss.as.domain.controller.ServerIdentity;
 
 /**
  * @author Emanuel Muckenhuber
@@ -33,8 +36,8 @@ import java.util.List;
 class RollingServerGroupUpdateTask extends AbstractServerGroupRolloutTask implements Runnable {
 
     public RollingServerGroupUpdateTask(List<ServerUpdateTask> tasks, ServerUpdatePolicy updatePolicy,
-                                        ServerTaskExecutor executor, ServerUpdateTask.ServerUpdateResultHandler resultHandler) {
-        super(tasks, updatePolicy, executor, resultHandler);
+                                        ServerTaskExecutor executor, ServerUpdateTask.ServerUpdateResultHandler resultHandler, Subject subject) {
+        super(tasks, updatePolicy, executor, resultHandler, subject);
     }
 
     @Override
@@ -44,6 +47,7 @@ class RollingServerGroupUpdateTask extends AbstractServerGroupRolloutTask implem
         for(final ServerUpdateTask task : tasks) {
             final ServerIdentity identity = task.getServerIdentity();
             if(interrupted || ! updatePolicy.canUpdateServer(identity)) {
+                DomainControllerLogger.DOMAIN_DEPLOYMENT_LOGGER.tracef("Skipping server update task for %s", identity);
                 sendCancelledResponse(identity);
                 continue;
             }

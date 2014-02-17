@@ -27,28 +27,25 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-clustering</artifactId>
+    <artifactId>wildfly-clustering</artifactId>
     <packaging>pom</packaging>
 
-    <name>JBoss Application Server: Clustering Subsystem</name>
+    <name>WildFly: Clustering Subsystems</name>
 
     <modules>
         <module>api</module>
         <module>common</module>
-        <module>impl</module>
-        <module>jgroups</module>
+        <module>ejb</module>
         <module>infinispan</module>
-        <module>registry</module>
-        <module>service</module>
+        <module>jgroups</module>
+        <module>server</module>
         <module>singleton</module>
-        <module>web-spi</module>
-        <module>web-infinispan</module>
-        <module>ejb3-infinispan</module>
+        <module>web</module>
     </modules>
 
     <dependencies>
@@ -81,13 +78,6 @@
             <groupId>org.jboss.byteman</groupId>
             <artifactId>byteman-bmunit</artifactId>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.sun</groupId>
-            <artifactId>tools</artifactId>
-            <scope>system</scope>
-            <version>${maven.compiler.source}</version>
-            <systemPath>${com.sun.tools.path}</systemPath>
         </dependency>
     </dependencies>
 

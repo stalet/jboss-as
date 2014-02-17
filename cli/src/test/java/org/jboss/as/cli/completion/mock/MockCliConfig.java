@@ -23,6 +23,7 @@ package org.jboss.as.cli.completion.mock;
 
 
 import org.jboss.as.cli.CliConfig;
+import org.jboss.as.cli.ControllerAddress;
 import org.jboss.as.cli.SSLConfig;
 
 /**
@@ -37,13 +38,35 @@ public class MockCliConfig implements CliConfig {
     }
 
     @Override
-    public String getDefaultControllerHost() {
-        return "localhost";
+    public String getDefaultControllerProtocol() {
+        return "http-remoting";
     }
 
     @Override
+    @Deprecated
+    public String getDefaultControllerHost() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    @Deprecated
     public int getDefaultControllerPort() {
-        return 9999;
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean isUseLegacyOverride() {
+        return true;
+    }
+
+    @Override
+    public ControllerAddress getDefaultControllerAddress() {
+        return new ControllerAddress("http-remoting", "localhost", 9990);
+    }
+
+    @Override
+    public ControllerAddress getAliasedControllerAddress(String alias) {
+        return null;
     }
 
     @Override
@@ -83,6 +106,11 @@ public class MockCliConfig implements CliConfig {
 
     @Override
     public boolean isSilent() {
+        return false;
+    }
+
+    @Override
+    public boolean isAccessControl() {
         return false;
     }
 }

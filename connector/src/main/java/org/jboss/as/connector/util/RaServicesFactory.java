@@ -22,6 +22,12 @@
 
 package org.jboss.as.connector.util;
 
+import static org.jboss.as.connector.subsystems.jca.Constants.DEFAULT_NAME;
+
+import java.util.Collections;
+import java.util.Locale;
+import java.util.Map;
+
 import org.jboss.as.connector.deployers.ra.processors.AbstractResourceAdapterDeploymentServiceListener;
 import org.jboss.as.connector.metadata.xmldescriptors.ConnectorXmlDescriptor;
 import org.jboss.as.connector.services.mdr.AS7MetadataRepository;
@@ -29,11 +35,14 @@ import org.jboss.as.connector.services.resourceadapters.deployment.ResourceAdapt
 import org.jboss.as.connector.services.resourceadapters.deployment.registry.ResourceAdapterDeploymentRegistry;
 import org.jboss.as.connector.subsystems.jca.JcaSubsystemConfiguration;
 import org.jboss.as.controller.ServiceVerificationHandler;
+import org.jboss.as.controller.descriptions.OverrideDescriptionProvider;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.naming.service.NamingService;
 import org.jboss.as.security.service.SubjectFactoryService;
-import org.jboss.jca.common.api.metadata.resourceadapter.ResourceAdapter;
+import org.jboss.as.server.Services;
+import org.jboss.dmr.ModelNode;
+import org.jboss.jca.common.api.metadata.resourceadapter.v11.ResourceAdapter;
 import org.jboss.jca.core.api.connectionmanager.ccm.CachedConnectionManager;
 import org.jboss.jca.core.api.management.ManagementRepository;
 import org.jboss.jca.core.spi.rar.ResourceAdapterRepository;
@@ -47,19 +56,21 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.security.SubjectFactory;
 
 public class RaServicesFactory {
-    public static void createDeploymentService(ConnectorXmlDescriptor connectorXmlDescriptor, Module module, ServiceTarget serviceTarget, final String deploymentUnitName, ServiceName deploymentUnitServiceName, ResourceAdapter raxml, final ServiceVerificationHandler serviceVerificationHandler)  {
-        createDeploymentService(null, connectorXmlDescriptor, module, serviceTarget, deploymentUnitName, deploymentUnitServiceName, deploymentUnitName,  raxml, null, serviceVerificationHandler);
 
-    }
     public static void createDeploymentService(final ManagementResourceRegistration registration, ConnectorXmlDescriptor connectorXmlDescriptor, Module module, ServiceTarget serviceTarget, final String deploymentUnitName, ServiceName deploymentUnitServiceName, String deployment, ResourceAdapter raxml, final Resource deploymentResource, final ServiceVerificationHandler serviceVerificationHandler) {
         // Create the service
-        ServiceName serviceName = ConnectorServices.registerDeployment(deploymentUnitName);
 
+        ServiceName serviceName = ConnectorServices.getDeploymentServiceName(deploymentUnitName,raxml);
         ResourceAdapterXmlDeploymentService service = new ResourceAdapterXmlDeploymentService(connectorXmlDescriptor,
                 raxml, module, deployment, serviceName, deploymentUnitServiceName);
-
-        ServiceBuilder builder = serviceTarget
-                .addService(serviceName, service)
+        String bootStrapCtxName = DEFAULT_NAME;
+        if (raxml.getBootstrapContext() != null && !raxml.getBootstrapContext().equals("undefined")) {
+            bootStrapCtxName = raxml.getBootstrapContext();
+        }
+        ServiceBuilder builder =
+                Services.addServerExecutorDependency(
+                        serviceTarget.addService(serviceName, service),
+                        service.getExecutorServiceInjector(), false)
                 .addDependency(ConnectorServices.IRONJACAMAR_MDR, AS7MetadataRepository.class, service.getMdrInjector())
                 .addDependency(ConnectorServices.RA_REPOSITORY_SERVICE, ResourceAdapterRepository.class,
                         service.getRaRepositoryInjector())
@@ -77,13 +88,28 @@ public class RaServicesFactory {
                 .addDependency(ConnectorServices.IDLE_REMOVER_SERVICE)
                 .addDependency(ConnectorServices.CONNECTION_VALIDATOR_SERVICE)
                 .addDependency(NamingService.SERVICE_NAME)
+                .addDependency(ConnectorServices.BOOTSTRAP_CONTEXT_SERVICE.append(bootStrapCtxName))
                 .addDependency(ConnectorServices.RESOURCE_ADAPTER_DEPLOYER_SERVICE_PREFIX.append(connectorXmlDescriptor.getDeploymentName()));
 
         if(serviceVerificationHandler != null) {
             builder.addListener(serviceVerificationHandler);
         }
         if (registration != null && deploymentResource != null) {
-            builder.addListener(new AbstractResourceAdapterDeploymentServiceListener(registration, deploymentUnitName, deploymentResource) {
+            String bootstrapCtxName =  raxml.getBootstrapContext() != null ? raxml.getBootstrapContext() : "default";
+            if (registration.isAllowsOverride() && registration.getOverrideModel(deploymentUnitName) == null) {
+                registration.registerOverrideModel(deploymentUnitName, new OverrideDescriptionProvider() {
+                    @Override
+                    public Map<String, ModelNode> getAttributeOverrideDescriptions(Locale locale) {
+                        return Collections.emptyMap();
+                    }
+
+                    @Override
+                    public Map<String, ModelNode> getChildTypeOverrideDescriptions(Locale locale) {
+                        return Collections.emptyMap();
+                    }
+                });
+            }
+            builder.addListener(new AbstractResourceAdapterDeploymentServiceListener(registration, deploymentUnitName, deploymentResource, bootstrapCtxName, raxml.getId()) {
 
                 @Override
                 protected void registerIronjacamar(ServiceController<? extends Object> controller, ManagementResourceRegistration subRegistration, Resource subsystemResource) {

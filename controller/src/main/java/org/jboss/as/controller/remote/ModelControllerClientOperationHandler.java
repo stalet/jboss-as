@@ -22,8 +22,11 @@
 package org.jboss.as.controller.remote;
 
 import static org.jboss.as.controller.ControllerLogger.ROOT_LOGGER;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ACCESS_MECHANISM;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CALLER_TYPE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.COMPOSITE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DOMAIN_UUID;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.EXECUTE_FOR_COORDINATOR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
@@ -35,13 +38,18 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RES
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.USER;
 
-import javax.security.auth.Subject;
 import java.io.DataInput;
 import java.io.IOException;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
 
+import javax.security.auth.Subject;
+
+import org.jboss.as.controller.AccessAuditContext;
 import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.client.impl.ModelControllerProtocol;
+import org.jboss.as.core.security.AccessMechanism;
 import org.jboss.as.protocol.StreamUtils;
 import org.jboss.as.protocol.mgmt.ActiveOperation;
 import org.jboss.as.protocol.mgmt.FlushableDataOutput;
@@ -70,7 +78,7 @@ public class ModelControllerClientOperationHandler implements ManagementRequestH
 
     public ModelControllerClientOperationHandler(final ModelController controller,
                                                  final ManagementChannelAssociation channelAssociation) {
-        this(controller, channelAssociation, null);
+        this(controller, channelAssociation, new Subject());
     }
 
     public ModelControllerClientOperationHandler(final ModelController controller,
@@ -108,21 +116,39 @@ public class ModelControllerClientOperationHandler implements ManagementRequestH
                 @Override
                 public void execute(final ManagementRequestContext<Void> context) throws Exception {
                     final ManagementResponseHeader response = ManagementResponseHeader.create(context.getRequestHeader());
-                    SecurityActions.setSecurityContextSubject(subject);
+
                     try {
-                        final CompletedCallback callback = new CompletedCallback(response, context, resultHandler);
-                        doExecute(operation, attachmentsLength, context, callback);
-                    } finally {
-                        SecurityActions.clearSubjectSecurityContext();
+                        AccessAuditContext.doAs(subject, new PrivilegedExceptionAction<Void>() {
+                            @Override
+                            public Void run() throws Exception {
+                                final CompletedCallback callback = new CompletedCallback(response, context, resultHandler);
+                                doExecute(operation, attachmentsLength, context, callback);
+                                return null;
+                            }
+                        });
+                    } catch (PrivilegedActionException e) {
+                        throw e.getException();
                     }
                 }
             });
         }
 
         private void doExecute(final ModelNode operation, final int attachmentsLength, final ManagementRequestContext<Void> context, final CompletedCallback callback) {
+
+            // Header manipulation
+            final ModelNode headers = operation.get(OPERATION_HEADERS);
             //Add a header to show that this operation comes from a user. If this is a host controller and the operation needs propagating to the
             //servers it will be removed by the domain ops responsible for propagation to the servers.
-            operation.get(OPERATION_HEADERS, CALLER_TYPE).set(USER);
+            headers.get(CALLER_TYPE).set(USER);
+            headers.get(ACCESS_MECHANISM).set(AccessMechanism.NATIVE.toString());
+            // Don't allow a domain-uuid operation header from a user call
+            if (headers.hasDefined(DOMAIN_UUID)) {
+                headers.remove(DOMAIN_UUID);
+            }
+            // Don't allow a execute-for-coordinator operation header from a user call
+            if (headers.hasDefined(EXECUTE_FOR_COORDINATOR)) {
+                headers.remove(EXECUTE_FOR_COORDINATOR);
+            }
 
             final ManagementRequestHeader header = ManagementRequestHeader.class.cast(context.getRequestHeader());
             final int batchId = header.getBatchId();

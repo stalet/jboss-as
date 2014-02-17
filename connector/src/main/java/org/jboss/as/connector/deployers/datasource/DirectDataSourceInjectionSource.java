@@ -22,15 +22,6 @@
 
 package org.jboss.as.connector.deployers.datasource;
 
-import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
-
-import java.lang.reflect.Method;
-import java.sql.Connection;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import javax.sql.XADataSource;
-
 import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.connector.services.driver.registry.DriverRegistry;
 import org.jboss.as.connector.subsystems.datasources.AbstractDataSourceService;
@@ -49,6 +40,7 @@ import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.as.naming.service.BinderService;
 import org.jboss.as.naming.service.NamingService;
 import org.jboss.as.security.service.SubjectFactoryService;
+import org.jboss.as.server.Services;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
@@ -58,8 +50,8 @@ import org.jboss.invocation.proxy.MethodIdentifier;
 import org.jboss.jca.common.api.metadata.Defaults;
 import org.jboss.jca.common.api.metadata.ds.TransactionIsolation;
 import org.jboss.jca.common.metadata.ds.DsSecurityImpl;
-import org.jboss.jca.common.metadata.ds.v11.DsPoolImpl;
-import org.jboss.jca.common.metadata.ds.v11.DsXaPoolImpl;
+import org.jboss.jca.common.metadata.ds.v12.DsPoolImpl;
+import org.jboss.jca.common.metadata.ds.v12.DsXaPoolImpl;
 import org.jboss.jca.core.api.connectionmanager.ccm.CachedConnectionManager;
 import org.jboss.jca.core.api.management.ManagementRepository;
 import org.jboss.jca.core.spi.transaction.TransactionIntegration;
@@ -71,6 +63,15 @@ import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.security.SubjectFactory;
+
+import javax.sql.XADataSource;
+import java.lang.reflect.Method;
+import java.sql.Connection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+
+import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
 
 /**
  * A binding description for DataSourceDefinition annotations.
@@ -157,12 +158,15 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
             DsSecurityImpl dsSecurity = new DsSecurityImpl(user, password, null, null);
 
             if (XADataSource.class.isAssignableFrom(clazz) && transactional) {
-                final DsXaPoolImpl xaPool = new DsXaPoolImpl(minPoolSize < 1 ? Defaults.MIN_POOL_SIZE : minPoolSize, maxPoolSize < 1 ? Defaults.MAX_POOL_SIZE : maxPoolSize,
-                        Defaults.PREFILL, Defaults.USE_STRICT_MIN, Defaults.FLUSH_STRATEGY,
-                        Defaults.IS_SAME_RM_OVERRIDE, Defaults.INTERLEAVING, Defaults.PAD_XID, Defaults.WRAP_XA_RESOURCE, Defaults.NO_TX_SEPARATE_POOL, false);
+                final DsXaPoolImpl xaPool = new DsXaPoolImpl(minPoolSize < 0 ? Defaults.MIN_POOL_SIZE : Integer.valueOf(minPoolSize),
+                                                             initialPoolSize < 0 ? Defaults.INITIAL_POOL_SIZE : Integer.valueOf(initialPoolSize),
+                                                             maxPoolSize < 1 ? Defaults.MAX_POOL_SIZE : Integer.valueOf(maxPoolSize),
+                                                             Defaults.PREFILL, Defaults.USE_STRICT_MIN, Defaults.FLUSH_STRATEGY,
+                                                             Defaults.IS_SAME_RM_OVERRIDE, Defaults.INTERLEAVING, Defaults.PAD_XID,
+                                                             Defaults.WRAP_XA_RESOURCE, Defaults.NO_TX_SEPARATE_POOL, Boolean.FALSE, null, null);
                 final ModifiableXaDataSource dataSource = new ModifiableXaDataSource(transactionIsolation(),
                         null, dsSecurity, null, null, null,
-                        null, null, poolName, true,
+                        null, null, null, poolName, true,
                         jndiName, false, false, props,
                         className, null, null,
                         xaPool, null);
@@ -170,8 +174,10 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
                 xds.getDataSourceConfigInjector().inject(dataSource);
                 startDataSource(xds, jndiName, eeModuleDescription, context, phaseContext.getServiceTarget(), serviceBuilder, injector);
             } else {
-                final DsPoolImpl commonPool = new DsPoolImpl(minPoolSize < 1 ? Defaults.MIN_POOL_SIZE : minPoolSize, maxPoolSize < 1 ? Defaults.MAX_POOL_SIZE : maxPoolSize,
-                        Defaults.PREFILL, Defaults.USE_STRICT_MIN, Defaults.FLUSH_STRATEGY, false);
+                final DsPoolImpl commonPool = new DsPoolImpl(minPoolSize < 0 ? Defaults.MIN_POOL_SIZE : Integer.valueOf(minPoolSize),
+                                                             initialPoolSize < 0 ? Defaults.INITIAL_POOL_SIZE : Integer.valueOf(initialPoolSize),
+                                                             maxPoolSize < 1 ? Defaults.MAX_POOL_SIZE : Integer.valueOf(maxPoolSize),
+                                                             Defaults.PREFILL, Defaults.USE_STRICT_MIN, Defaults.FLUSH_STRATEGY, Boolean.FALSE, null, null);
                 final ModifiableDataSource dataSource = new ModifiableDataSource(url, null, className, null, transactionIsolation(), props,
                         null, dsSecurity, null, null, null, null, null, false, poolName, true, jndiName, Defaults.SPY, Defaults.USE_CCM, transactional, commonPool);
                 final LocalDataSourceService ds = new LocalDataSourceService(jndiName, module.getClassLoader());
@@ -198,7 +204,7 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
                 final Class<?> paramType = value.getClass();
                 final MethodIdentifier methodIdentifier = MethodIdentifier.getIdentifier(void.class, methodName, paramType);
                 final Method setterMethod = ClassReflectionIndexUtil.findMethod(reflectionIndex, dataSourceClass, methodIdentifier);
-                if(setterMethod == null) {
+                if (setterMethod == null) {
                     it.remove();
                     ConnectorLogger.DS_DEPLOYER_LOGGER.methodNotFoundOnDataSource(methodName, dataSourceClass);
                 }
@@ -227,8 +233,10 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
 
 
         final ServiceName dataSourceServiceName = AbstractDataSourceService.SERVICE_NAME_BASE.append("DataSourceDefinition", moduleDescription.getApplicationName(), moduleDescription.getModuleName(), jndiName);
-        final ServiceBuilder<?> dataSourceServiceBuilder = serviceTarget
-                .addService(dataSourceServiceName, dataSourceService)
+        final ServiceBuilder<?> dataSourceServiceBuilder =
+                Services.addServerExecutorDependency(
+                    serviceTarget.addService(dataSourceServiceName, dataSourceService),
+                        dataSourceService.getExecutorServiceInjector(), false)
                 .addDependency(ConnectorServices.TRANSACTION_INTEGRATION_SERVICE, TransactionIntegration.class,
                         dataSourceService.getTransactionIntegrationInjector())
                 .addDependency(ConnectorServices.MANAGEMENT_REPOSITORY_SERVICE, ManagementRepository.class,
@@ -309,6 +317,7 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
         setProperty(deploymentReflectionIndex, dataSourceClass, properties, MAX_POOL_SIZE_PROP, Integer.valueOf(maxPoolSize));
         setProperty(deploymentReflectionIndex, dataSourceClass, properties, MAX_STATEMENTS_PROP, Integer.valueOf(maxStatements));
         setProperty(deploymentReflectionIndex, dataSourceClass, properties, MIN_POOL_SIZE_PROP, Integer.valueOf(minPoolSize));
+        setProperty(deploymentReflectionIndex, dataSourceClass, properties, INITIAL_POOL_SIZE_PROP, Integer.valueOf(minPoolSize));
         setProperty(deploymentReflectionIndex, dataSourceClass, properties, USER_PROP, user);
         setProperty(deploymentReflectionIndex, dataSourceClass, properties, PASSWORD_PROP, password);
     }
@@ -322,11 +331,23 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
         builder.setCharAt(3, Character.toUpperCase(name.charAt(0)));
         final String methodName = builder.toString();
         final Class<?> paramType = value.getClass();
-        final MethodIdentifier methodIdentifier = MethodIdentifier.getIdentifier(void.class, methodName, paramType);
-        final Method setterMethod = ClassReflectionIndexUtil.findMethod(deploymentReflectionIndex, dataSourceClass, methodIdentifier);
-
+        MethodIdentifier methodIdentifier = MethodIdentifier.getIdentifier(void.class, methodName, paramType);
+        Method setterMethod = ClassReflectionIndexUtil.findMethod(deploymentReflectionIndex, dataSourceClass, methodIdentifier);
         if (setterMethod != null) {
             properties.put(name, value.toString());
+        } else if (paramType == Integer.class) {
+            //if this is an Integer also look for int setters (WFLY-1364)
+            methodIdentifier = MethodIdentifier.getIdentifier(void.class, methodName, int.class);
+            setterMethod = ClassReflectionIndexUtil.findMethod(deploymentReflectionIndex, dataSourceClass, methodIdentifier);
+            if (setterMethod != null) {
+                properties.put(name, value.toString());
+            }
+        } else if (paramType == Boolean.class) {
+            methodIdentifier = MethodIdentifier.getIdentifier(void.class, methodName, boolean.class);
+            setterMethod = ClassReflectionIndexUtil.findMethod(deploymentReflectionIndex, dataSourceClass, methodIdentifier);
+            if (setterMethod != null) {
+                properties.put(name, value.toString());
+            }
         }
     }
 
@@ -463,7 +484,6 @@ public class DirectDataSourceInjectionSource extends InjectionSource {
     public int getMinPoolSize() {
         return minPoolSize;
     }
-
 
     public void setMinPoolSize(int minPoolSize) {
         this.minPoolSize = minPoolSize;

@@ -22,6 +22,8 @@
 
 package org.jboss.as.domain.management.security;
 
+import static org.jboss.as.domain.management.DomainManagementLogger.SECURITY_LOGGER;
+
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
@@ -33,7 +35,9 @@ import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.sasl.AuthorizeCallback;
 
 import org.jboss.as.domain.management.AuthMechanism;
+import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
@@ -46,7 +50,7 @@ import org.jboss.msc.service.StopContext;
  */
 public class ClientCertCallbackHandler implements Service<CallbackHandlerService>, CallbackHandlerService, CallbackHandler {
 
-    public static final String SERVICE_SUFFIX = "client_cert";
+    private static final String SERVICE_SUFFIX = "client_cert";
 
     ClientCertCallbackHandler() {
     }
@@ -93,10 +97,26 @@ public class ClientCertCallbackHandler implements Service<CallbackHandlerService
         for (Callback current : callbacks) {
             if (current instanceof AuthorizeCallback) {
                 AuthorizeCallback acb = (AuthorizeCallback) current;
-                acb.setAuthorized(acb.getAuthenticationID().equals(acb.getAuthorizationID()));
+                boolean authorized = acb.getAuthenticationID().equals(acb.getAuthorizationID());
+                if (authorized == false) {
+                    SECURITY_LOGGER.tracef(
+                            "Checking 'AuthorizeCallback', authorized=false, authenticationID=%s, authorizationID=%s.",
+                            acb.getAuthenticationID(), acb.getAuthorizationID());
+                }
+                acb.setAuthorized(authorized);
             } else {
                 throw new UnsupportedCallbackException(current);
             }
+        }
+    }
+
+    public static final class ServiceUtil {
+
+        private ServiceUtil() {
+        }
+
+        public static ServiceName createServiceName(final String realmName) {
+            return SecurityRealm.ServiceUtil.createServiceName(realmName).append(SERVICE_SUFFIX);
         }
     }
 }

@@ -23,7 +23,6 @@
 package org.jboss.as.logging;
 
 import static org.jboss.as.logging.CommonAttributes.AUTOFLUSH;
-
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.operations.validation.EnumValidator;
@@ -51,32 +50,23 @@ class ConsoleHandlerResourceDefinition extends AbstractHandlerDefinition {
             .setValidator(EnumValidator.create(Target.class, true, false))
             .build();
 
-    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, TARGET);
+    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, TARGET, NAMED_FORMATTER);
 
     public ConsoleHandlerResourceDefinition(final boolean includeLegacyAttributes) {
         super(CONSOLE_HANDLER_PATH, ConsoleHandler.class,
                 (includeLegacyAttributes ? Logging.join(ATTRIBUTES, LEGACY_ATTRIBUTES) : ATTRIBUTES));
     }
 
-    /**
-     * Add the transformers for the console handler.
-     *
-     * @param subsystemBuilder      the default subsystem builder
-     * @param loggingProfileBuilder the logging profile builder
-     *
-     * @return the builder created for the resource
-     */
-    static ResourceTransformationDescriptionBuilder addTransformers(final ResourceTransformationDescriptionBuilder subsystemBuilder,
-                                                                    final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
-        // Register the logger resource
-        final ResourceTransformationDescriptionBuilder child = subsystemBuilder.addChildResource(CONSOLE_HANDLER_PATH)
-                .getAttributeBuilder()
-                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, TARGET)
-                .end();
-
-        // Reject logging profile resources
-        loggingProfileBuilder.rejectChildResource(CONSOLE_HANDLER_PATH);
-
-        return registerTransformers(child);
+    @Override
+    protected void registerResourceTransformers(final KnownModelVersion modelVersion, final ResourceTransformationDescriptionBuilder resourceBuilder, final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
+        switch (modelVersion) {
+            case VERSION_1_1_0: {
+                resourceBuilder
+                        .getAttributeBuilder()
+                        .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, TARGET)
+                        .end()
+                        .discardOperations();
+            }
+        }
     }
 }

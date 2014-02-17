@@ -91,10 +91,6 @@ public class BroadcastGroupDefinition extends SimpleResourceDefinition {
     public static final AttributeDefinition[] ATTRIBUTES = { JGROUPS_STACK, JGROUPS_CHANNEL, SOCKET_BINDING, LOCAL_BIND_ADDRESS, LOCAL_BIND_PORT,
         GROUP_ADDRESS, GROUP_PORT, BROADCAST_PERIOD, CONNECTOR_REFS };
 
-    public static final AttributeDefinition[] ATTRIBUTES_ADDED_IN_1_2_0 = { JGROUPS_CHANNEL, JGROUPS_STACK };
-
-    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { BROADCAST_PERIOD };
-
     public static final String GET_CONNECTOR_PAIRS_AS_JSON = "get-connector-pairs-as-json";
 
     private final boolean registerRuntimeOnly;
@@ -152,6 +148,7 @@ public class BroadcastGroupDefinition extends SimpleResourceDefinition {
         PathAddress hornetqServer = MessagingServices.getHornetQServerPathAddress(address);
         Resource hornetQServerResource = context.readResourceFromRoot(hornetqServer);
         Set<String> availableConnectors = new HashSet<String>();
+        availableConnectors.addAll(hornetQServerResource.getChildrenNames(CommonAttributes.HTTP_CONNECTOR));
         availableConnectors.addAll(hornetQServerResource.getChildrenNames(CommonAttributes.IN_VM_CONNECTOR));
         availableConnectors.addAll(hornetQServerResource.getChildrenNames(CommonAttributes.REMOTE_CONNECTOR));
         availableConnectors.addAll(hornetQServerResource.getChildrenNames(CommonAttributes.CONNECTOR));

@@ -23,6 +23,7 @@
 package org.jboss.as.domain.management.security;
 
 import static org.jboss.as.domain.management.DomainManagementLogger.ROOT_LOGGER;
+import static org.jboss.as.domain.management.DomainManagementLogger.SECURITY_LOGGER;
 import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
 import static org.jboss.as.domain.management.RealmConfigurationConstants.DIGEST_PLAIN_TEXT;
 import static org.jboss.as.domain.management.RealmConfigurationConstants.VERIFY_PASSWORD_CALLBACK_SUPPORTED;
@@ -46,7 +47,11 @@ import javax.security.sasl.AuthorizeCallback;
 import javax.security.sasl.RealmCallback;
 
 import org.jboss.as.domain.management.AuthMechanism;
+import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceName;
+import org.jboss.msc.service.StartContext;
+import org.jboss.msc.service.StartException;
 import org.jboss.sasl.callback.DigestHashCallback;
 import org.jboss.sasl.callback.VerifyPasswordCallback;
 import org.jboss.sasl.util.UsernamePasswordHashUtil;
@@ -56,10 +61,10 @@ import org.jboss.sasl.util.UsernamePasswordHashUtil;
  *
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
-public class PropertiesCallbackHandler extends PropertiesFileLoader implements Service<CallbackHandlerService>,
-CallbackHandlerService, CallbackHandler {
+public class PropertiesCallbackHandler extends UserPropertiesFileLoader implements Service<CallbackHandlerService>,
+        CallbackHandlerService, CallbackHandler {
 
-    public static final String SERVICE_SUFFIX = "properties_authentication";
+    private static final String SERVICE_SUFFIX = "properties_authentication";
 
     private static UsernamePasswordHashUtil hashUtil = null;
 
@@ -117,6 +122,19 @@ CallbackHandlerService, CallbackHandler {
         }
     }
 
+    @Override
+    public void start(StartContext context) throws StartException {
+        super.start(context);
+        try {
+            String fileRealm = getRealmName();
+            if (fileRealm != null && realm.equals(getRealmName()) == false) {
+                ROOT_LOGGER.realmMisMatch(realm, fileRealm);
+            }
+        } catch (IOException e) {
+            throw MESSAGES.unableToLoadProperties(e);
+        }
+    }
+
     public CallbackHandlerService getValue() throws IllegalStateException, IllegalArgumentException {
         return this;
     }
@@ -165,30 +183,41 @@ CallbackHandlerService, CallbackHandler {
         // Second Pass - Now iterate the Callback(s) requiring a response.
         for (Callback current : toRespondTo) {
             if (current instanceof AuthorizeCallback) {
-                AuthorizeCallback authorizeCallback = (AuthorizeCallback) current;
-                // Don't support impersonating another identity
-                authorizeCallback.setAuthorized(authorizeCallback.getAuthenticationID().equals(
-                        authorizeCallback.getAuthorizationID()));
+                AuthorizeCallback acb = (AuthorizeCallback) current;
+                boolean authorized = acb.getAuthenticationID().equals(acb.getAuthorizationID());
+                if (authorized == false) {
+                    SECURITY_LOGGER.tracef(
+                            "Checking 'AuthorizeCallback', authorized=false, authenticationID=%s, authorizationID=%s.",
+                            acb.getAuthenticationID(), acb.getAuthorizationID());
+                }
+                acb.setAuthorized(authorized);
             } else if (current instanceof PasswordCallback) {
                 if (userFound == false) {
+                    SECURITY_LOGGER.tracef("User '%s' not found in properties file.", userName);
                     throw new UserNotFoundException(userName);
                 }
                 String password = users.get(userName).toString();
                 ((PasswordCallback) current).setPassword(password.toCharArray());
             } else if (current instanceof DigestHashCallback) {
                 if (userFound == false) {
+                    SECURITY_LOGGER.tracef("User '%s' not found in properties file.", userName);
                     throw new UserNotFoundException(userName);
                 }
                 String hash = users.get(userName).toString();
                 ((DigestHashCallback) current).setHexHash(hash);
             } else if (current instanceof VerifyPasswordCallback) {
                 if (userFound == false) {
+                    SECURITY_LOGGER.tracef("User '%s' not found in properties file.", userName);
                     throw new UserNotFoundException(userName);
                 }
                 VerifyPasswordCallback vpc = (VerifyPasswordCallback) current;
                 if (plainText) {
                     String password = users.get(userName).toString();
-                    vpc.setVerified(password.equals(vpc.getPassword()));
+                    boolean verified = password.equals(vpc.getPassword());
+                    if (verified == false) {
+                        SECURITY_LOGGER.tracef("Password verification failed for user '%s'", userName);
+                    }
+                    vpc.setVerified(verified);
                 } else {
                     UsernamePasswordHashUtil hashUtil = getHashUtil();
                     String hash;
@@ -196,7 +225,11 @@ CallbackHandlerService, CallbackHandler {
                         hash = hashUtil.generateHashedHexURP(userName, realm, vpc.getPassword().toCharArray());
                     }
                     String expected = users.get(userName).toString();
-                    vpc.setVerified(expected.equals(hash));
+                    boolean verified = expected.equals(hash);
+                    if (verified == false) {
+                        SECURITY_LOGGER.tracef("Digest verification failed for user '%s'", userName);
+                    }
+                    vpc.setVerified(verified);
                 }
             }
         }
@@ -212,6 +245,16 @@ CallbackHandlerService, CallbackHandler {
             }
         }
         return hashUtil;
+    }
+
+    public static final class ServiceUtil {
+
+        private ServiceUtil() {
+        }
+
+        public static ServiceName createServiceName(final String realmName) {
+            return SecurityRealm.ServiceUtil.createServiceName(realmName).append(SERVICE_SUFFIX);
+        }
     }
 
 }

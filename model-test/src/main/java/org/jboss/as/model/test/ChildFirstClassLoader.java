@@ -23,8 +23,11 @@ package org.jboss.as.model.test;
 
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.List;
+import java.util.Collections;
+import java.util.Set;
 import java.util.regex.Pattern;
+
+import org.jboss.modules.filter.ClassFilter;
 
 /**
  * Internal use only.
@@ -34,18 +37,24 @@ import java.util.regex.Pattern;
 public class ChildFirstClassLoader extends URLClassLoader {
 
     private final ClassLoader parent;
-    private final List<Pattern> parentFirst;
-    private final List<Pattern> childFirst;
+    private final Set<Pattern> parentFirst;
+    private final Set<Pattern> childFirst;
+    private final ClassFilter parentExclusionFilter;
 
 
-    ChildFirstClassLoader(ClassLoader parent, List<Pattern> parentFirst, List<Pattern> childFirst, URL...urls) {
+    ChildFirstClassLoader(ClassLoader parent, Set<Pattern> parentFirst, Set<Pattern> childFirst, ClassFilter parentExclusionFilter, URL... urls) {
         super(urls, parent);
         assert parent != null : "Null parent";
         assert parentFirst != null : "Null parent first";
         assert childFirst != null : "Null child first";
         this.parent = parent;
-        this.childFirst = childFirst;
-        this.parentFirst = parentFirst;
+        this.childFirst = Collections.unmodifiableSet(childFirst);
+        this.parentFirst = Collections.unmodifiableSet(parentFirst);
+        this.parentExclusionFilter = parentExclusionFilter;
+//        System.out.println("---------->");
+//        for (URL url : urls) {
+//            System.out.println(url);
+//        }
     }
 
     protected synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
@@ -60,7 +69,9 @@ public class ChildFirstClassLoader extends URLClassLoader {
             try {
                 c = findClass(name);
             } catch (ClassNotFoundException e) {
-
+                if (parentExclusionFilter != null && parentExclusionFilter.accept(name)) {
+                    throw e;
+                }
             }
             if (c == null) {
                 c = parent.loadClass(name);
@@ -102,16 +113,6 @@ public class ChildFirstClassLoader extends URLClassLoader {
             }
         }
         return parent;
-    }
-
-    public static void main(String[] args) {
-        Pattern pattern = Pattern.compile("org\\.jboss\\.as\\.core\\.model\\.adapter\\.common\\..*");
-        System.out.println(pattern);
-        String className = "org.jboss.as.core.model.adapter.common.BLah";
-        System.out.println(className);
-
-        System.out.println(pattern.matcher(className).matches());
-
     }
 }
 

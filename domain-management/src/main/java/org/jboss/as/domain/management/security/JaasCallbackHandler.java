@@ -22,6 +22,7 @@
 
 package org.jboss.as.domain.management.security;
 
+import static org.jboss.as.domain.management.DomainManagementLogger.SECURITY_LOGGER;
 import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
 import static org.jboss.as.domain.management.RealmConfigurationConstants.SUBJECT_CALLBACK_SUPPORTED;
 import static org.jboss.as.domain.management.RealmConfigurationConstants.VERIFY_PASSWORD_CALLBACK_SUPPORTED;
@@ -43,10 +44,11 @@ import javax.security.auth.login.LoginException;
 import javax.security.sasl.AuthorizeCallback;
 import javax.security.sasl.RealmCallback;
 
-import org.jboss.as.controller.security.ServerSecurityManager;
+import org.jboss.as.core.security.ServerSecurityManager;
 import org.jboss.as.domain.management.AuthMechanism;
-import org.jboss.logging.Logger;
+import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
@@ -60,9 +62,7 @@ import org.jboss.sasl.callback.VerifyPasswordCallback;
  */
 public class JaasCallbackHandler implements Service<CallbackHandlerService>, CallbackHandlerService, CallbackHandler {
 
-    private static final Logger logger = Logger.getLogger(JaasCallbackHandler.class);
-
-    public static final String SERVICE_SUFFIX = "jaas";
+    private static final String SERVICE_SUFFIX = "jaas";
 
     private static final Map<String, String> configurationOptions;
 
@@ -112,10 +112,13 @@ public class JaasCallbackHandler implements Service<CallbackHandlerService>, Cal
     public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
         if (callbacks.length == 1 && callbacks[0] instanceof AuthorizeCallback) {
             AuthorizeCallback acb = (AuthorizeCallback) callbacks[0];
-            String authenticationId = acb.getAuthenticationID();
-            String authorizationId = acb.getAuthorizationID();
-
-            acb.setAuthorized(authenticationId.equals(authorizationId));
+            boolean authorized = acb.getAuthenticationID().equals(acb.getAuthorizationID());
+            if (authorized == false) {
+                SECURITY_LOGGER.tracef(
+                        "Checking 'AuthorizeCallback', authorized=false, authenticationID=%s, authorizationID=%s.",
+                        acb.getAuthenticationID(), acb.getAuthorizationID());
+            }
+            acb.setAuthorized(authorized);
 
             return;
         }
@@ -138,13 +141,16 @@ public class JaasCallbackHandler implements Service<CallbackHandlerService>, Cal
         }
 
         if (nameCallBack == null) {
+            SECURITY_LOGGER.trace("No username supplied in Callbacks.");
             throw MESSAGES.noUsername();
         }
         final String userName = nameCallBack.getDefaultName();
         if (userName == null || userName.length() == 0) {
+            SECURITY_LOGGER.trace("NameCallback either has no username or is 0 length.");
             throw MESSAGES.noUsername();
         }
         if (verifyPasswordCallback == null || verifyPasswordCallback.getPassword() == null) {
+            SECURITY_LOGGER.trace("No password to verify.");
             throw MESSAGES.noPassword();
         }
         final char[] password = verifyPasswordCallback.getPassword().toCharArray();
@@ -163,7 +169,7 @@ public class JaasCallbackHandler implements Service<CallbackHandlerService>, Cal
                     subjectCallback.setSubject(subject);
                 }
             } catch (SecurityException e) {
-                logger.debug("Failed to verify password in JAAS callbackhandler " + this.name, e);
+                SECURITY_LOGGER.debug("Failed to verify password in JAAS callbackhandler " + this.name, e);
                 verifyPasswordCallback.setVerified(false);
             } finally {
                 securityManager.pop();
@@ -195,7 +201,7 @@ public class JaasCallbackHandler implements Service<CallbackHandlerService>, Cal
                     subjectCallback.setSubject(subject);
                 }
             } catch (LoginException e) {
-                logger.debug("Login failed in JAAS callbackhandler " + this.name, e);
+                SECURITY_LOGGER.debug("Login failed in JAAS callbackhandler " + this.name, e);
                 verifyPasswordCallback.setVerified(false);
             }
         }
@@ -217,6 +223,16 @@ public class JaasCallbackHandler implements Service<CallbackHandlerService>, Cal
 
     public CallbackHandlerService getValue() throws IllegalStateException, IllegalArgumentException {
         return this;
+    }
+
+    public static final class ServiceUtil {
+
+        private ServiceUtil() {
+        }
+
+        public static ServiceName createServiceName(final String realmName) {
+            return SecurityRealm.ServiceUtil.createServiceName(realmName).append(SERVICE_SUFFIX);
+        }
     }
 
 }

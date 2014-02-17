@@ -22,10 +22,9 @@
 package org.jboss.as.cli.parsing.command;
 
 import org.jboss.as.cli.CommandFormatException;
-import org.jboss.as.cli.Util;
 import org.jboss.as.cli.parsing.CharacterHandler;
-import org.jboss.as.cli.parsing.DefaultParsingState;
 import org.jboss.as.cli.parsing.DefaultStateWithEndCharacter;
+import org.jboss.as.cli.parsing.ExpressionBaseState;
 import org.jboss.as.cli.parsing.ParsingContext;
 import org.jboss.as.cli.parsing.QuotesState;
 import org.jboss.as.cli.parsing.WordCharacterHandler;
@@ -34,13 +33,13 @@ import org.jboss.as.cli.parsing.WordCharacterHandler;
  *
  * @author Alexey Loubyansky
  */
-public class ArgumentValueState extends DefaultParsingState {
+public class ArgumentValueState extends ExpressionBaseState {
 
     public static final ArgumentValueState INSTANCE = new ArgumentValueState();
     public static final String ID = "PROP_VALUE";
 
     ArgumentValueState() {
-        super(ID);
+        super(ID, false);
         this.setEnterHandler(new CharacterHandler() {
             @Override
             public void handle(ParsingContext ctx) throws CommandFormatException {
@@ -52,14 +51,8 @@ public class ArgumentValueState extends DefaultParsingState {
         enterState('(', new DefaultStateWithEndCharacter("PARENTHESIS", ')', false, true, enterStateHandlers));
         enterState('{', new DefaultStateWithEndCharacter("BRACES", '}', false, true, enterStateHandlers));
         setLeaveOnWhitespace(true);
-        if(!Util.isWindows()) {
-            // on windows we don't escape, this would mess up file system paths for example.
-            setDefaultHandler(WordCharacterHandler.LB_LEAVE_ESCAPE_ON);
-            enterState('"', QuotesState.QUOTES_INCLUDED);
-        } else {
-            setDefaultHandler(new WordCharacterHandler(true, false));
-            enterState('"', new QuotesState(true, false));
-        }
+        setDefaultHandler(new WordCharacterHandler(true, false));
+        enterState('"', new QuotesState(true, false));
         setReturnHandler(new CharacterHandler() {
             @Override
             public void handle(ParsingContext ctx) throws CommandFormatException {

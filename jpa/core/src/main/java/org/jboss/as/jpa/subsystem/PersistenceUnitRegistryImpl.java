@@ -26,8 +26,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+
 import org.jboss.as.jpa.spi.PersistenceUnitService;
-import org.jboss.as.jpa.spi.PersistenceUnitServiceRegistry;
+import org.jipijapa.plugin.spi.PersistenceUnitServiceRegistry;
+
 
 /**
  * Standard {@link PersistenceUnitServiceRegistry} implementation.

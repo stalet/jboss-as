@@ -28,8 +28,13 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUT
 
 import java.io.DataInput;
 import java.io.IOException;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.concurrent.CountDownLatch;
 
+import javax.security.auth.Subject;
+
+import org.jboss.as.controller.AccessAuditContext;
 import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.client.OperationAttachments;
@@ -42,6 +47,7 @@ import org.jboss.as.protocol.mgmt.FlushableDataOutput;
 import org.jboss.as.protocol.mgmt.ManagementChannelAssociation;
 import org.jboss.as.protocol.mgmt.ManagementProtocol;
 import org.jboss.as.protocol.mgmt.ManagementRequestContext;
+import org.jboss.as.protocol.mgmt.ManagementRequestContext.AsyncTask;
 import org.jboss.as.protocol.mgmt.ManagementRequestHandler;
 import org.jboss.as.protocol.mgmt.ManagementRequestHandlerFactory;
 import org.jboss.as.protocol.mgmt.ManagementRequestHeader;
@@ -54,6 +60,7 @@ import org.jboss.dmr.ModelNode;
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  * @author Emanuel Muckenhuber
+ * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
 public class TransactionalProtocolOperationHandler implements ManagementRequestHandlerFactory {
 
@@ -90,13 +97,41 @@ public class TransactionalProtocolOperationHandler implements ManagementRequestH
             operation.readExternal(input);
             ProtocolUtils.expectHeader(input, ModelControllerProtocol.PARAM_INPUTSTREAMS_LENGTH);
             final int attachmentsLength = input.readInt();
-            context.executeAsync(new ManagementRequestContext.AsyncTask<ExecuteRequestContext>() {
+
+            final Subject subject;
+            final Boolean readSubject = channelAssociation.getAttachments().getAttachment(TransactionalProtocolClient.SEND_SUBJECT);
+            if (readSubject != null && readSubject) {
+                subject = readSubject(input);
+            } else {
+                subject = new Subject();
+            }
+
+            final PrivilegedAction<Void> action = new PrivilegedAction<Void>() {
 
                 @Override
-                public void execute(ManagementRequestContext<ExecuteRequestContext> context) throws Exception {
+                public Void run() {
                     doExecute(operation, attachmentsLength, context);
+                    return null;
                 }
+            };
 
+            // Set the response information and execute the operation
+            final ExecuteRequestContext executeRequestContext = context.getAttachment();
+            executeRequestContext.initialize(context);
+            context.executeAsync(new AsyncTask<TransactionalProtocolOperationHandler.ExecuteRequestContext>() {
+
+                @Override
+                public void execute(final ManagementRequestContext<ExecuteRequestContext> context) throws Exception {
+                    AccessController.doPrivileged(new PrivilegedAction<Void>() {
+
+                        @Override
+                        public Void run() {
+                            AccessAuditContext.doAs(subject, action);
+                            return null;
+                        }
+                    });
+
+                }
             });
         }
 
@@ -202,6 +237,7 @@ public class TransactionalProtocolOperationHandler implements ManagementRequestH
         private ActiveOperation<Void, ExecuteRequestContext> operation;
         private ManagementRequestContext<ExecuteRequestContext> responseChannel;
         private final CountDownLatch txCompletedLatch = new CountDownLatch(1);
+        private PrivilegedAction<Void> action;
 
         Integer getOperationId() {
             return operation.getOperationId();
@@ -209,6 +245,14 @@ public class TransactionalProtocolOperationHandler implements ManagementRequestH
 
         ActiveOperation.ResultHandler<Void> getResultHandler() {
             return operation.getResultHandler();
+        }
+
+        public PrivilegedAction<Void> getAction() {
+            return action;
+        }
+
+        public void setAction(PrivilegedAction<Void> action) {
+            this.action = action;
         }
 
         @Override
@@ -224,6 +268,18 @@ public class TransactionalProtocolOperationHandler implements ManagementRequestH
                     transaction.rollback();
                     txCompletedLatch.countDown();
                 }
+            } else if (responseChannel != null) {
+                rollbackOnPrepare = true;
+                // Failed in a step before prepare, send error response
+                final String message = e.getMessage() != null ? e.getMessage() : "failure before rollback " + e.getClass().getName();
+                final ModelNode response = new ModelNode();
+                response.get(OUTCOME).set(FAILED);
+                response.get(FAILURE_DESCRIPTION).set(message);
+                try {
+                    sendResponse(responseChannel, ModelControllerProtocol.PARAM_OPERATION_FAILED, response);
+                } catch (IOException ignored) {
+                    ProtocolLogger.ROOT_LOGGER.debugf(ignored, "failed to process message");
+                }
             }
         }
 
@@ -234,7 +290,6 @@ public class TransactionalProtocolOperationHandler implements ManagementRequestH
 
         synchronized void initialize(final ManagementRequestContext<ExecuteRequestContext> context) {
             assert ! prepared;
-            assert responseChannel == null;
             assert activeTx == null;
             // 1) initialize (set the response information)
             this.responseChannel = context;
@@ -350,6 +405,10 @@ public class TransactionalProtocolOperationHandler implements ManagementRequestH
             StreamUtils.safeClose(output);
         }
 
+    }
+
+    static Subject readSubject(final DataInput input) throws IOException {
+        return SubjectProtocolUtil.read(input);
     }
 
 }

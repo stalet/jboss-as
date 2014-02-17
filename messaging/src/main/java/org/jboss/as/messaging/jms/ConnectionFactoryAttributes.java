@@ -28,6 +28,7 @@ import static org.jboss.as.controller.client.helpers.MeasurementUnit.BYTES;
 import static org.jboss.as.controller.client.helpers.MeasurementUnit.MILLISECONDS;
 import static org.jboss.as.controller.client.helpers.MeasurementUnit.PER_SECOND;
 import static org.jboss.as.messaging.AttributeMarshallers.NOOP_MARSHALLER;
+import static org.jboss.as.messaging.CommonAttributes.MESSAGING_SECURITY_DEF;
 import static org.jboss.as.messaging.MessagingExtension.VERSION_1_1_0;
 import static org.jboss.as.messaging.jms.ConnectionFactoryAttribute.create;
 import static org.jboss.dmr.ModelType.BIG_DECIMAL;
@@ -44,10 +45,12 @@ import org.hornetq.api.core.client.HornetQClient;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.AttributeMarshaller;
 import org.jboss.as.controller.ListAttributeDefinition;
+import org.jboss.as.controller.ParameterCorrector;
 import org.jboss.as.controller.PrimitiveListAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleMapAttributeDefinition;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.messaging.AttributeMarshallers;
 import org.jboss.as.messaging.CommonAttributes;
@@ -124,6 +127,33 @@ public interface ConnectionFactoryAttributes {
         AttributeDefinition CONNECTOR = new SimpleMapAttributeDefinition.Builder(CommonAttributes.CONNECTOR, true)
                 .setAlternatives(CommonAttributes.DISCOVERY_GROUP_NAME)
                 .setAttributeMarshaller(AttributeMarshallers.CONNECTORS_MARSHALLER)
+                .setCorrector(new ParameterCorrector() {
+                    /*
+                     * https://issues.jboss.org/browse/WFLY-1796
+                     *
+                     * For backwards compatibility, the connector attribute must be a map where the key is a
+                     * connector name and the value is not taken into account (in previous HornetQ versions, the value
+                     * was the backup's server connector).
+                     *
+                     * This is a source of confusion when creating resources with connector: users expect to pass a
+                     * list of connectors and this fails as they must pass a map with undefined values.
+                     *
+                     * This corrector will replace a list with the map expected to populate the model.
+                     */
+                    @Override
+                    public ModelNode correct(ModelNode newValue, ModelNode currentValue) {
+                        if (newValue.getType() != ModelType.LIST) {
+                            return newValue;
+                        } else {
+                            ModelNode correctValue = new ModelNode();
+                            for (ModelNode node : newValue.asList()) {
+                                correctValue.get(node.asString());
+                            }
+                            return correctValue;
+                        }
+                    }
+                })
+                .setRestartAllServices()
                 .build();
 
         AttributeDefinition CONSUMER_MAX_RATE = SimpleAttributeDefinitionBuilder.create("consumer-max-rate", INT)
@@ -179,7 +209,6 @@ public interface ConnectionFactoryAttributes {
                 .setAllowNull(true)
                 .setRestartAllServices()
                 .setDeprecated(VERSION_1_1_0)
-                .setAttributeMarshaller(NOOP_MARSHALLER)
                 .build();
 
         AttributeDefinition GROUP_ID = SimpleAttributeDefinitionBuilder.create("group-id", STRING)
@@ -371,6 +400,8 @@ public interface ConnectionFactoryAttributes {
                 .setAllowNull(true)
                 .setAllowExpression(true)
                 .setRestartAllServices()
+                .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.CREDENTIAL)
+                .addAccessConstraint(MESSAGING_SECURITY_DEF)
                 .build();
 
         /**
@@ -434,6 +465,8 @@ public interface ConnectionFactoryAttributes {
         SimpleAttributeDefinition USER = SimpleAttributeDefinitionBuilder.create("user", STRING)
                 .setAllowNull(true)
                 .setAllowExpression(true)
+                .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.CREDENTIAL)
+                .addAccessConstraint(MESSAGING_SECURITY_DEF)
                 .build();
 
         /**

@@ -49,6 +49,7 @@ import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.client.OperationBuilder;
 import org.jboss.dmr.ModelNode;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -65,12 +66,31 @@ public class MessagingClientTestCase {
     @ContainerResource
     private ManagementClient managementClient;
 
+    @Ignore
     @Test
-    public void testMessagingClient() throws Exception {
+    public void testMessagingClientUsingMessagingPort() throws Exception {
+        final ClientSessionFactory sf = createClientSessionFactory(managementClient.getWebUri().getHost(), 5445, false);
+        doMessagingClient(sf);
+        sf.close();
+    }
 
+    @Test
+    public void testMessagingClientUsingHTTPPort() throws Exception {
+        final ClientSessionFactory sf = createClientSessionFactory(managementClient.getWebUri().getHost(), managementClient.getWebUri().getPort(), true);
+        doMessagingClient(sf);
+        sf.close();
+    }
+
+    public void loop() throws Exception {
+        for (int i = 0; i < 1000; i++) {
+            System.out.println("i = " + i);
+            testMessagingClientUsingHTTPPort();
+        }
+    }
+
+    private void doMessagingClient(ClientSessionFactory sf) throws Exception {
         final String queueName = "queue.standalone";
 
-        final ClientSessionFactory sf = createClientSessionFactory(managementClient.getMgmtAddress(), 5445);
         final ModelControllerClient client = managementClient.getControllerClient();
 
         // Check that the queue does not exists
@@ -149,10 +169,14 @@ public class MessagingClientTestCase {
         }
     }
 
-    static ClientSessionFactory createClientSessionFactory(String host, int port) throws Exception {
+    static ClientSessionFactory createClientSessionFactory(String host, int port, boolean httpUpgradeEnabled) throws Exception {
         final Map<String, Object> properties = new HashMap<String, Object>();
         properties.put(TransportConstants.HOST_PROP_NAME, host);
         properties.put(TransportConstants.PORT_PROP_NAME, port);
+        properties.put(TransportConstants.HTTP_UPGRADE_ENABLED_PROP_NAME, httpUpgradeEnabled);
+        if (httpUpgradeEnabled) {
+            properties.put(TransportConstants.HTTP_UPGRADE_ENDPOINT_PROP_NAME, "http-acceptor");
+        }
         final TransportConfiguration configuration = new TransportConfiguration(NettyConnectorFactory.class.getName(), properties);
         return HornetQClient.createServerLocatorWithoutHA(configuration).createSessionFactory();
     }

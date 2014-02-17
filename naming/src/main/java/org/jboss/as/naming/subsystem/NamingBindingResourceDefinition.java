@@ -22,16 +22,26 @@
 
 package org.jboss.as.naming.subsystem;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.OperationContext;
+import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PropertiesAttributeDefinition;
 import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.registry.Resource;
+import org.jboss.as.naming.NamingMessages;
+import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
@@ -83,6 +93,15 @@ public class NamingBindingResourceDefinition extends SimpleResourceDefinition {
 
     static final AttributeDefinition[] ATTRIBUTES = {BINDING_TYPE, VALUE, TYPE, CLASS, MODULE, LOOKUP, ENVIRONMENT, CACHE};
 
+
+    private static final List<AccessConstraintDefinition> ACCESS_CONSTRAINTS;
+    static {
+        List<AccessConstraintDefinition> constraints =  new ArrayList<AccessConstraintDefinition>();
+        constraints.add(NamingExtension.NAMING_BINDING_APPLICATION_CONSTRAINT);
+        constraints.add(NamingExtension.NAMING_BINDING_SENSITIVITY_CONSTRAINT);
+        ACCESS_CONSTRAINTS = Collections.unmodifiableList(constraints);
+    }
+
     private NamingBindingResourceDefinition() {
         super(NamingSubsystemModel.BINDING_PATH,
                 NamingExtension.getResourceDescriptionResolver(NamingSubsystemModel.BINDING),
@@ -91,9 +110,63 @@ public class NamingBindingResourceDefinition extends SimpleResourceDefinition {
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
-        OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(ATTRIBUTES);
+        OperationStepHandler writeHandler = new WriteAttributeHandler(ATTRIBUTES);
         for (AttributeDefinition attr : ATTRIBUTES) {
             resourceRegistration.registerReadWriteAttribute(attr, null, writeHandler);
+        }
+    }
+
+    @Override
+    public List<AccessConstraintDefinition> getAccessConstraints() {
+        return ACCESS_CONSTRAINTS;
+    }
+
+    private static class WriteAttributeHandler extends ReloadRequiredWriteAttributeHandler {
+        private WriteAttributeHandler(AttributeDefinition... definitions) {
+            super(definitions);
+        }
+        @Override
+        protected void validateUpdatedModel(OperationContext context, Resource model) throws OperationFailedException {
+            super.validateUpdatedModel(context, model);
+            validateResourceModel(model.getModel());
+        }
+    }
+
+    static void validateResourceModel(ModelNode modelNode) throws OperationFailedException {
+        final BindingType type = BindingType.forName(modelNode.require(NamingSubsystemModel.BINDING_TYPE).asString());
+        if (type == BindingType.SIMPLE) {
+            if(!modelNode.hasDefined(NamingBindingResourceDefinition.VALUE.getName())) {
+                throw NamingMessages.MESSAGES.bindingTypeRequiresAttributeDefined(type,NamingBindingResourceDefinition.VALUE.getName());
+            }
+            if (modelNode.hasDefined(NamingBindingResourceDefinition.CACHE.getName())) {
+                throw NamingMessages.MESSAGES.cacheNotValidForBindingType(type);
+            }
+        } else if (type == BindingType.OBJECT_FACTORY) {
+            if(!modelNode.hasDefined(NamingBindingResourceDefinition.MODULE.getName())) {
+                throw NamingMessages.MESSAGES.bindingTypeRequiresAttributeDefined(type,NamingBindingResourceDefinition.MODULE.getName());
+            }
+            if(!modelNode.hasDefined(NamingBindingResourceDefinition.CLASS.getName())) {
+                throw NamingMessages.MESSAGES.bindingTypeRequiresAttributeDefined(type,NamingBindingResourceDefinition.CLASS.getName());
+            }
+            if (modelNode.hasDefined(NamingBindingResourceDefinition.CACHE.getName())) {
+                throw NamingMessages.MESSAGES.cacheNotValidForBindingType(type);
+            }
+        } else if (type == BindingType.EXTERNAL_CONTEXT) {
+            if(!modelNode.hasDefined(NamingBindingResourceDefinition.MODULE.getName())) {
+                throw NamingMessages.MESSAGES.bindingTypeRequiresAttributeDefined(type,NamingBindingResourceDefinition.MODULE.getName());
+            }
+            if(!modelNode.hasDefined(NamingBindingResourceDefinition.CLASS.getName())) {
+                throw NamingMessages.MESSAGES.bindingTypeRequiresAttributeDefined(type,NamingBindingResourceDefinition.CLASS.getName());
+            }
+        } else if (type == BindingType.LOOKUP) {
+            if(!modelNode.hasDefined(NamingBindingResourceDefinition.LOOKUP.getName())) {
+                throw NamingMessages.MESSAGES.bindingTypeRequiresAttributeDefined(type,NamingBindingResourceDefinition.LOOKUP.getName());
+            }
+            if (modelNode.hasDefined(NamingBindingResourceDefinition.CACHE.getName())) {
+                throw NamingMessages.MESSAGES.cacheNotValidForBindingType(type);
+            }
+        } else {
+            throw NamingMessages.MESSAGES.unknownBindingType(type.toString());
         }
     }
 }

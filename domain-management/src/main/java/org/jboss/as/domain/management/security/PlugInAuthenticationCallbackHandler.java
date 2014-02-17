@@ -22,6 +22,7 @@
 
 package org.jboss.as.domain.management.security;
 
+import static org.jboss.as.domain.management.DomainManagementLogger.SECURITY_LOGGER;
 import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
 import static org.jboss.as.domain.management.RealmConfigurationConstants.DIGEST_PLAIN_TEXT;
 import static org.jboss.as.domain.management.RealmConfigurationConstants.VERIFY_PASSWORD_CALLBACK_SUPPORTED;
@@ -44,6 +45,7 @@ import javax.security.sasl.AuthorizeCallback;
 import javax.security.sasl.RealmCallback;
 
 import org.jboss.as.domain.management.AuthMechanism;
+import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.as.domain.management.plugin.AuthenticationPlugIn;
 import org.jboss.as.domain.management.plugin.Credential;
 import org.jboss.as.domain.management.plugin.DigestCredential;
@@ -52,6 +54,7 @@ import org.jboss.as.domain.management.plugin.PasswordCredential;
 import org.jboss.as.domain.management.plugin.PlugInConfigurationSupport;
 import org.jboss.as.domain.management.plugin.ValidatePasswordCredential;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceName;
 import org.jboss.sasl.callback.DigestHashCallback;
 import org.jboss.sasl.callback.VerifyPasswordCallback;
 import org.jboss.sasl.util.UsernamePasswordHashUtil;
@@ -64,7 +67,7 @@ import org.jboss.sasl.util.UsernamePasswordHashUtil;
 public class PlugInAuthenticationCallbackHandler extends AbstractPlugInService implements Service<CallbackHandlerService>,
         CallbackHandlerService {
 
-    public static final String SERVICE_SUFFIX = "plug-in-authentication";
+    private static final String SERVICE_SUFFIX = "plug-in-authentication";
 
     private static UsernamePasswordHashUtil hashUtil = null;
 
@@ -180,12 +183,17 @@ public class PlugInAuthenticationCallbackHandler extends AbstractPlugInService i
                 // Second Pass - Now iterate the Callback(s) requiring a response.
                 for (Callback current : toRespondTo) {
                     if (current instanceof AuthorizeCallback) {
-                        AuthorizeCallback authorizeCallback = (AuthorizeCallback) current;
-                        // Don't support impersonating another identity
-                        authorizeCallback.setAuthorized(authorizeCallback.getAuthenticationID().equals(
-                                authorizeCallback.getAuthorizationID()));
+                        AuthorizeCallback acb = (AuthorizeCallback) current;
+                        boolean authorized = acb.getAuthenticationID().equals(acb.getAuthorizationID());
+                        if (authorized == false) {
+                            SECURITY_LOGGER.tracef(
+                                    "Checking 'AuthorizeCallback', authorized=false, authenticationID=%s, authorizationID=%s.",
+                                    acb.getAuthenticationID(), acb.getAuthorizationID());
+                        }
+                        acb.setAuthorized(authorized);
                     } else if (current instanceof PasswordCallback) {
                         if (credential == null) {
+                            SECURITY_LOGGER.tracef("User '%s' not found.", userName);
                             throw new UserNotFoundException(userName);
                         }
 
@@ -196,6 +204,7 @@ public class PlugInAuthenticationCallbackHandler extends AbstractPlugInService i
                         }
                     } else if (current instanceof DigestHashCallback) {
                         if (credential == null) {
+                            SECURITY_LOGGER.tracef("User '%s' not found.", userName);
                             throw new UserNotFoundException(userName);
                         }
 
@@ -214,14 +223,18 @@ public class PlugInAuthenticationCallbackHandler extends AbstractPlugInService i
                         }
                     } else if (current instanceof VerifyPasswordCallback) {
                         if (credential == null) {
+                            SECURITY_LOGGER.tracef("User '%s' not found.", userName);
                             throw new UserNotFoundException(userName);
                         }
 
                         VerifyPasswordCallback vpc = (VerifyPasswordCallback) current;
 
                         if (credential instanceof PasswordCredential) {
-                            vpc.setVerified(Arrays.equals(((PasswordCredential) credential).getPassword(), vpc.getPassword()
-                                    .toCharArray()));
+                            boolean verified = Arrays.equals(((PasswordCredential) credential).getPassword(), vpc.getPassword().toCharArray());
+                            if (verified == false) {
+                                SECURITY_LOGGER.tracef("Password verification failed for user '%s'", userName);
+                            }
+                            vpc.setVerified(verified);
                         } else if (credential instanceof DigestCredential) {
                             UsernamePasswordHashUtil hashUtil = getHashUtil();
                             String hash;
@@ -229,16 +242,34 @@ public class PlugInAuthenticationCallbackHandler extends AbstractPlugInService i
                                 hash = hashUtil.generateHashedHexURP(userName, realmName, vpc.getPassword().toCharArray());
                             }
                             String expected = ((DigestCredential) credential).getHash();
-                            vpc.setVerified(expected.equals(hash));
+                            boolean verified = expected.equals(hash);
+                            if (verified == false) {
+                                SECURITY_LOGGER.tracef("Digest verification failed for user '%s'", userName);
+                            }
+                            vpc.setVerified(verified);
                         } else if (credential instanceof ValidatePasswordCredential) {
-                            vpc.setVerified(((ValidatePasswordCredential) credential).validatePassword(vpc.getPassword()
-                                    .toCharArray()));
+                            boolean verified = ((ValidatePasswordCredential) credential).validatePassword(vpc.getPassword().toCharArray());
+                            if (verified == false) {
+                                SECURITY_LOGGER.tracef("Delegated verification failed for user '%s'", userName);
+                            }
+                            vpc.setVerified(verified);
                         }
 
                     }
                 }
             }
         };
+
+    }
+
+    public static final class ServiceUtil {
+
+        private ServiceUtil() {
+        }
+
+        public static ServiceName createServiceName(final String realmName) {
+            return SecurityRealm.ServiceUtil.createServiceName(realmName).append(SERVICE_SUFFIX);
+        }
 
     }
 

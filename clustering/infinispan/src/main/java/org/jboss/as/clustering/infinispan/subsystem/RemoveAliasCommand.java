@@ -55,23 +55,23 @@ public class RemoveAliasCommand implements OperationStepHandler {
     @Override
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
-        nameValidator.validate(operation);
+        this.nameValidator.validate(operation);
         final String aliasToRemove = operation.require(NAME).asString();
         final ModelNode submodel = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS).getModel();
-        final ModelNode currentValue = submodel.get(CacheContainerResource.ALIASES.getName()).clone();
+        final ModelNode currentValue = submodel.get(CacheContainerResourceDefinition.ALIASES.getName()).clone();
 
         ModelNode newValue = removeAliasFromList(currentValue, aliasToRemove) ;
 
         // now set the new ALIAS attribute
         final ModelNode syntheticOp = new ModelNode();
-        syntheticOp.get(CacheContainerResource.ALIASES.getName()).set(newValue);
-        CacheContainerResource.ALIASES.validateAndSet(syntheticOp, submodel);
+        syntheticOp.get(CacheContainerResourceDefinition.ALIASES.getName()).set(newValue);
+        CacheContainerResourceDefinition.ALIASES.validateAndSet(syntheticOp, submodel);
 
         // since we modified the model, set reload required
         if (requiresRuntime(context)) {
             context.addStep(new OperationStepHandler() {
                 @Override
-                public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                public void execute(OperationContext context, ModelNode operation) {
                     context.reloadRequired();
                     context.completeStep(OperationContext.RollbackHandler.REVERT_RELOAD_REQUIRED_ROLLBACK_HANDLER);
                 }
@@ -99,7 +99,7 @@ public class RemoveAliasCommand implements OperationStepHandler {
      * @param alias
      * @return LIST ModelNode with the alias removed
      */
-    private ModelNode removeAliasFromList(ModelNode list, String alias) throws OperationFailedException {
+    private static ModelNode removeAliasFromList(ModelNode list, String alias) throws OperationFailedException {
 
         // check for empty string
         if (alias == null || alias.equals(""))

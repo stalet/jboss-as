@@ -21,17 +21,17 @@
  */
 package org.jboss.as.weld.services.bootstrap;
 
-import org.jboss.as.server.moduleservice.ServiceModuleLoader;
-import org.jboss.modules.Module;
-import org.jboss.modules.ModuleClassLoader;
-import org.jboss.weld.exceptions.WeldException;
-import org.jboss.weld.logging.messages.BeanMessage;
-import org.jboss.weld.serialization.spi.ProxyServices;
-
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
+
+import org.jboss.as.server.moduleservice.ServiceModuleLoader;
+import org.jboss.modules.Module;
+import org.jboss.modules.ModuleClassLoader;
+import org.jboss.weld.logging.BeanLogger;
+import org.jboss.weld.serialization.spi.ProxyServices;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * {@link ProxyServices} implementation that delegates to the module class loader if the bean class loader cannot be determined
@@ -48,8 +48,7 @@ public class ProxyServicesImpl implements ProxyServices {
     }
 
     public ClassLoader getClassLoader(final Class<?> proxiedBeanType) {
-        SecurityManager sm = System.getSecurityManager();
-        if (sm != null) {
+        if (! WildFlySecurityManager.isChecking()) {
             return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
                 public ClassLoader run() {
                     return _getClassLoader(proxiedBeanType);
@@ -97,7 +96,7 @@ public class ProxyServicesImpl implements ProxyServices {
                 }
             });
         } catch (PrivilegedActionException pae) {
-            throw new WeldException(BeanMessage.CANNOT_LOAD_CLASS, className, pae.getException());
+            throw BeanLogger.LOG.cannotLoadClass(className, pae.getException());
         }
     }
 

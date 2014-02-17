@@ -29,6 +29,7 @@ import org.jboss.as.naming.WritableServiceBasedNamingStore;
 import org.jboss.msc.service.LifecycleContext;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceName;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Abstract service class.
@@ -39,15 +40,17 @@ abstract class AbstractService implements Service<Object> {
 
     private final Object mBeanInstance;
     private final ServiceName duServiceName;
+    private final ClassLoader mbeanContextClassLoader;
 
     /**
      *
      * @param mBeanInstance
      * @param duServiceName the deployment unit's service name
      */
-    protected AbstractService(final Object mBeanInstance, final ServiceName duServiceName) {
+    protected AbstractService(final Object mBeanInstance, final ServiceName duServiceName, final ClassLoader mbeanContextClassLoader) {
         this.mBeanInstance = mBeanInstance;
         this.duServiceName = duServiceName;
+        this.mbeanContextClassLoader = mbeanContextClassLoader;
     }
 
     /** {@inheritDoc} */
@@ -59,11 +62,11 @@ abstract class AbstractService implements Service<Object> {
         if (method != null) {
             WritableServiceBasedNamingStore.pushOwner(duServiceName);
             try {
-                final ClassLoader old = SecurityActions.setThreadContextClassLoader(mBeanInstance.getClass().getClassLoader());
+                final ClassLoader old = WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(this.mbeanContextClassLoader);
                 try {
                     method.invoke(mBeanInstance);
                 } finally {
-                    SecurityActions.resetThreadContextClassLoader(old);
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(old);
                 }
             } finally {
                 WritableServiceBasedNamingStore.popOwner();

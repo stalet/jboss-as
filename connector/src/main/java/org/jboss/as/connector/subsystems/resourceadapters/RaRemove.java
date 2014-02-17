@@ -52,15 +52,19 @@ public class RaRemove implements OperationStepHandler {
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
         final ModelNode opAddr = operation.require(OP_ADDR);
-        final String name = PathAddress.pathAddress(opAddr).getLastElement().getValue();
+        final String idName = PathAddress.pathAddress(opAddr).getLastElement().getValue();
+
 
         // Compensating is add
         final ModelNode model = context.readModel(PathAddress.EMPTY_ADDRESS);
-        final String archiveOrModuleName;
+        final String archiveName;
+        final boolean isModule;
         if (model.get(ARCHIVE.getName()).isDefined()) {
-            archiveOrModuleName = ARCHIVE.resolveModelAttribute(context, model).asString();
+            isModule = false;
+            archiveName = ARCHIVE.resolveModelAttribute(context, model).asString();
         } else {
-            archiveOrModuleName = MODULE.resolveModelAttribute(context, model).asString();
+            archiveName = null;
+            isModule = true;
         }
         final ModelNode compensating = Util.getEmptyOperation(ADD, opAddr);
 
@@ -76,9 +80,23 @@ public class RaRemove implements OperationStepHandler {
 
         context.addStep(new OperationStepHandler() {
             public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-
-                final boolean wasActive = RaOperationUtil.removeIfActive(context, name);
-                ServiceName raServiceName = ServiceName.of(ConnectorServices.RA_SERVICE, name);
+                final boolean wasActive;
+                if (isModule) {
+                    wasActive = RaOperationUtil.removeIfActive(context, null, idName);
+                } else {
+                    wasActive = RaOperationUtil.removeIfActive(context, archiveName, idName);
+                    if (wasActive) {
+                        context.reloadRequired();
+                        context.completeStep(new OperationContext.RollbackHandler() {
+                            @Override
+                            public void handleRollback(OperationContext context, ModelNode operation) {
+                                context.revertReloadRequired();
+                            }
+                        });
+                        return;
+                    }
+                }
+                ServiceName raServiceName = ServiceName.of(ConnectorServices.RA_SERVICE, idName);
                 ServiceController<?> serviceController =  context.getServiceRegistry(false).getService(raServiceName);
                 final ModifiableResourceAdapter resourceAdapter;
                 if (serviceController != null) {
@@ -95,13 +113,14 @@ public class RaRemove implements OperationStepHandler {
                 }
 
                 if (model.get(MODULE.getName()).isDefined()) {
-                    //ServiceName deploymentServiceName = ConnectorServices.getDeploymentServiceName(model.get(MODULE.getName()).asString());
+                    //ServiceName deploymentServiceName = ConnectorServices.getDeploymentServiceName(model.get(MODULE.getName()).asString(),raId);
                     //context.removeService(deploymentServiceName);
-                    ServiceName deployerServiceName = ConnectorServices.RESOURCE_ADAPTER_DEPLOYER_SERVICE_PREFIX.append(name);
+                    ServiceName deployerServiceName = ConnectorServices.RESOURCE_ADAPTER_DEPLOYER_SERVICE_PREFIX.append(idName);
                     context.removeService(deployerServiceName);
-                    ServiceName inactiveServiceName = ConnectorServices.INACTIVE_RESOURCE_ADAPTER_SERVICE.append(name);
+                    ServiceName inactiveServiceName = ConnectorServices.INACTIVE_RESOURCE_ADAPTER_SERVICE.append(idName);
                     context.removeService(inactiveServiceName);
                 }
+
 
                 context.removeService(raServiceName);
                 context.completeStep(new OperationContext.RollbackHandler() {
@@ -110,17 +129,22 @@ public class RaRemove implements OperationStepHandler {
                         if (resourceAdapter != null) {
                             List<ServiceController<?>>  newControllers = new LinkedList<ServiceController<?>>();
                             if (model.get(ARCHIVE.getName()).isDefined()) {
-                                RaOperationUtil.installRaServices(context, new ServiceVerificationHandler(), name, resourceAdapter, newControllers);
+                                RaOperationUtil.installRaServices(context, new ServiceVerificationHandler(), idName, resourceAdapter, newControllers);
                             } else {
                                 try {
-                                    RaOperationUtil.installRaServicesAndDeployFromModule(context, new ServiceVerificationHandler(), name, resourceAdapter, archiveOrModuleName, newControllers);
+                                    RaOperationUtil.installRaServicesAndDeployFromModule(context, new ServiceVerificationHandler(), idName, resourceAdapter, archiveName, newControllers);
                                 } catch (OperationFailedException e) {
 
                                 }
                             }
                             try {
-                                if (wasActive)
-                                    RaOperationUtil.activate(context, archiveOrModuleName, null);
+                                if (wasActive){
+                                    if(isModule){
+                                        RaOperationUtil.activate(context, idName, null);
+                                    } else {
+                                        RaOperationUtil.activate(context, archiveName, null);
+                                    }
+                                }
                             } catch (OperationFailedException e) {
 
                             }

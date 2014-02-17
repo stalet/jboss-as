@@ -22,6 +22,7 @@
 package org.jboss.as.core.model.test;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CHILDREN;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CORE_SERVICE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT_OVERLAY;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
@@ -31,6 +32,7 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOS
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INCLUDE_ALIASES;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INCLUDE_DEFAULTS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INHERITED;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INTERFACE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.LOCAL_DESTINATION_OUTBOUND_SOCKET_BINDING;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MANAGEMENT_MAJOR_VERSION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MANAGEMENT_MICRO_VERSION;
@@ -44,6 +46,7 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATIONS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PATH;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PLATFORM_MBEAN;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PROFILE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.READ_ATTRIBUTE_OPERATION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.READ_ONLY;
@@ -58,6 +61,8 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SCH
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_GROUP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING_GROUP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SYSTEM_PROPERTIES;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.TYPE;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -118,12 +123,16 @@ public class CoreModelTestDelegate {
                 PathElement.pathElement(DEPLOYMENT_OVERLAY), PathElement.pathElement(DEPLOYMENT)));
 
         MISSING_NAME_ADDRESSES.add(PathAddress.pathAddress(PathElement.pathElement(PROFILE)));
+        MISSING_NAME_ADDRESSES.add(PathAddress.pathAddress(PathElement.pathElement(INTERFACE)));
+        MISSING_NAME_ADDRESSES.add(PathAddress.pathAddress(PathElement.pathElement(PATH)));
         MISSING_NAME_ADDRESSES.add(PathAddress.pathAddress(PathElement.pathElement(DEPLOYMENT)));
         MISSING_NAME_ADDRESSES.add(PathAddress.pathAddress(PathElement.pathElement(SERVER_GROUP), PathElement.pathElement(DEPLOYMENT)));
     }
 
     private final Class<?> testClass;
     private final List<KernelServices> kernelServices = new ArrayList<KernelServices>();
+    //Gets set by TransformersTestParameterized for transformers tests. Non transformers tests do not set this
+    private volatile ClassloaderParameter currentTransformerClassloaderParameter;
 
     public CoreModelTestDelegate(Class<?> testClass) {
         this.testClass = testClass;
@@ -132,6 +141,19 @@ public class CoreModelTestDelegate {
     void initializeParser() throws Exception {
         //Initialize the parser
 
+    }
+
+    void setCurrentTransformerClassloaderParameter(ClassloaderParameter parameter) {
+        ClassloaderParameter current = currentTransformerClassloaderParameter;
+        if (current != null) {
+            if (current != parameter) {
+                //Clear the cached classloader
+                current.setClassLoader(null);
+                currentTransformerClassloaderParameter = parameter;
+            }
+        } else {
+            currentTransformerClassloaderParameter = parameter;
+        }
     }
 
     void cleanup() throws Exception {
@@ -297,7 +319,7 @@ public class CoreModelTestDelegate {
     }
 
     private void adjustUndefinedInTransformedToEmpty(ModelVersion modelVersion, ModelNode legacyModel, ModelNode transformed) {
-        boolean is7_1_x = modelVersion.getMajor() == 1 && modelVersion.getMinor() < 4;
+        boolean is7_1_x = ModelVersion.compare(ModelVersion.create(1, 4, 0), modelVersion) < 0;
 
         for (PathAddress address : EMPTY_RESOURCE_ADDRESSES) {
             harmonizeModel(modelVersion, legacyModel, transformed, address, ModelHarmonizer.UNDEFINED_TO_EMPTY);
@@ -395,7 +417,7 @@ public class CoreModelTestDelegate {
         private XMLMapper xmlMapper = XMLMapper.Factory.create();
         private Map<ModelVersion, LegacyKernelServicesInitializerImpl> legacyControllerInitializers = new HashMap<ModelVersion, LegacyKernelServicesInitializerImpl>();
         private List<String> contentRepositoryContents = new ArrayList<String>();
-        RunningModeControl runningModeControl;
+        private final RunningModeControl runningModeControl;
         ExtensionRegistry extensionRegistry;
 
 
@@ -473,7 +495,9 @@ public class CoreModelTestDelegate {
 
 
             ModelTestUtils.validateModelDescriptions(PathAddress.EMPTY_ADDRESS, kernelServices.getRootRegistration());
-            ModelTestUtils.scanForExpressionFormattedStrings(kernelServices.readWholeModel());
+            ModelNode model = kernelServices.readWholeModel();
+            model = removeForIntellij(model);
+            ModelTestUtils.scanForExpressionFormattedStrings(model);
 
             for (Map.Entry<ModelVersion, LegacyKernelServicesInitializerImpl> entry : legacyControllerInitializers.entrySet()) {
                 LegacyKernelServicesInitializerImpl legacyInitializer = entry.getValue();
@@ -499,6 +523,38 @@ public class CoreModelTestDelegate {
 
             return kernelServices;
         }
+
+        private ModelNode removeForIntellij(ModelNode model){
+            //When running in intellij it includes
+            // "-Dorg.jboss.model.test.maven.repository.urls=${org.jboss.model.test.maven.repository.urls}"
+            //in the runtime platform-mbeans's arguments for the host controller so it fails the scan for expression
+            //formatted strings. Simply remove it.
+            //Also do the same for the following system property in the runtime platform mbean system properties:
+            //"org.jboss.model.test.maven.repository.urls" => "${org.jboss.model.test.maven.repository.urls}"
+            ModelNode runtime = findModelNode(model, HOST, "master", CORE_SERVICE, PLATFORM_MBEAN, TYPE, "runtime");
+            if (runtime.isDefined()){
+                runtime.remove("input-arguments");
+                if (runtime.hasDefined(SYSTEM_PROPERTIES)) {
+                    ModelNode properties = runtime.get(SYSTEM_PROPERTIES);
+                    properties.remove("org.jboss.model.test.maven.repository.urls");
+                }
+
+            }
+            return model;
+        }
+
+        private ModelNode findModelNode(ModelNode model, String...name){
+            ModelNode currentModel = model;
+            for (String part : name){
+                if (!currentModel.hasDefined(part)){
+                    return new ModelNode();
+                } else {
+                    currentModel = currentModel.get(part);
+                }
+            }
+            return currentModel;
+        }
+
         @Override
         public List<ModelNode> parse(String xml) throws XMLStreamException {
             final XMLStreamReader reader = XMLInputFactory.newInstance().createXMLStreamReader(new StringReader(xml));
@@ -517,7 +573,6 @@ public class CoreModelTestDelegate {
             return legacyKernelServicesInitializerImpl;
         }
 
-
         @Override
         public KernelServicesBuilder setDontValidateOperations() {
             validateOperations = true;
@@ -526,7 +581,7 @@ public class CoreModelTestDelegate {
     }
 
     private class LegacyKernelServicesInitializerImpl implements LegacyKernelServicesInitializer {
-        private final ChildFirstClassLoaderBuilder classLoaderBuilder = new ChildFirstClassLoaderBuilder();
+        private final ChildFirstClassLoaderBuilder classLoaderBuilder;
         private final ModelVersion modelVersion;
         private final List<LegacyModelInitializerEntry> modelInitializerEntries = new ArrayList<LegacyModelInitializerEntry>();
         private final ModelTestControllerVersion testControllerVersion;
@@ -537,6 +592,7 @@ public class CoreModelTestDelegate {
         private ModelTestOperationValidatorFilter.Builder operationValidationExcludeFilterBuilder;
 
         LegacyKernelServicesInitializerImpl(ModelVersion modelVersion, ModelTestControllerVersion version) {
+            this.classLoaderBuilder = new ChildFirstClassLoaderBuilder(version.isEap());
             this.modelVersion = modelVersion;
             this.testControllerVersion = version;
         }
@@ -550,16 +606,34 @@ public class CoreModelTestDelegate {
                 bootCurrentVersionWithLegacyBootOperations(bootOperations, modelInitializer, modelWriteSanitizer, contentRepositoryContents, mainServices);
             }
 
-            classLoaderBuilder.addParentFirstClassPattern("org.jboss.as.core.model.bridge.shared.*");
+            final ClassLoader legacyCl;
+            if (currentTransformerClassloaderParameter != null && currentTransformerClassloaderParameter.getClassLoader() != null) {
+                legacyCl = currentTransformerClassloaderParameter.getClassLoader();
+            } else {
+                classLoaderBuilder.addParentFirstClassPattern("org.jboss.as.core.model.bridge.shared.*");
 
-            classLoaderBuilder.addMavenResourceURL("org.jboss.as:jboss-as-core-model-test-framework:" + ModelTestControllerVersion.CurrentVersion.VERSION);
-            classLoaderBuilder.addMavenResourceURL("org.jboss.as:jboss-as-model-test:" + ModelTestControllerVersion.CurrentVersion.VERSION);
+                //These two is needed or the child first classloader never gets GC'ed which causes OOMEs for very big tests
+                //Here the Reference$ReaperThread hangs onto the classloader
+                classLoaderBuilder.addParentFirstClassPattern("org.jboss.modules.*");
+                //Here the NDC hangs onto the classloader
+                classLoaderBuilder.addParentFirstClassPattern("org.jboss.logmanager.*");
 
-            if (testControllerVersion != ModelTestControllerVersion.MASTER) {
-                classLoaderBuilder.addRecursiveMavenResourceURL("org.jboss.as:jboss-as-host-controller:" + testControllerVersion.getMavenGavVersion());
-                classLoaderBuilder.addMavenResourceURL("org.jboss.as:jboss-as-core-model-test-controller-" + testControllerVersion.getTestControllerVersion() + ":" + ModelTestControllerVersion.CurrentVersion.VERSION);
+                classLoaderBuilder.addMavenResourceURL("org.wildfly:wildfly-core-model-test-framework:" + ModelTestControllerVersion.CurrentVersion.VERSION);
+                classLoaderBuilder.addMavenResourceURL("org.wildfly:wildfly-model-test:" + ModelTestControllerVersion.CurrentVersion.VERSION);
+
+                if (testControllerVersion != ModelTestControllerVersion.MASTER) {
+                    String groupId = testControllerVersion.getMavenGavVersion().startsWith("7.") ? "org.jboss.as" : "org.wildfly";
+                    String hostControllerArtifactId = testControllerVersion.getMavenGavVersion().startsWith("7.") ? "jboss-as-host-controller" : "wildfly-host-controller";
+
+                    classLoaderBuilder.addRecursiveMavenResourceURL(groupId + ":" + hostControllerArtifactId + ":" + testControllerVersion.getMavenGavVersion());
+                    classLoaderBuilder.addMavenResourceURL("org.wildfly:wildfly-core-model-test-controller-" + testControllerVersion.getTestControllerVersion() + ":" + ModelTestControllerVersion.CurrentVersion.VERSION);
+                }
+                legacyCl = classLoaderBuilder.build();
+                if (currentTransformerClassloaderParameter != null) {
+                    //Cache the classloader for the other tests
+                    currentTransformerClassloaderParameter.setClassLoader(legacyCl);
+                }
             }
-            ClassLoader legacyCl = classLoaderBuilder.build();
 
 
             ScopedKernelServicesBootstrap scopedBootstrap = new ScopedKernelServicesBootstrap(legacyCl);

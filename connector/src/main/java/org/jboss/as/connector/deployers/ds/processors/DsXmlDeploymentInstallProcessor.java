@@ -36,6 +36,7 @@ import org.jboss.as.connector.subsystems.datasources.AbstractDataSourceService;
 import org.jboss.as.connector.subsystems.datasources.DataSourceReferenceFactoryService;
 import org.jboss.as.connector.subsystems.datasources.DataSourceStatisticsListener;
 import org.jboss.as.connector.subsystems.datasources.DataSourcesExtension;
+import org.jboss.as.connector.subsystems.datasources.DataSourcesSubsystemProviders;
 import org.jboss.as.connector.subsystems.datasources.LocalDataSourceService;
 import org.jboss.as.connector.subsystems.datasources.ModifiableDataSource;
 import org.jboss.as.connector.subsystems.datasources.ModifiableXaDataSource;
@@ -56,6 +57,7 @@ import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.as.naming.service.BinderService;
 import org.jboss.as.naming.service.NamingService;
 import org.jboss.as.security.service.SubjectFactoryService;
+import org.jboss.as.server.Services;
 import org.jboss.as.server.deployment.DeploymentModelUtils;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
@@ -63,10 +65,10 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.jca.common.api.metadata.Defaults;
 import org.jboss.jca.common.api.metadata.ds.DataSources;
-import org.jboss.jca.common.api.metadata.ds.v11.DataSource;
-import org.jboss.jca.common.api.metadata.ds.v11.DsXaPool;
-import org.jboss.jca.common.api.metadata.ds.v11.XaDataSource;
-import org.jboss.jca.common.metadata.ds.v11.DsXaPoolImpl;
+import org.jboss.jca.common.api.metadata.ds.v12.DataSource;
+import org.jboss.jca.common.api.metadata.ds.v12.DsXaPool;
+import org.jboss.jca.common.api.metadata.ds.v12.XaDataSource;
+import org.jboss.jca.common.metadata.ds.v12.DsXaPoolImpl;
 import org.jboss.jca.core.api.connectionmanager.ccm.CachedConnectionManager;
 import org.jboss.jca.core.api.management.ManagementRepository;
 import org.jboss.jca.core.spi.transaction.TransactionIntegration;
@@ -235,21 +237,22 @@ public class DsXmlDeploymentInstallProcessor implements DeploymentUnitProcessor 
     private ModifiableXaDataSource buildXaDataSource(XaDataSource xads) throws org.jboss.jca.common.api.validator.ValidateException {
         final DsXaPool xaPool;
         if (xads.getXaPool() == null) {
-            xaPool = new DsXaPoolImpl(Defaults.MIN_POOL_SIZE, Defaults.MAX_POOL_SIZE, Defaults.PREFILL, Defaults.USE_STRICT_MIN, Defaults.FLUSH_STRATEGY,
-                                      Defaults.IS_SAME_RM_OVERRIDE, Defaults.INTERLEAVING, Defaults.PAD_XID, Defaults.WRAP_XA_RESOURCE, Defaults.NO_TX_SEPARATE_POOL, Defaults.ALLOW_MULTIPLE_USERS);
+            xaPool = new DsXaPoolImpl(Defaults.MIN_POOL_SIZE, Defaults.INITIAL_POOL_SIZE, Defaults.MAX_POOL_SIZE, Defaults.PREFILL, Defaults.USE_STRICT_MIN, Defaults.FLUSH_STRATEGY,
+                                      Defaults.IS_SAME_RM_OVERRIDE, Defaults.INTERLEAVING, Defaults.PAD_XID, Defaults.WRAP_XA_RESOURCE, Defaults.NO_TX_SEPARATE_POOL, Defaults.ALLOW_MULTIPLE_USERS, null, null);
         } else {
             final DsXaPool p = xads.getXaPool();
-            xaPool = new DsXaPoolImpl(getDef(p.getMinPoolSize(), Defaults.MIN_POOL_SIZE), getDef(p.getMaxPoolSize(), Defaults.MAX_POOL_SIZE), getDef(p.isPrefill(), Defaults.PREFILL),
+            xaPool = new DsXaPoolImpl(getDef(p.getMinPoolSize(), Defaults.MIN_POOL_SIZE), getDef(p.getInitialPoolSize(), Defaults.INITIAL_POOL_SIZE), getDef(p.getMaxPoolSize(), Defaults.MAX_POOL_SIZE), getDef(p.isPrefill(), Defaults.PREFILL),
                     getDef(p.isUseStrictMin(), Defaults.USE_STRICT_MIN), getDef(p.getFlushStrategy(), Defaults.FLUSH_STRATEGY), getDef(p.isSameRmOverride(),
                     Defaults.IS_SAME_RM_OVERRIDE), getDef(p.isInterleaving(), Defaults.INTERLEAVING), getDef(p.isPadXid(), Defaults.PAD_XID)
-                    , getDef(p.isWrapXaResource(), Defaults.WRAP_XA_RESOURCE), getDef(p.isNoTxSeparatePool(), Defaults.NO_TX_SEPARATE_POOL), getDef(p.isAllowMultipleUsers(), Defaults.ALLOW_MULTIPLE_USERS));
+                    , getDef(p.isWrapXaResource(), Defaults.WRAP_XA_RESOURCE), getDef(p.isNoTxSeparatePool(), Defaults.NO_TX_SEPARATE_POOL), getDef(p.isAllowMultipleUsers(), Defaults.ALLOW_MULTIPLE_USERS),
+                    p.getCapacity(), p.getConnectionListener());
         }
 
 
         return new ModifiableXaDataSource(xads.getTransactionIsolation(),
                 xads.getTimeOut(), xads.getSecurity(),
                 xads.getStatement(), xads.getValidation(),
-                xads.getUrlDelimiter(), xads.getUrlSelectorStrategyClassName(),
+                xads.getUrlDelimiter(), xads.getUrlProperty(), xads.getUrlSelectorStrategyClassName(),
                 xads.isUseJavaContext(), xads.getPoolName(), xads.isEnabled(), xads.getJndiName(),
                 xads.isSpy(), xads.isUseCcm(),
                 xads.getXaDataSourceProperty(), xads.getXaDataSourceClass(), xads.getDriver(),
@@ -272,8 +275,10 @@ public class DsXmlDeploymentInstallProcessor implements DeploymentUnitProcessor 
 
 
         final ServiceName dataSourceServiceName = AbstractDataSourceService.SERVICE_NAME_BASE.append(jndiName);
-        final ServiceBuilder<?> dataSourceServiceBuilder = serviceTarget
-                .addService(dataSourceServiceName, dataSourceService)
+        final ServiceBuilder<?> dataSourceServiceBuilder =
+                Services.addServerExecutorDependency(
+                        serviceTarget.addService(dataSourceServiceName, dataSourceService),
+                        dataSourceService.getExecutorServiceInjector(), false)
                 .addDependency(ConnectorServices.TRANSACTION_INTEGRATION_SERVICE, TransactionIntegration.class,
                         dataSourceService.getTransactionIntegrationInjector())
                 .addDependency(ConnectorServices.MANAGEMENT_REPOSITORY_SERVICE, ManagementRepository.class,
@@ -284,7 +289,14 @@ public class DsXmlDeploymentInstallProcessor implements DeploymentUnitProcessor 
                 .addDependency(ConnectorServices.JDBC_DRIVER_REGISTRY_SERVICE, DriverRegistry.class,
                         dataSourceService.getDriverRegistryInjector()).addDependency(NamingService.SERVICE_NAME);
 
-        dataSourceServiceBuilder.addListener(new DataSourceStatisticsListener(registration, resource, managementName));
+        //Register an empty override model regardless of we're enabled or not - the statistics listener will add the relevant childresources
+        if (registration.isAllowsOverride()) {
+            ManagementResourceRegistration overrideRegistration = registration.getOverrideModel(managementName);
+            if (overrideRegistration == null || overrideRegistration.isAllowsOverride()) {
+                overrideRegistration = registration.registerOverrideModel(managementName, DataSourcesSubsystemProviders.OVERRIDE_DS_DESC);
+            }
+            dataSourceServiceBuilder.addListener(new DataSourceStatisticsListener(overrideRegistration, resource, managementName));
+        } // else should probably throw an ISE or something
 
         final ServiceName driverServiceName = ServiceName.JBOSS.append("jdbc-driver", driverName.replaceAll("\\.", "_"));
         if (driverServiceName != null) {

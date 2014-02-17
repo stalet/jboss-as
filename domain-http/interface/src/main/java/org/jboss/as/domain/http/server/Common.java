@@ -29,6 +29,8 @@ import org.jboss.dmr.ModelNode;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 import static io.undertow.server.handlers.ResponseCodeHandler.HANDLE_404;
 
@@ -50,14 +52,22 @@ public class Common {
     static final String APPLICATION_JSON = "application/json";
     static final String TEXT_PLAIN = "text/plain";
     static final String TEXT_HTML = "text/html";
+    static final int ONE_WEEK = 7 * 24 * 60 * 60;
 
 
     static String UTF_8 = "utf-8";
-    static final String GMT = "GMT";
 
-    static void sendError(HttpServerExchange exchange, boolean isGet, boolean encode, String msg) {
+    static void sendError(HttpServerExchange exchange, boolean encode, String msg) {
+        int errorCode = getErrorResponseCode(msg);
+        sendError(exchange, encode, new ModelNode(msg), errorCode);
+    }
 
+    static void sendError(HttpServerExchange exchange, boolean encode, ModelNode msg) {
+        int errorCode = getErrorResponseCode(msg.asString());
+        sendError(exchange, encode, msg, errorCode);
+    }
 
+    private static void sendError(HttpServerExchange exchange, boolean encode, ModelNode msg, int errorCode) {
         if(encode) {
 
             try {
@@ -68,26 +78,48 @@ public class Common {
                 response.writeBase64(bout);
                 byte[] bytes = bout.toByteArray();
 
-                exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, APPLICATION_DMR_ENCODED+ ";" + UTF_8);
+                exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, APPLICATION_DMR_ENCODED+ "; charset=" + UTF_8);
                 exchange.getResponseHeaders().put(Headers.CONTENT_LENGTH, String.valueOf(bytes.length));
-                exchange.setResponseCode(500);
+                exchange.setResponseCode(errorCode);
 
                 exchange.getResponseSender().send(new String(bytes), IoCallback.END_EXCHANGE);
 
             } catch (IOException e) {
                 // fallback, should not happen
-                sendError(exchange, isGet, false, msg);
+                sendError(exchange, false, msg);
             }
 
         }
         else {
-            byte[] bytes = msg.getBytes();
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, TEXT_PLAIN + ";" + UTF_8);
-            exchange.getResponseHeaders().put(Headers.CONTENT_LENGTH, String.valueOf(bytes.length));
-            exchange.setResponseCode(500);
+            StringWriter stringWriter = new StringWriter();
+            final PrintWriter print = new PrintWriter(stringWriter);
+            try {
+                msg.writeJSONString(print, false);
+            } finally {
+                print.flush();
+                stringWriter.flush();
+                print.close();
+            }
 
-            exchange.getResponseSender().send(msg, IoCallback.END_EXCHANGE);
+            String msgString = stringWriter.toString();
+            byte[] bytes = msgString.getBytes();
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, TEXT_PLAIN + "; charset=" + UTF_8);
+            exchange.getResponseHeaders().put(Headers.CONTENT_LENGTH, String.valueOf(bytes.length));
+            exchange.setResponseCode(errorCode);
+
+            exchange.getResponseSender().send(msgString, IoCallback.END_EXCHANGE);
         }
+    }
+
+    private static int getErrorResponseCode(String failureMsg) {
+        // WFLY-2037. This is very hacky; better would be something like an internal failure-http-code that
+        // is set on the response from the OperationFailedException and stripped from non-HTTP interfaces.
+        // But this will do for now.
+        int result = 500;
+        if (failureMsg != null && failureMsg.contains("JBAS013456")) {
+            result = 403;
+        }
+        return result;
     }
 
 }

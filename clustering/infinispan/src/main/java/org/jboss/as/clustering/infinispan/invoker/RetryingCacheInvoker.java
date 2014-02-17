@@ -77,29 +77,35 @@ public class RetryingCacheInvoker implements CacheInvoker {
 
         for (int i = 0; i <= this.backOffIntervals.length; ++i) {
             // Make sure Flag.FAIL_SILENTLY, if specified, is applied to the last try only
+            boolean retry = (i < this.backOffIntervals.length);
             try {
-                return this.invoker.invoke(cache, operation, (i < this.backOffIntervals.length) ? attemptFlags : allFlags);
+                return this.invoker.invoke(cache, operation, retry ? attemptFlags : allFlags);
             } catch (TimeoutException e) {
                 exception = e;
             } catch (SuspectException e) {
                 exception = e;
             }
 
-            if (i < this.backOffIntervals.length) {
+            if (retry) {
                 int delay = this.backOffIntervals[i];
 
-                try {
-                    if (ROOT_LOGGER.isTraceEnabled()) {
-                        ROOT_LOGGER.tracef(exception, "Cache operation failed.  Retrying in %d ms", Integer.valueOf(delay));
-                    }
-
-                    Thread.sleep(delay);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                if (ROOT_LOGGER.isTraceEnabled()) {
+                    ROOT_LOGGER.tracef(exception, "Cache operation failed.  Retrying in %d ms", delay);
                 }
+
+                if (delay > 0) {
+                    try {
+                        Thread.sleep(delay);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else {
+                    Thread.yield();
+                }
+                if (Thread.currentThread().isInterrupted()) break;
             }
         }
 
-        throw MESSAGES.abortingCacheOperation(exception, Integer.valueOf(this.backOffIntervals.length + 1));
+        throw MESSAGES.abortingCacheOperation(exception, this.backOffIntervals.length);
     }
 }

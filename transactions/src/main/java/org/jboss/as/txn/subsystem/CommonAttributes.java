@@ -42,6 +42,7 @@ interface CommonAttributes {
 
     String JTS = "jts";
     String USEHORNETQSTORE = "use-hornetq-store";
+    String HORNETQ_STORE_ENABLE_ASYNC_IO = "hornetq-store-enable-async-io";
     String USE_JDBC_STORE = "use-jdbc-store";
     String JDBC_STORE_DATASOURCE = "jdbc-store-datasource";
     String JDBC_ACTION_STORE_TABLE_PREFIX = "jdbc-action-store-table-prefix";
@@ -62,6 +63,7 @@ interface CommonAttributes {
     String SOCKET = "socket";
     /** The process-id/socket attribute for max ports */
     String SOCKET_PROCESS_ID_MAX_PORTS = "max-ports";
+    String STATISTICS_ENABLED = "statistics-enabled";
     String STATUS_BINDING = "status-socket-binding";
     /** The process-id/uuid element */
     String UUID = "uuid";

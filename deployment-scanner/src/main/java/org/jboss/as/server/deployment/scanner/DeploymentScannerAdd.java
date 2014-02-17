@@ -24,7 +24,6 @@ package org.jboss.as.server.deployment.scanner;
 
 import java.io.File;
 import java.io.IOException;
-import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -47,11 +46,13 @@ import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.services.path.PathManager;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.threads.JBossThreadFactory;
 
+import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition.ALL_ATTRIBUTES;
@@ -60,6 +61,7 @@ import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition
 import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition.AUTO_DEPLOY_ZIPPED;
 import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition.DEPLOYMENT_TIMEOUT;
 import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition.RELATIVE_TO;
+import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition.RUNTIME_FAILURE_CAUSES_ROLLBACK;
 import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition.SCAN_ENABLED;
 import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition.SCAN_INTERVAL;
 
@@ -104,7 +106,7 @@ class DeploymentScannerAdd implements OperationStepHandler {
             final Long deploymentTimeout = DEPLOYMENT_TIMEOUT.resolveModelAttribute(context, operation).asLong();
             final Integer scanInterval = SCAN_INTERVAL.resolveModelAttribute(context, operation).asInt();
 
-            final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("DeploymentScanner-threads"), Boolean.FALSE, null, "%G - %t", null, null, AccessController.getContext());
+            final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("DeploymentScanner-threads"), Boolean.FALSE, null, "%G - %t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
             final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(2, threadFactory);
 
             final FileSystemDeploymentService bootTimeScanner;
@@ -232,9 +234,10 @@ class DeploymentScannerAdd implements OperationStepHandler {
         final Boolean autoDeployExp = AUTO_DEPLOY_EXPLODED.resolveModelAttribute(context, operation).asBoolean();
         final Boolean autoDeployXml = AUTO_DEPLOY_XML.resolveModelAttribute(context, operation).asBoolean();
         final Long deploymentTimeout = DEPLOYMENT_TIMEOUT.resolveModelAttribute(context, operation).asLong();
+        final Boolean rollback = RUNTIME_FAILURE_CAUSES_ROLLBACK.resolveModelAttribute(context, operation).asBoolean();
         final ServiceTarget serviceTarget = context.getServiceTarget();
         DeploymentScannerService.addService(serviceTarget, name, relativeTo, path, interval, TimeUnit.MILLISECONDS,
-                autoDeployZip, autoDeployExp, autoDeployXml, enabled, deploymentTimeout, newControllers, bootTimeScanner, executorService, verificationHandler);
+                autoDeployZip, autoDeployExp, autoDeployXml, enabled, deploymentTimeout, rollback, newControllers, bootTimeScanner, executorService, verificationHandler);
 
     }
 

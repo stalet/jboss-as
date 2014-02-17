@@ -40,6 +40,7 @@ import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.access.management.AccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.OverrideDescriptionProvider;
@@ -57,12 +58,14 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
 
     private final String valueString;
     private final NodeSubregistry parent;
+    private final PathAddress pathAddress;
     private RootInvocation rootInvocation;
 
     AbstractResourceRegistration(final String valueString, final NodeSubregistry parent) {
         checkPermission();
         this.valueString = valueString;
         this.parent = parent;
+        this.pathAddress = parent == null ? PathAddress.EMPTY_ADDRESS : parent.getPathAddress(valueString);
     }
 
     static void checkPermission() {
@@ -74,6 +77,10 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
 
     NodeSubregistry getParent() {
         return parent;
+    }
+
+    void addAccessConstraints(List<AccessConstraintDefinition> list) {
+        // no-op in the base class
     }
 
     /** {@inheritDoc} */
@@ -110,7 +117,15 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
             throw ControllerMessages.MESSAGES.cannotOverrideNonWildCardRegistration(valueString);
         }
         PathElement pe = PathElement.pathElement(parent.getKeyName(), name);
-        return parent.getParent().registerSubModel(pe, new OverrideDescriptionCombiner(getModelDescription(PathAddress.EMPTY_ADDRESS), descriptionProvider));
+
+        final SimpleResourceDefinition rd = new SimpleResourceDefinition(pe, new OverrideDescriptionCombiner(getModelDescription(PathAddress.EMPTY_ADDRESS), descriptionProvider)) {
+
+            @Override
+            public List<AccessConstraintDefinition> getAccessConstraints() {
+                return AbstractResourceRegistration.this.getAccessConstraints();
+            }
+        };
+        return parent.getParent().registerSubModel(rd);
     }
 
     @Override
@@ -364,6 +379,10 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
         }
         PathElement pe = PathElement.pathElement(parent.getKeyName(),name);
 
+        // TODO https://issues.jboss.org/browse/WFLY-2883
+//        ManagementResourceRegistration candidate = parent.getParent().getSubModel(PathAddress.pathAddress(pe));
+//        // We may have gotten back the wildcard reg; detect this by checking for allowing override
+//        return candidate.isAllowsOverride() ? null : candidate;
         return parent.getParent().getSubModel(PathAddress.pathAddress(pe));
     }
 
@@ -481,7 +500,9 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
         throw ControllerMessages.MESSAGES.resourceRegistrationIsNotAnAlias();
     }
 
-
+    PathAddress getPathAddress() {
+        return pathAddress;
+    }
 
     private static class RootInvocation {
         final AbstractResourceRegistration root;
@@ -509,7 +530,7 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
             for (Map.Entry<String, ModelNode> entry : overrideDescriptionProvider.getAttributeOverrideDescriptions(locale).entrySet()) {
                 attrs.get(entry.getKey()).set(entry.getValue());
             }
-            ModelNode children = result.get(ModelDescriptionConstants.ATTRIBUTES);
+            ModelNode children = result.get(ModelDescriptionConstants.CHILDREN);
             for (Map.Entry<String, ModelNode> entry : overrideDescriptionProvider.getChildTypeOverrideDescriptions(locale).entrySet()) {
                 children.get(entry.getKey()).set(entry.getValue());
             }

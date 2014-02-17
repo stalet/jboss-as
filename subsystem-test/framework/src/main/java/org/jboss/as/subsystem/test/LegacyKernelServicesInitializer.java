@@ -28,6 +28,7 @@ import java.net.URL;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.model.test.ModelFixer;
 import org.jboss.as.model.test.OperationFixer;
+import org.jboss.modules.filter.ClassFilter;
 
 
 /**
@@ -88,7 +89,7 @@ public interface LegacyKernelServicesInitializer {
      * @throws IllegalArgumentException if the resolved {@code artifactGav} does not exist
      * @throws IllegalArgumentException if the resolved {@code artifactGav} does not contain a version
      */
-    LegacyKernelServicesInitializer addMavenResourceURL(String artifactGav) throws ClassNotFoundException, IOException;
+    LegacyKernelServicesInitializer addMavenResourceURL(String...artifactGav) throws ClassNotFoundException, IOException;
 
     /**
      * Add a class name pattern that should be loaded from the parent classloader
@@ -116,7 +117,6 @@ public interface LegacyKernelServicesInitializer {
     LegacyKernelServicesInitializer dontPersistXml();
 
     /**
-<<<<<<< HEAD
      * By default the {@link KernelServicesBuilder#build()} method will use the boot operations passed into the
      * legacy controller and try to boot up the current controller with those. This is for checking that e.g. cli scripts written
      * against the legacy controller still work with the current one. To turn this check off call this method.
@@ -168,6 +168,30 @@ public interface LegacyKernelServicesInitializer {
      *
      * @param name the name of the operation, or {@code *} as a wildcard capturing all names
      * @param pathAddress the address of the operation, the pathAddress may use {@code *} as a wildcard for both the key and the value of {@link org.jboss.as.controller.PathElement}s
+     * @return this initializer
      */
     LegacyKernelServicesInitializer addOperationValidationResolve(String name, PathAddress pathAddress);
+
+     /**
+     * By default all the parent classloader classes are available to be kernel which may provides conflict with classesloaded
+     * through the service initializer. Thus we provide an exclusion mecanism.
+     *
+     * @param exclusionFilter the class filter used to exclude class from the the parent classloader when resolving.
+     * @return this initializer
+     */
+    LegacyKernelServicesInitializer excludeFromParent(ClassFilter exclusionFilter);
+
+    /**
+     * Add classes to be loaded from the child classloader. The url's from the {@code classes} protection domain get added to the
+     * list of URLs used by the child  first classloader. Classes coming from that URL, which are not specified in the {@code classes}
+     * list, are loaded from the parent classloader. URLs implicitely added via this method must not be added via any of the other
+     * methods such as {@link #addSimpleResourceURL(String)} and {@link #addMavenResourceURL(String)}; if that happens an
+     * {@link IllegalStateException} will get thrown when the controllers are built.
+     *
+     * This is useful for adding {@link AdditionalInitialization} implementations for the scoped legacy controller.
+     *
+     * @param classes the classes to be added as child first classes
+     * @return this initializer
+     */
+    LegacyKernelServicesInitializer addSingleChildFirstClass(Class<?>...classes);
 }

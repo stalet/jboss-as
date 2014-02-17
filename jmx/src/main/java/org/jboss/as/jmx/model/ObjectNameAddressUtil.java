@@ -80,7 +80,7 @@ class ObjectNameAddressUtil {
         try {
             return ObjectName.getInstance(sb.toString());
         } catch (MalformedObjectNameException e) {
-            throw MESSAGES.cannotCreateObjectName(e, pathAddress);
+            throw MESSAGES.cannotCreateObjectName(e, pathAddress, sb.toString());
         }
     }
 
@@ -88,6 +88,7 @@ class ObjectNameAddressUtil {
      * Converts the ObjectName to a PathAddress.
      *
      * @param name the ObjectName
+     *
      * @return the PathAddress if it exists in the model, {@code null} otherwise
      */
     static PathAddress resolvePathAddress(final String domain, final Resource rootResource, final ObjectName name) {
@@ -97,7 +98,7 @@ class ObjectNameAddressUtil {
         if (name.equals(ModelControllerMBeanHelper.createRootObjectName(domain))) {
             return PathAddress.EMPTY_ADDRESS;
         }
-        Hashtable<String, String> properties = name.getKeyPropertyList();
+        final Hashtable<String, String> properties = name.getKeyPropertyList();
         return searchPathAddress(PathAddress.EMPTY_ADDRESS, rootResource, properties);
     }
 
@@ -137,15 +138,16 @@ class ObjectNameAddressUtil {
         final boolean containsNewLine = value.contains("\n");
         final boolean containsQuestionMark = value.contains("?");
         final boolean containsQuote = value.contains("\"");
+        final boolean containsComma = value.contains(",");
 
-        boolean quoted = containsAsterix || containsBackslash || containsColon || containsEquals || containsNewLine || containsQuestionMark || containsQuote;
+        boolean quoted = containsAsterix || containsBackslash || containsColon || containsEquals || containsNewLine || containsQuestionMark || containsQuote || containsComma;
         if (quoted) {
             String replaced = value;
             sb.append("\"");
 
             replaced = checkAndReplace(containsAsterix, replaced, "*", "\\*");
             replaced = checkAndReplace(containsBackslash, replaced, "\\", "\\\\");
-            //colon and equals do not need escaping
+            //colon, comma and equals do not need escaping
             replaced = checkAndReplace(containsNewLine, replaced, "\n", "\\n");
             replaced = checkAndReplace(containsQuestionMark, replaced, "?", "\\?");
             replaced = checkAndReplace(containsQuote, replaced, "\"", "\\\"");

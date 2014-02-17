@@ -22,7 +22,7 @@
 
 package org.jboss.as.jpa.container;
 
-import static org.jboss.as.jpa.JpaLogger.ROOT_LOGGER;
+import static org.jboss.as.jpa.messages.JpaLogger.ROOT_LOGGER;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -59,7 +59,9 @@ public class NonTxEmCloser {
         if (emStack != null) {
             for (EntityManager entityManager : emStack.values()) {
                 try {
-                    entityManager.close();
+                    if (entityManager.isOpen()) {
+                        entityManager.close();
+                    }
                 } catch (RuntimeException safeToIgnore) {
                     if (ROOT_LOGGER.isTraceEnabled()) {
                         ROOT_LOGGER.trace("Could not close (non-transactional) container managed entity manager." +

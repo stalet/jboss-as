@@ -27,23 +27,37 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>8.0.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.1.Final-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-protocol</artifactId>
-    <name>JBoss Application Server: Protocol Utilities</name>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-protocol</artifactId>
+    <name>WildFly: Protocol Utilities</name>
 
     <properties>
         <test.level>INFO</test.level>
+
+        <!-- maven-compiler-plugin -->
+        <!-- Keep the management client libs on JDK 6 -->
+        <maven.compiler.target>1.6</maven.compiler.target>
+        <maven.compiler.source>1.6</maven.compiler.source>
+
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.jboss.logging</groupId>
             <artifactId>jboss-logging</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.logging</groupId>
+            <artifactId>jboss-logging-annotations</artifactId>
+            <!-- This is a compile-time dependency of this project, but is not needed at compile or runtime by other
+                  projects that depend on this project.-->
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
@@ -59,21 +73,12 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.jboss.marshalling</groupId>
-            <artifactId>jboss-marshalling</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.remoting3</groupId>
+            <groupId>org.jboss.remoting</groupId>
             <artifactId>jboss-remoting</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.sasl</groupId>
             <artifactId>jboss-sasl</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.marshalling</groupId>
-            <artifactId>jboss-marshalling-river</artifactId>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.jboss.threads</groupId>
@@ -93,29 +98,5 @@
            <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <systemProperties>
-                        <property>
-                            <name>java.util.logging.manager</name>
-                            <value>org.jboss.logmanager.LogManager</value>
-                        </property>
-                        <property>
-                            <name>jboss.remoting.leakdebugging</name>
-                            <value>false</value>
-                        </property>
-                        <property>
-                            <name>test.level</name>
-                            <value>${test.level}</value>
-                        </property>
-                    </systemProperties>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
 
 </project>

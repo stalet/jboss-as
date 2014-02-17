@@ -29,6 +29,7 @@ import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.ServerEnvironmentService;
 import org.jboss.as.server.Services;
+import org.wildfly.security.manager.action.GetAccessControlContextAction;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
@@ -39,10 +40,11 @@ import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.threads.JBossThreadFactory;
 
-import java.security.AccessController;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Service that provides a {@link JdrReportCollector}.
@@ -75,7 +77,7 @@ public class JdrReportService implements JdrReportCollector, Service<JdrReportCo
     /**
      * Collect a JDR report when run outside the Application Server.
      */
-    public JdrReport standaloneCollect(String host, String port) throws OperationFailedException {
+    public JdrReport standaloneCollect(String protocol, String host, String port) throws OperationFailedException {
         String username = null;
         String password = null;
 
@@ -85,8 +87,11 @@ public class JdrReportService implements JdrReportCollector, Service<JdrReportCo
         if (port == null) {
             port = "9999";
         }
+        if(protocol == null) {
+            protocol = "http-remoting";
+        }
 
-        return new JdrRunner(username, password, host, port).collect();
+        return new JdrRunner(protocol, username, password, host, port).collect();
     }
 
     /**
@@ -107,7 +112,7 @@ public class JdrReportService implements JdrReportCollector, Service<JdrReportCo
         final ThreadFactory threadFactory = new JBossThreadFactory(
                 new ThreadGroup("JdrReportCollector-threads"),
                 Boolean.FALSE, null, "%G - %t", null, null,
-                AccessController.getContext());
+                doPrivileged(GetAccessControlContextAction.getInstance()));
         executorService = Executors.newCachedThreadPool(threadFactory);
         serverEnvironment = serverEnvironmentValue.getValue();
         controllerClient = modelControllerValue.getValue().createClient(executorService);

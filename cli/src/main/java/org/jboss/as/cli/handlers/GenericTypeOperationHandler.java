@@ -29,12 +29,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.jboss.as.cli.ArgumentValueConverter;
+import org.jboss.as.cli.CliEvent;
 import org.jboss.as.cli.CommandArgument;
 import org.jboss.as.cli.CommandContext;
 import org.jboss.as.cli.CommandFormatException;
@@ -159,16 +161,27 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
                         if(profileName == null) {
                             return Collections.emptyList();
                         }
-                        address.toNode("profile", profileName);
+                        address.toNode(Util.PROFILE, profileName);
                     }
                     for(OperationRequestAddress.Node node : getRequiredAddress()) {
                         address.toNode(node.getType(), node.getName());
                     }
                     address.toNode(getRequiredType(), "?");
-                    Collection<String> ops = ctx.getOperationCandidatesProvider().getOperationNames(ctx, address);
+                    Collection<String> ops = Util.getOperationNames(ctx, address);
                     ops.removeAll(excludedOps);
                     if(customHandlers != null) {
-                        ops.addAll(customHandlers.keySet());
+                        if(ops.isEmpty()) {
+                            ops = customHandlers.keySet();
+                        } else {
+                            ops = new HashSet<String>(ops);
+                            for(Map.Entry<String,OperationCommandWithDescription> entry : customHandlers.entrySet()) {
+                                if(entry.getValue().isAvailable(ctx)) {
+                                    ops.add(entry.getKey());
+                                } else {
+                                    ops.remove(entry.getKey()); // in case custom handler overrides the default op
+                                }
+                            }
+                        }
                     }
                     return ops;
                 }}), 0, "--operation") {
@@ -195,7 +208,7 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
                     if(profile == null) {
                         return Collections.emptyList();
                     }
-                    address.toNode("profile", profileName);
+                    address.toNode(Util.PROFILE, profileName);
                 }
                 for(OperationRequestAddress.Node node : getRequiredAddress()) {
                     address.toNode(node.getType(), node.getName());
@@ -251,9 +264,16 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
 
     public void addHandler(String name, OperationCommandWithDescription handler) {
         if(customHandlers == null) {
-            customHandlers = new HashMap<String, OperationCommandWithDescription>();
+            customHandlers = Collections.singletonMap(name, handler);
+        } else {
+            if (customHandlers.size() == 1) {
+                final Map<String, OperationCommandWithDescription> tmp = customHandlers;
+                customHandlers = new HashMap<String, OperationCommandWithDescription>();
+                customHandlers.putAll(tmp);
+            }
+            customHandlers.put(name, handler);
+
         }
-        customHandlers.put(name, handler);
     }
 
     @Override
@@ -267,7 +287,13 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
             return null;
         }
         final String op = operation.getValue(args);
-        return getHandler(ctx, op).getArgument(ctx, name);
+        OperationCommand handler;
+        try {
+            handler = getHandler(ctx, op);
+        } catch (CommandLineException e) {
+            return null;
+        }
+        return handler.getArgument(ctx, name);
     }
 
     @Override
@@ -281,24 +307,23 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
             return Collections.emptyList();
         }
         final String op = operation.getValue(args);
-        return getHandler(ctx, op).getArguments(ctx);
+        OperationCommand handler;
+        try {
+            handler = getHandler(ctx, op);
+        } catch (CommandLineException e) {
+            return Collections.emptyList();
+        }
+        return handler.getArguments(ctx);
     }
 
-    private OperationCommand getHandler(CommandContext ctx, String op) {
+    private OperationCommand getHandler(CommandContext ctx, String op) throws CommandLineException {
         if(op == null) {
             if(writePropHandler == null) {
                 writePropHandler = new WritePropertyHandler();
-                List<Property> propList;
-                try {
-                    propList = getNodeProperties(ctx);
-                } catch (CommandFormatException e) {
-                    propList = Collections.emptyList();
-                }
-                for(int i = 0; i < propList.size(); ++i) {
-                    final Property prop = propList.get(i);
-                    final ModelNode propDescr = prop.getValue();
-                    if(propDescr.has(Util.ACCESS_TYPE) && Util.READ_WRITE.equals(propDescr.get(Util.ACCESS_TYPE).asString())) {
-                        ModelType type = null;
+                Iterator<AttributeDescription> props = getNodeProperties(ctx);
+                while(props.hasNext()) {
+                    final AttributeDescription prop = props.next();
+                    if(prop.isWriteAllowed()) {
                         CommandLineCompleter valueCompleter = null;
                         ArgumentValueConverter valueConverter = null;
                         if(propConverters != null) {
@@ -309,16 +334,19 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
                         }
                         if(valueConverter == null) {
                             valueConverter = ArgumentValueConverter.DEFAULT;
-                            if(propDescr.has(Util.TYPE)) {
-                                type = propDescr.get(Util.TYPE).asType();
-                                if(ModelType.BOOLEAN == type) {
+                            final ModelType propType = prop.getType();
+                            if(propType != null) {
+                                if(ModelType.BOOLEAN == propType) {
                                     if(valueCompleter == null) {
                                         valueCompleter = SimpleTabCompleter.BOOLEAN;
                                     }
+                                } else if(ModelType.STRING == propType) {
+                                    valueConverter = ArgumentValueConverter.NON_OBJECT;
                                 } else if(prop.getName().endsWith("properties")) { // TODO this is bad but can't rely on proper descriptions
                                     valueConverter = ArgumentValueConverter.PROPERTIES;
-                                } else if(ModelType.LIST == type) {
-                                    if(propDescr.hasDefined(Util.VALUE_TYPE) && propDescr.get(Util.VALUE_TYPE).asType() == ModelType.PROPERTY) {
+                                } else if(ModelType.LIST == propType) {
+                                    final ModelNode valueType = prop.getProperty(Util.VALUE_TYPE);
+                                    if(valueType != null && valueType.asType() == ModelType.PROPERTY) {
                                         valueConverter = ArgumentValueConverter.PROPERTIES;
                                     } else {
                                         valueConverter = ArgumentValueConverter.LIST;
@@ -347,13 +375,7 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
                 }
             }
 
-            final ModelNode descr;
-            try {
-                descr = getOperationDescription(ctx, op);
-            } catch (CommandLineException e) {
-                return null;
-            }
-
+            final ModelNode descr = getOperationDescription(ctx, op);
             if(opHandlers == null) {
                 opHandlers = new HashMap<String, OperationCommand>();
             }
@@ -365,7 +387,6 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
                 final List<Property> propList = descr.get(Util.REQUEST_PROPERTIES).asPropertyList();
                 for (Property prop : propList) {
                     final ModelNode propDescr = prop.getValue();
-                    ModelType type = null;
                     CommandLineCompleter valueCompleter = null;
                     ArgumentValueConverter valueConverter = null;
                     if(propConverters != null) {
@@ -377,11 +398,13 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
                     if(valueConverter == null) {
                         valueConverter = ArgumentValueConverter.DEFAULT;
                         if(propDescr.has(Util.TYPE)) {
-                            type = propDescr.get(Util.TYPE).asType();
+                          final ModelType type = propDescr.get(Util.TYPE).asType();
                             if(ModelType.BOOLEAN == type) {
                                 if(valueCompleter == null) {
                                     valueCompleter = SimpleTabCompleter.BOOLEAN;
                                 }
+                            } else if(ModelType.STRING == type) {
+                                valueConverter = ArgumentValueConverter.NON_OBJECT;
                             } else if(prop.getName().endsWith("properties")) { // TODO this is bad but can't rely on proper descriptions
                                 valueConverter = ArgumentValueConverter.PROPERTIES;
                             } else if(ModelType.LIST == type) {
@@ -423,11 +446,24 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
     @Override
     public ModelNode buildRequestWithoutHeaders(CommandContext ctx) throws CommandFormatException {
         final String operation = this.operation.getValue(ctx.getParsedCommandLine());
-        final OperationCommand opHandler = getHandler(ctx, operation);
-        if(opHandler == null) {
-            throw new CommandFormatException("Unexpected command '" + operation + "'");
+        OperationCommand opHandler;
+        try {
+            opHandler = getHandler(ctx, operation);
+        } catch (CommandFormatException e) {
+            throw e;
+        } catch (CommandLineException e) {
+            throw new CommandFormatException("Command is not supported or unavailable in the current context", e);
         }
         return opHandler.buildRequest(ctx);
+    }
+
+    @Override
+    public void cliEvent(CliEvent event, CommandContext ctx) {
+        super.cliEvent(event, ctx);
+        if(event == CliEvent.DISCONNECTED) {
+            this.opHandlers = null;
+            this.writePropHandler = null;
+        }
     }
 
     @Override
@@ -469,7 +505,7 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
             final Set<String> keys = headers.keys();
             final SimpleTable table = new SimpleTable(2);
             for(String key : keys) {
-                table.addLine(new String[]{key, headers.get(key).asString()});
+                table.addLine(new String[]{key + ':', headers.get(key).asString()});
             }
             if(buf == null) {
                 buf = new StringBuilder();
@@ -516,41 +552,42 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
         formatText(ctx, result.get(Util.DESCRIPTION).asString(), 2);
 
         if(result.hasDefined(Util.REQUEST_PROPERTIES)) {
-            printProperties(ctx, result.get(Util.REQUEST_PROPERTIES).asPropertyList());
+            printProperties(ctx, getAttributeIterator(result.get(Util.REQUEST_PROPERTIES).asPropertyList(), null));
         } else {
-            printProperties(ctx, Collections.<Property>emptyList());
+            printProperties(ctx, Collections.<AttributeDescription>emptyIterator());
         }
     }
 
-    protected void printProperties(CommandContext ctx, List<Property> props) {
+    protected void printProperties(CommandContext ctx, Iterator<AttributeDescription> props) {
         final Map<String, StringBuilder> requiredProps = new LinkedHashMap<String,StringBuilder>();
         requiredProps.put(this.name.getFullName(), new StringBuilder().append("Required argument in commands which identifies the instance to execute the command against."));
         final Map<String, StringBuilder> optionalProps = new LinkedHashMap<String, StringBuilder>();
 
         String accessType = null;
-        for (Property attr : props) {
-            final ModelNode value = attr.getValue();
+        while(props.hasNext()) {
+            AttributeDescription attr = props.next();
+            //final ModelNode value = attr.getValue();
 
             // filter metrics
-            if (value.has(Util.ACCESS_TYPE)) {
-                accessType = value.get(Util.ACCESS_TYPE).asString();
-//                if("metric".equals(accessType)) {
-//                    continue;
-//                }
-            }
+            accessType = attr.getAccess();
+//            if("metric".equals(accessType)) {
+//                continue;
+//            }
 
-            final boolean required = value.hasDefined("required") ? value.get("required").asBoolean() : false;
+            final boolean required = attr.getBooleanProperty(Util.REQUIRED);
             final StringBuilder descr = new StringBuilder();
 
-            final String type = value.has(Util.TYPE) ? value.get(Util.TYPE).asString() : "no type info";
-            if (value.hasDefined(Util.DESCRIPTION)) {
+            final ModelType modelType = attr.getType();
+            final String type = modelType == null? "no type info" : modelType.toString();
+            final String attrDescr = attr.getDescription();
+            if (attrDescr != null) {
                 descr.append('(');
                 descr.append(type);
                 if(accessType != null) {
                     descr.append(',').append(accessType);
                 }
                 descr.append(") ");
-                descr.append(value.get("description").asString());
+                descr.append(attrDescr);
             } else if(descr.length() == 0) {
                 descr.append("no description.");
             }
@@ -632,6 +669,10 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
             buf.append("(Execute '");
             buf.append(commandName).append(" --profile=<profile_name> --help' to include the resource description here.)");
             formatText(ctx, buf, offset);
+        } else if(ctx.getModelControllerClient() == null) {
+            buf.setLength(0);
+            buf.append("(Connection to the controller is required to be able to load the resource description)");
+            formatText(ctx, buf, offset);
         } else {
             ModelNode request = initRequest(ctx);
             if(request == null) {
@@ -655,7 +696,7 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
             if(result != null) {
                 buf.append(result.get(Util.DESCRIPTION).asString());
             } else {
-                buf.append("N/A. Please, open a jira issue at https://issues.jboss.org/browse/AS7 to get this fixed. Thanks!");
+                buf.append("N/A. Please, open a jira issue at https://issues.jboss.org/browse/WFLY to get this fixed. Thanks!");
             }
             formatText(ctx, buf, offset);
         }
@@ -820,6 +861,9 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
     protected List<String> getSupportedCommands(CommandContext ctx) throws CommandLineException {
         final ModelNode request = initRequest(ctx);
         request.get(Util.OPERATION).set(Util.READ_OPERATION_NAMES);
+        if(ctx.getConfig().isAccessControl()) {
+            request.get(Util.ACCESS_CONTROL).set(true);
+        }
         ModelNode result;
         try {
             result = ctx.getModelControllerClient().execute(request);
@@ -846,26 +890,167 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
         return supportedCommands;
     }
 
-    protected List<Property> getNodeProperties(CommandContext ctx) throws CommandFormatException {
+    protected Iterator<AttributeDescription> getNodeProperties(CommandContext ctx) throws CommandLineException {
+
+        if(ctx.getModelControllerClient() == null) {
+            throw new CommandLineException("Failed to load target attributes: not connected");
+        }
         ModelNode request = initRequest(ctx);
         if(request == null) {
-            return Collections.emptyList();
+            return Collections.emptyIterator();
         }
         request.get(Util.OPERATION).set(Util.READ_RESOURCE_DESCRIPTION);
+        if(ctx.getConfig().isAccessControl()) {
+            request.get(Util.ACCESS_CONTROL).set(Util.COMBINED_DESCRIPTIONS);
+        }
         ModelNode result;
         try {
             result = ctx.getModelControllerClient().execute(request);
         } catch (IOException e) {
-            return Collections.emptyList();
+            return Collections.emptyIterator();
         }
         if(!result.hasDefined(Util.RESULT)) {
-            return Collections.emptyList();
+            return Collections.emptyIterator();
         }
         result = result.get(Util.RESULT);
         if(!result.hasDefined(Util.ATTRIBUTES)) {
-            return Collections.emptyList();
+            return Collections.emptyIterator();
         }
-        return result.get(Util.ATTRIBUTES).asPropertyList();
+
+        final ModelNode accessControl;
+        if(ctx.getConfig().isAccessControl()) {
+            if(result.has(Util.ACCESS_CONTROL)) {
+                accessControl = result.get(Util.ACCESS_CONTROL);
+            } else {
+                accessControl = null;
+            }
+        } else {
+            accessControl = null;
+        }
+
+        return getAttributeIterator(result.get(Util.ATTRIBUTES).asPropertyList(), accessControl);
+    }
+
+    protected Iterator<AttributeDescription> getAttributeIterator(final List<Property> props, ModelNode accessControl) {
+        final ModelNode attrAccessControl;
+        if(accessControl != null) {
+            if(accessControl.has(Util.DEFAULT)) {
+                final ModelNode def = accessControl.get(Util.DEFAULT);
+                if(def.has(Util.ATTRIBUTES)) {
+                    attrAccessControl = def.get(Util.ATTRIBUTES);
+                } else {
+                    attrAccessControl = null;
+                }
+            } else {
+                attrAccessControl = null;
+            }
+        } else {
+            attrAccessControl = null;
+        }
+        return new Iterator<AttributeDescription>() {
+
+            final Iterator<Property> properties = props.iterator();
+            private Property current;
+            private AttributeDescription descr = new AttributeDescription() {
+
+                @Override
+                public String getName() {
+                    return current.getName();
+                }
+
+                @Override
+                public ModelType getType() {
+                    final ModelNode value = getProperty(Util.TYPE);
+                    return value == null ? null : value.asType();
+                }
+
+                @Override
+                public String getAccess() {
+                    if(attrAccessControl != null && attrAccessControl.has(current.getName())) {
+                        final ModelNode accessSpec = attrAccessControl.get(current.getName());
+                        final StringBuilder buf = new StringBuilder();
+                        if(accessSpec.get(Util.READ).asBoolean()) {
+                            buf.append(Util.READ).append('-');
+                        }
+                        if(accessSpec.get(Util.WRITE).asBoolean()) {
+                            buf.append(Util.WRITE);
+                            if(buf.length() == 5) {
+                                buf.append("-only");
+                            }
+                        } else {
+                            buf.append("only");
+                        }
+                        return buf.toString();
+                    } else {
+                        final ModelNode value = getProperty(Util.ACCESS_TYPE);
+                        return value == null ? null : value.asString();
+                    }
+                }
+
+                @Override
+                public boolean isWriteAllowed() {
+                    if(attrAccessControl != null && attrAccessControl.has(current.getName())) {
+                        final ModelNode accessSpec = attrAccessControl.get(current.getName());
+                        if(accessSpec.get(Util.WRITE).asBoolean()) {
+                            return true;
+                        }
+                        return false;
+                    }
+                    final ModelNode value = getProperty(Util.ACCESS_TYPE);
+                    if(value == null) {
+                        return false;
+                    }
+                    return Util.READ_WRITE.equals(value.asString());
+                }
+
+                @Override
+                public String getDescription() {
+                    final ModelNode value = getProperty(Util.DESCRIPTION);
+                    return value == null ? null : value.asString();
+                }
+
+                @Override
+                public ModelNode getProperty(String name) {
+                    if(current.getValue().has(name)) {
+                        return current.getValue().get(name);
+                    }
+                    return null;
+                }
+
+                @Override
+                public boolean getBooleanProperty(String name) {
+                    if(current.getValue().has(name)) {
+                        return current.getValue().get(name).asBoolean();
+                    }
+                    return false;
+                }
+            };
+            @Override
+            public boolean hasNext() {
+                return properties.hasNext();
+            }
+
+            @Override
+            public AttributeDescription next() {
+                current = properties.next();
+                return descr;
+            }
+
+            @Override
+            public void remove() {
+                throw new UnsupportedOperationException();
+            }
+        };
+    }
+
+    interface AttributeDescription {
+        String getName();
+        ModelType getType();
+        String getAccess();
+        boolean isWriteAllowed();
+        String getDescription();
+        ModelNode getProperty(String name);
+        boolean getBooleanProperty(String name);
     }
 
     protected ModelNode getOperationDescription(CommandContext ctx, String operationName) throws CommandLineException {
@@ -875,6 +1060,10 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
                 return handler.getOperationDescription(ctx);
             }
         }
+        if(ctx.getModelControllerClient() == null) {
+            throw new CommandLineException("Failed to load operation description: not connected");
+        }
+
         ModelNode request = initRequest(ctx);
         if(request == null) {
             return null;
@@ -888,7 +1077,11 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
             throw new CommandFormatException("Failed to execute read-operation-description.", e);
         }
         if (!result.hasDefined(Util.RESULT)) {
-            return null;
+            String msg = Util.getFailureDescription(result);
+            if(msg == null) {
+                msg = "Failed to load description for '" + operationName + "': " + result;
+            }
+            throw new CommandLineException(msg);
         }
         return result.get(Util.RESULT);
     }
@@ -1090,5 +1283,5 @@ public class GenericTypeOperationHandler extends BatchModeCommandHandler {
             }
             return request;
         }
-    };
+    }
 }

@@ -84,6 +84,7 @@ public class ChannelService implements Service<Channel>, ChannelListener {
     public void stop(StopContext context) {
         if (this.channel != null) {
             this.channel.removeChannelListener(this);
+            this.channel.close();
         }
         this.channel = null;
     }

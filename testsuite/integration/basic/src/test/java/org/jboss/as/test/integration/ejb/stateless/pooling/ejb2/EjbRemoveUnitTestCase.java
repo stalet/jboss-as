@@ -22,6 +22,12 @@
 
 package org.jboss.as.test.integration.ejb.stateless.pooling.ejb2;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RESULT;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
+
 import java.rmi.RemoteException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -47,12 +53,6 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RESULT;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
-
 /**
  * Test that bean is pooled and ejbRemove is correctly called.
  * Part of the migration of tests from EJB3 testsuite to AS7 testsuite [JBQA-5483].
@@ -66,7 +66,6 @@ public class EjbRemoveUnitTestCase {
 
     private static final String POOL_NAME2 = "CustomConfig2";
     private static final String POOL_NAME3 = "CustomConfig3";
-    private static String DEFAULT_POOL;
     private static final String DEFAULT_POOL_ATTR = "default-slsb-instance-pool";
 
     public static final CountDownLatch CDL = new CountDownLatch(10);
@@ -113,48 +112,10 @@ public class EjbRemoveUnitTestCase {
                 Authentication.class);
         jar.addAsManifestResource(EjbRemoveUnitTestCase.class.getPackage(), "ejb-jar.xml", "ejb-jar.xml");
         jar.addAsManifestResource(EjbRemoveUnitTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml");
+        jar.addAsManifestResource(EjbRemoveUnitTestCase.class.getPackage(), "jboss-all.xml", "jboss-all.xml");
         jar.addAsManifestResource(new StringAsset("Dependencies: deployment.single.jar, org.jboss.as.controller-client, org.jboss.dmr \n"), "MANIFEST.MF");
         log.info(jar.toString(true));
         return jar;
-    }
-
-    private static ModelNode getAddress() {
-        ModelNode address = new ModelNode();
-        address.add("subsystem", "ejb3");
-        address.protect();
-        return address;
-    }
-
-    private void removePoolRef() throws Exception {
-        ModelNode address = getAddress();
-
-        ModelNode operation = new ModelNode();
-        operation.get(OP).set("read-attribute");
-        operation.get(OP_ADDR).set(address);
-        operation.get("name").set(DEFAULT_POOL_ATTR);
-        ModelNode result = managementClient.getControllerClient().execute(operation);
-        Assert.assertEquals(SUCCESS, result.get(OUTCOME).asString());
-        DEFAULT_POOL = result.get(RESULT).asString();
-        log.info("Default pool was: " + DEFAULT_POOL + ", " + result);
-
-        operation = new ModelNode();
-        operation.get(OP).set("undefine-attribute");
-        operation.get(OP_ADDR).set(address);
-        operation.get("name").set(DEFAULT_POOL_ATTR);
-        result = managementClient.getControllerClient().execute(operation);
-        Assert.assertEquals(SUCCESS, result.get(OUTCOME).asString());
-    }
-
-    private void getBackPoolRef() throws Exception {
-        ModelNode address = getAddress();
-
-        ModelNode operation = new ModelNode();
-        operation.get(OP).set("write-attribute");
-        operation.get(OP_ADDR).set(address);
-        operation.get("name").set(DEFAULT_POOL_ATTR);
-        operation.get("value").set(DEFAULT_POOL);
-        ModelNode result = managementClient.getControllerClient().execute(operation);
-        Assert.assertEquals(SUCCESS, result.get(OUTCOME).asString());
     }
 
     /**
@@ -172,7 +133,6 @@ public class EjbRemoveUnitTestCase {
     @Test
     @OperateOnDeployment("beans")
     public void testEjbRemoveCalledForEveryCall() throws Exception {
-        removePoolRef();
 
         CountedSessionHome countedHome = (CountedSessionHome) ctx.lookup("java:module/CountedSession1!"
                 + CountedSessionHome.class.getName());
@@ -185,8 +145,6 @@ public class EjbRemoveUnitTestCase {
         counted.remove();
         Assert.assertEquals("createCounter", 2, CounterSingleton.createCounter1.get());
         Assert.assertEquals("removeCounter", 2, CounterSingleton.removeCounter1.get());
-
-        getBackPoolRef();
     }
 
     /**

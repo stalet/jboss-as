@@ -104,6 +104,10 @@ public abstract class AbstractSubsystemBaseTest extends AbstractSubsystemTest {
         standardSubsystemTest(configId, configIdResolvedModel, true);
     }
 
+    protected KernelServices standardSubsystemTest(final String configId, final String configIdResolvedModel, boolean compareXml) throws Exception {
+        return standardSubsystemTest(configId, configIdResolvedModel, compareXml, createAdditionalInitialization());
+    }
+
 
     /**
      * Tests the ability to create a model from an xml configuration, marshal the model back to xml,
@@ -122,17 +126,17 @@ public abstract class AbstractSubsystemBaseTest extends AbstractSubsystemTest {
      * @param compareXml if {@code true} a comparison of xml output to original input is performed. This can be
      *                   set to {@code false} if the original input is from an earlier xsd and the current
      *                   schema has a different output
+     * @param additionalInit service container and model initialization
      *
      * @throws Exception
      */
-    protected KernelServices standardSubsystemTest(final String configId, final String configIdResolvedModel, boolean compareXml) throws Exception {
-        final AdditionalInitialization additionalInit = createAdditionalInitialization();
-
+    protected KernelServices standardSubsystemTest(final String configId, final String configIdResolvedModel,
+                                                   boolean compareXml, final AdditionalInitialization additionalInit) throws Exception {
 
         // Parse the subsystem xml and install into the first controller
         final String subsystemXml = configId == null ? getSubsystemXml() : getSubsystemXml(configId);
         final KernelServices servicesA = super.createKernelServicesBuilder(additionalInit).setSubsystemXml(subsystemXml).build();
-        Assert.assertTrue("Subsystem boot failed!",servicesA.isSuccessfulBoot());
+        Assert.assertTrue("Subsystem boot failed!", servicesA.isSuccessfulBoot());
         //Get the model and the persisted xml from the first controller
         final ModelNode modelA = servicesA.readWholeModel();
         validateModel(modelA);
@@ -152,35 +156,44 @@ public abstract class AbstractSubsystemBaseTest extends AbstractSubsystemTest {
 
         //Install the persisted xml from the first controller into a second controller
         final KernelServices servicesB = super.createKernelServicesBuilder(additionalInit).setSubsystemXml(marshalled).build();
+        Assert.assertTrue("Subsystem boot failed!", servicesB.isSuccessfulBoot());
         final ModelNode modelB = servicesB.readWholeModel();
 
         //Make sure the models from the two controllers are identical
         compare(modelA, modelB);
 
         // Test the describe operation
-        final ModelNode operation = createDescribeOperation();
-        final ModelNode result = servicesB.executeOperation(operation);
-        Assert.assertTrue("the subsystem describe operation has to generate a list of operations to recreate the subsystem",
-                !result.hasDefined(ModelDescriptionConstants.FAILURE_DESCRIPTION));
-        final List<ModelNode> operations = result.get(ModelDescriptionConstants.RESULT).asList();
+        validateDescribeOperation(servicesB, additionalInit, modelA);
+
+        assertRemoveSubsystemResources(servicesB, getIgnoredChildResourcesForRemovalTest());
         servicesB.shutdown();
-
-        final KernelServices servicesC = super.createKernelServicesBuilder(additionalInit).setBootOperations(operations).build();
-        final ModelNode modelC = servicesC.readWholeModel();
-
-        compare(modelA, modelC);
-
-        assertRemoveSubsystemResources(servicesC, getIgnoredChildResourcesForRemovalTest());
 
         if (configIdResolvedModel != null) {
             final String subsystemResolvedXml = getSubsystemXml(configIdResolvedModel);
             final KernelServices servicesD = super.createKernelServicesBuilder(additionalInit).setSubsystemXml(subsystemResolvedXml).build();
-            Assert.assertTrue("Subsystem w/ reolved xml boot failed!", servicesD.isSuccessfulBoot());
+            Assert.assertTrue("Subsystem w/ resolved xml boot failed!", servicesD.isSuccessfulBoot());
             final ModelNode modelD = servicesD.readWholeModel();
             validateModel(modelD);
             resolveandCompareModel(modelA, modelD);
         }
         return servicesA;
+
+    }
+
+    protected void validateDescribeOperation(KernelServices hc, AdditionalInitialization serverInit, ModelNode expectedModel) throws Exception {
+        final ModelNode operation = createDescribeOperation();
+        final ModelNode result = hc.executeOperation(operation);
+        Assert.assertTrue("the subsystem describe operation has to generate a list of operations to recreate the subsystem",
+                !result.hasDefined(ModelDescriptionConstants.FAILURE_DESCRIPTION));
+        final List<ModelNode> operations = result.get(ModelDescriptionConstants.RESULT).asList();
+
+        final KernelServices servicesC = super.createKernelServicesBuilder(serverInit).setBootOperations(operations).build();
+        Assert.assertTrue("Subsystem boot failed!", servicesC.isSuccessfulBoot());
+        final ModelNode serverModel = servicesC.readWholeModel();
+
+        compare(expectedModel, serverModel);
+
+        servicesC.shutdown();
 
     }
 

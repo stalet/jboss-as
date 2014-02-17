@@ -118,16 +118,42 @@ public interface CommandContext {
     ModelControllerClient getModelControllerClient();
 
     /**
+     * Connects the controller client using the default controller definition.
+     *
+     * The default controller will be identified as the default specified on starting the CLI will be used, if no controller was
+     * specified on start up then the default defined in the CLI configuration will be used, if no default is defined then a
+     * connection to http-remoting://localhost:9990 will be used instead.
+     *
+     * @throws CommandLineException in case the attempt to connect failed
+     */
+    void connectController() throws CommandLineException;
+
+    /**
+     * Connects to the controller specified.
+     *
+     * If the controller is null then the default specified on starting the CLI will be used, if no controller was specified on
+     * start up then the default defined in the CLI configuration will be used, if no default is defined then a connection to
+     * http-remoting://localhost:9990 will be used instead.
+     *
+     * @param controller the controller to connect to
+     * @throws CommandLineException in case the attempt to connect failed
+     */
+    void connectController(String controller) throws CommandLineException;
+
+    /**
      * Connects the controller client using the host and the port.
      * If the host is null, the default controller host will be used,
      * which is localhost.
      * If the port is less than zero, the default controller port will be used,
      * which is 9999.
      *
+     * @deprecated Use {@link #connectController(String)} instead.
+     *
      * @param host the host to connect with
      * @param port the port to connect on
      * @throws CommandLineException  in case the attempt to connect failed
      */
+    @Deprecated
     void connectController(String host, int port) throws CommandLineException;
 
     /**
@@ -136,36 +162,37 @@ public interface CommandContext {
     void bindClient(ModelControllerClient newClient);
 
     /**
-     * Connects the controller client using the default host and the port.
-     * It simply calls connectController(null, -1).
-     *
-     * @throws CommandLineException  in case the attempt to connect failed
-     */
-    void connectController() throws CommandLineException;
-
-    /**
      * Closes the previously established connection with the controller client.
      * If the connection hasn't been established, the method silently returns.
      */
     void disconnectController();
 
     /**
-     * Returns the default host the controller client will be connected to
-     * in case the host argument isn't specified.
+     * Returns the default host the controller client will be connected to.
      *
-     * @return  the default host the controller client will be connected to
-     * in case the host argument isn't specified.
+     * @deprecated Use {@link CommandContext#getDefaultControllerAddress()} instead.
+     *
+     * @return  the default host the controller client will be connected to.
      */
+    @Deprecated
     String getDefaultControllerHost();
 
     /**
-     * Returns the default port the controller client will be connected to
-     * in case the port argument isn't specified.
+     * Returns the default port the controller client will be connected to.
      *
-     * @return  the default port the controller client will be connected to
-     * in case the port argument isn't specified.
+     * @deprecated Use {@link CommandContext#getDefaultControllerAddress()} instead.
+     *
+     * @return  the default port the controller client will be connected to.
      */
+    @Deprecated
     int getDefaultControllerPort();
+
+    /**
+     * The default address of the default controller to connect to.
+     *
+     * @return The default address.
+     */
+    ControllerAddress getDefaultControllerAddress();
 
     /**
      * Returns the host the controller client is connected to or
@@ -387,4 +414,38 @@ public interface CommandContext {
      *          -1 otherwise
      */
     int getTerminalHeight();
+
+    /**
+     * Initializes a variable with the given name with the given value.
+     * The name of the variable must follow the rules for Java identifiers
+     * but not contain '$' character.
+     * If the variable already exists, its value will be silently overridden.
+     * Passing in null as the value will remove the variable altogether.
+     * If the variable with the given name has not been defined and the value
+     * passed in is null, the method will return silently.
+     *
+     * @param name  name of the variable
+     * @param value  value for the variable
+     * @throws CommandLineException  in case the name contains illegal characters
+     */
+    void setVariable(String name, String value) throws CommandLineException;
+
+    /**
+     * Returns the value for the variable. If the variable has not been defined
+     * the method will return null.
+     *
+     * @param name  name of the variable
+     * @return  the value of the variable or null if the variable has not been
+     *          defined
+     */
+    String getVariable(String name);
+
+    /**
+     * Returns a collection of all the defined variable names.
+     * If there no variables defined, an empty collection will be returned.
+     *
+     * @return  collection of all the defined variable names or
+     *          an empty collection if no variables has been defined
+     */
+    Collection<String> getVariables();
 }

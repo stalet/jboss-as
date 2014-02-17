@@ -22,10 +22,8 @@
 
 package org.jboss.as.domain.management.security;
 
-import org.jboss.msc.service.StartContext;
-import org.jboss.msc.service.StartException;
-import org.jboss.msc.service.StopContext;
-import org.jboss.msc.value.InjectedValue;
+import static org.jboss.as.domain.management.DomainManagementLogger.ROOT_LOGGER;
+import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -37,14 +35,18 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import static org.jboss.as.domain.management.DomainManagementLogger.ROOT_LOGGER;
-import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
+import org.jboss.msc.service.StartContext;
+import org.jboss.msc.service.StartException;
+import org.jboss.msc.service.StopContext;
+import org.jboss.msc.value.InjectedValue;
 
 /**
  * The base class for services depending on loading a properties file, loads the properties on
@@ -52,17 +54,41 @@ import static org.jboss.as.domain.management.DomainManagementMessages.MESSAGES;
  *
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
-public abstract class PropertiesFileLoader {
+public class PropertiesFileLoader {
 
-    public static final char[] ESCAPE_ARRAY = new char[]{'='};
+    private static final char[] ESCAPE_ARRAY = new char[] { '=' };
+    protected static final String COMMENT_PREFIX = "#";
+
+    /**
+     * Pattern that matches :
+     * <ul>
+     * <li>{@code #key=value}</li>
+     * <li>{@code key=value}</li>
+     * </ul>
+     * {@code value} must be a any character except "=" and {@code key} must be any character except "#".<br/>
+     * {@code group(1)} returns the key of the property.<br/>
+     * {@code group(2)} returns the value of the property.
+     */
+    public static final Pattern PROPERTY_PATTERN = Pattern.compile("#??([^#]*)=([^=]*)");
+    public static final String DISABLE_SUFFIX_KEY = "!disable";
+
     private final String path;
     private final InjectedValue<String> relativeTo = new InjectedValue<String>();
 
-    private File propertiesFile;
+    protected File propertiesFile;
     private volatile long fileUpdated = -1;
     private volatile Properties properties = null;
 
-    protected PropertiesFileLoader(final String path) {
+    /*
+     * State maintained during persistence.
+     */
+    private Properties toSave = null;
+    /*
+     * End of state maintained during persistence.
+     */
+
+
+    public PropertiesFileLoader(final String path) {
         this.path = path;
     }
 
@@ -89,6 +115,12 @@ public abstract class PropertiesFileLoader {
     }
 
     public Properties getProperties() throws IOException {
+        loadAsRequired();
+
+        return properties;
+    }
+
+    protected void loadAsRequired() throws IOException {
         /*
          * This method does attempt to minimise the effect of race conditions, however this is not overly critical as if you
          * have users attempting to authenticate at the exact point their details are added to the file there is also a chance
@@ -103,86 +135,159 @@ public abstract class PropertiesFileLoader {
                 long fileLastModified = propertiesFile.lastModified();
                 boolean loadReallyRequired = properties == null || fileUpdated != fileLastModified;
                 if (loadReallyRequired) {
-                    ROOT_LOGGER.debugf("Reloading properties file '%s'", propertiesFile.getAbsolutePath());
-                    Properties props = new Properties();
-                    InputStreamReader is = new InputStreamReader(new FileInputStream(propertiesFile), Charset.forName("UTF-8"));
-                    try {
-                        props.load(is);
-                    } finally {
-                        is.close();
-                    }
-                    verifyProperties(props);
-
-                    properties = props;
+                    load();
                     // Update this last otherwise the check outside the synchronized block could return true before the file is
                     // set.
                     fileUpdated = fileLastModified;
                 }
             }
         }
+    }
 
-        return properties;
+    protected void load() throws IOException {
+        ROOT_LOGGER.debugf("Reloading properties file '%s'", propertiesFile.getAbsolutePath());
+        Properties props = new Properties();
+        InputStreamReader is = new InputStreamReader(new FileInputStream(propertiesFile), StandardCharsets.UTF_8);
+        try {
+            props.load(is);
+        } finally {
+            is.close();
+        }
+        verifyProperties(props);
+        properties = props;
     }
 
     /**
-     * Saves changes in properties file. It reads the property file into memory,
-     * modifies it and saves it back to the file.
+     * Saves changes in properties file. It reads the property file into memory, modifies it and saves it back to the file.
      *
      * @throws IOException
      */
     public synchronized void persistProperties() throws IOException {
-        Properties toSave = (Properties) properties.clone();
-
-        List<String> content = new ArrayList<String>();
-        FileReader fileReader = new FileReader(propertiesFile);
-        BufferedReader bufferedFileReader = new BufferedReader(fileReader);
+        beginPersistence();
 
         // Read the properties file into memory
         // Shouldn't be so bad - it's a small file
+        List<String> content = readFile(propertiesFile);
+
+        BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(propertiesFile), StandardCharsets.UTF_8));
+
         try {
-            String line = null;
-            int i = 0;
+            for (String line : content) {
+                String trimmed = line.trim();
+                if (trimmed.length() == 0) {
+                    bw.newLine();
+                } else {
+                    Matcher matcher = PROPERTY_PATTERN.matcher(trimmed);
+                    if (matcher.matches()) {
+                        final String key = matcher.group(1);
+                        if (toSave.containsKey(key) || toSave.containsKey(key + DISABLE_SUFFIX_KEY)) {
+                            writeProperty(bw, key, matcher.group(2));
+                            toSave.remove(key);
+                            toSave.remove(key + DISABLE_SUFFIX_KEY);
+                        }
+                    } else {
+                        write(bw, line, true);
+                    }
+                }
+            }
+
+            endPersistence(bw);
+        } finally {
+            safeClose(bw);
+        }
+    }
+
+    protected List<String> readFile(File file) throws IOException {
+        FileReader fileReader = new FileReader(file);
+        BufferedReader bufferedFileReader = new BufferedReader(fileReader);
+        List<String> content = new ArrayList<String>();
+        try {
+            String line;
             while ((line = bufferedFileReader.readLine()) != null) {
-                content.add(line);
+                addLineContent(bufferedFileReader, content, line);
             }
         } finally {
             safeClose(bufferedFileReader);
             safeClose(fileReader);
         }
+        return content;
+    }
 
-        BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(propertiesFile), "UTF8"));
+    /**
+     * Add the line to the content
+     *
+     * @param bufferedFileReader The file reader
+     * @param content            The content of the file
+     * @param line               The current read line
+     * @throws IOException
+     */
+    protected void addLineContent(BufferedReader bufferedFileReader, List<String> content, String line) throws IOException {
+        content.add(line);
+    }
 
-        try {
-            for (String line : content) {
-                String trimmed = line.trim();
-                if (trimmed.startsWith("#")) {
-                    bw.append(line);
-                    bw.newLine();
-                } else if (trimmed.length() == 0) {
-                    bw.newLine();
-                } else {
-                    int equals = trimmed.indexOf('=');
-                    if (equals > 0) {
-                        String userName = trimmed.substring(0, equals);
-                        if (toSave.containsKey(userName)) {
-                            String escapedUserName = escapeString(userName, ESCAPE_ARRAY);
-                            bw.append(escapedUserName + "=" + toSave.getProperty(userName));
-                            bw.newLine();
-                            toSave.remove(userName);
-                        }
-                    }
-                }
-            }
+    /**
+     * Method called to indicate the start of persisting the properties.
+     *
+     * @throws IOException
+     */
+    protected void beginPersistence() throws IOException {
+        toSave = (Properties) properties.clone();
+    }
 
-            // Append any additional users to the end of the file.
-            for (Object currentKey : toSave.keySet()) {
-                String escapedUserName = escapeString((String) currentKey, ESCAPE_ARRAY);
-                bw.append(escapedUserName + "=" + toSave.getProperty((String) currentKey));
-                bw.newLine();
-            }
-        } finally {
-            safeClose(bw);
+    protected void write(final BufferedWriter writer, final String line, final boolean newLine) throws IOException {
+        writer.append(line);
+        if (newLine) {
+            writer.newLine();
         }
+    }
+
+    /**
+     * Method called to indicate persisting the properties file is now complete.
+     *
+     * @throws IOException
+     */
+    protected void endPersistence(final BufferedWriter writer) throws IOException {
+        // Append any additional users to the end of the file.
+        for (Object currentKey : toSave.keySet()) {
+            String key = (String) currentKey;
+            if (!key.contains(DISABLE_SUFFIX_KEY)) {
+                writeProperty(writer, key, null);
+            }
+        }
+
+        toSave = null;
+    }
+
+    private void writeProperty(BufferedWriter writer, String key, String currentValue) throws IOException {
+        String escapedKey = escapeString(key, ESCAPE_ARRAY);
+        final String value = getValue(key, currentValue);
+        final String newLine;
+        if (Boolean.valueOf(toSave.getProperty(key + DISABLE_SUFFIX_KEY))) {
+            // Commented property
+            newLine = "#" + escapedKey + "=" + value;
+        } else {
+            newLine = escapedKey + "=" + value;
+        }
+        write(writer, newLine, true);
+    }
+
+    /**
+     * Get the value of the property.<br/>
+     * If the value to save is null, return the previous value (enable/disable mode).
+     *
+     * @param key The key of the property
+     * @param previousValue The previous value
+     * @return The value of the property
+     */
+    private String getValue(String key, String previousValue) {
+        final String value;
+        final String valueUpdated = toSave.getProperty(key);
+        if (valueUpdated == null) {
+            value = previousValue;
+        } else {
+            value = valueUpdated;
+        }
+        return value;
     }
 
     public static String escapeString(String name, char[] escapeArray) {
@@ -206,7 +311,7 @@ public abstract class PropertiesFileLoader {
         return name;
     }
 
-    private void safeClose(final Closeable c) {
+    protected void safeClose(final Closeable c) {
         try {
             c.close();
         } catch (IOException ignored) {

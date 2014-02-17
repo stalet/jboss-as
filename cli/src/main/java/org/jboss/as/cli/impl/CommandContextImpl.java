@@ -29,6 +29,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.MessageDigest;
@@ -37,11 +39,13 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.Set;
 
 import javax.net.ssl.KeyManager;
@@ -68,10 +72,13 @@ import org.jboss.as.cli.CommandCompleter;
 import org.jboss.as.cli.CommandContext;
 import org.jboss.as.cli.CommandFormatException;
 import org.jboss.as.cli.CommandHandler;
+import org.jboss.as.cli.CommandHandlerProvider;
 import org.jboss.as.cli.CommandHistory;
 import org.jboss.as.cli.CommandLineCompleter;
 import org.jboss.as.cli.CommandLineException;
 import org.jboss.as.cli.CommandRegistry;
+import org.jboss.as.cli.ControllerAddressResolver;
+import org.jboss.as.cli.ControllerAddress;
 import org.jboss.as.cli.OperationCommand;
 import org.jboss.as.cli.SSLConfig;
 import org.jboss.as.cli.Util;
@@ -88,6 +95,7 @@ import org.jboss.as.cli.handlers.DeployHandler;
 import org.jboss.as.cli.handlers.DeploymentInfoHandler;
 import org.jboss.as.cli.handlers.DeploymentOverlayHandler;
 import org.jboss.as.cli.handlers.EchoDMRHandler;
+import org.jboss.as.cli.handlers.EchoVariableHandler;
 import org.jboss.as.cli.handlers.GenericTypeOperationHandler;
 import org.jboss.as.cli.handlers.HelpHandler;
 import org.jboss.as.cli.handlers.HistoryHandler;
@@ -99,8 +107,10 @@ import org.jboss.as.cli.handlers.QuitHandler;
 import org.jboss.as.cli.handlers.ReadAttributeHandler;
 import org.jboss.as.cli.handlers.ReadOperationHandler;
 import org.jboss.as.cli.handlers.ReloadHandler;
+import org.jboss.as.cli.handlers.SetVariableHandler;
 import org.jboss.as.cli.handlers.ShutdownHandler;
 import org.jboss.as.cli.handlers.UndeployHandler;
+import org.jboss.as.cli.handlers.UnsetVariableHandler;
 import org.jboss.as.cli.handlers.VersionHandler;
 import org.jboss.as.cli.handlers.batch.BatchClearHandler;
 import org.jboss.as.cli.handlers.batch.BatchDiscardHandler;
@@ -139,6 +149,7 @@ import org.jboss.as.cli.operation.impl.DefaultPrefixFormatter;
 import org.jboss.as.cli.operation.impl.RolloutPlanCompleter;
 import org.jboss.as.cli.parsing.operation.OperationFormat;
 import org.jboss.as.controller.client.ModelControllerClient;
+import org.jboss.as.protocol.GeneralTimeoutHandler;
 import org.jboss.as.protocol.StreamUtils;
 import org.jboss.dmr.ModelNode;
 import org.jboss.aesh.console.settings.Settings;
@@ -146,6 +157,8 @@ import org.jboss.logging.Logger;
 import org.jboss.logging.Logger.Level;
 import org.jboss.sasl.callback.DigestHashCallback;
 import org.jboss.sasl.util.HexConverter;
+import org.wildfly.security.manager.WildFlySecurityManager;
+import org.xnio.http.RedirectException;
 
 /**
  *
@@ -157,6 +170,7 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
 
     /** the cli configuration */
     private final CliConfig config;
+    private final ControllerAddressResolver addressResolver;
 
     private final CommandRegistry cmdRegistry = new CommandRegistry();
 
@@ -174,18 +188,15 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
     private boolean domainMode;
     /** the controller client */
     private ModelControllerClient client;
-    /** the default controller host */
-    private String defaultControllerHost;
-    /** the default controller port */
-    private int defaultControllerPort;
-    /** the host of the controller */
-    private String controllerHost;
-    /** the port of the controller */
-    private int controllerPort = -1;
+
+    /** the address of the current controller */
+    private ControllerAddress currentAddress;
     /** the command line specified username */
-    private String username;
+    private final String username;
     /** the command line specified password */
-    private char[] password;
+    private final char[] password;
+    /** flag to disable the local authentication mechanism */
+    private final boolean disableLocalAuth;
     /** the time to connect to a controller */
     private final int connectionTimeout;
     /** The SSLContext when managed by the CLI */
@@ -197,7 +208,7 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
     /** operation request address prefix */
     private final OperationRequestAddress prefix = new DefaultOperationRequestAddress();
     /** the prefix formatter */
-    private final NodePathFormatter prefixFormatter = new DefaultPrefixFormatter();
+    private final NodePathFormatter prefixFormatter = DefaultPrefixFormatter.INSTANCE;
     /** provider of operation request candidates for tab-completion */
     private final OperationCandidatesProvider operationCandidatesProvider;
     /** operation request handler */
@@ -206,6 +217,8 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
     private BatchManager batchManager = new DefaultBatchManager();
     /** the default command completer */
     private final CommandCompleter cmdCompleter;
+    /** the timeout handler */
+    private final GeneralTimeoutHandler timeoutHandler = new GeneralTimeoutHandler();
 
     /** output target */
     private BufferedWriter outputTarget;
@@ -223,6 +236,10 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
     /** whether to write messages to the terminal output */
     private boolean silent;
 
+    private Map<String, String> variables;
+
+    private CliShutdownHook.Handler shutdownHook;
+
     /**
      * Version mode - only used when --version is called from the command line.
      *
@@ -235,43 +252,39 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         operationHandler = new OperationRequestHandler();
         initCommands();
         config = CliConfigImpl.load(this);
-        defaultControllerHost = config.getDefaultControllerHost();
-        defaultControllerPort = config.getDefaultControllerPort();
+        addressResolver = ControllerAddressResolver.newInstance(config, null);
         resolveParameterValues = config.isResolveParameterValues();
         this.connectionTimeout = config.getConnectionTimeout();
         silent = config.isSilent();
+        username = null;
+        password = null;
+        disableLocalAuth = false;
         initSSLContext();
+        addShutdownHook();
+        CliLauncher.runcom(this);
     }
 
-    CommandContextImpl(String username, char[] password) throws CliInitializationException {
-        this(null, -1, username, password, false, -1);
+    CommandContextImpl(String username, char[] password, boolean disableLocalAuth) throws CliInitializationException {
+        this(null, username, password, disableLocalAuth, false, -1);
     }
 
     /**
      * Default constructor used for both interactive and non-interactive mode.
      *
      */
-    CommandContextImpl(String defaultControllerHost, int defaultControllerPort, String username, char[] password, boolean initConsole, final int connectionTimeout)
+    CommandContextImpl(String defaultController, String username, char[] password, boolean disableLocalAuth, boolean initConsole, final int connectionTimeout)
             throws CliInitializationException {
 
         config = CliConfigImpl.load(this);
+        addressResolver = ControllerAddressResolver.newInstance(config, defaultController);
 
         operationHandler = new OperationRequestHandler();
 
         this.username = username;
         this.password = password;
+        this.disableLocalAuth = disableLocalAuth;
         this.connectionTimeout = connectionTimeout != -1 ? connectionTimeout : config.getConnectionTimeout();
 
-        if (defaultControllerHost != null) {
-            this.defaultControllerHost = defaultControllerHost;
-        } else {
-            this.defaultControllerHost = config.getDefaultControllerHost();
-        }
-        if (defaultControllerPort != -1) {
-            this.defaultControllerPort = defaultControllerPort;
-        } else {
-            this.defaultControllerPort = config.getDefaultControllerPort();
-        }
         resolveParameterValues = config.isResolveParameterValues();
         silent = config.isSilent();
         initCommands();
@@ -287,31 +300,26 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
             this.cmdCompleter = null;
             this.operationCandidatesProvider = null;
         }
+
+        addShutdownHook();
+        CliLauncher.runcom(this);
     }
 
-    CommandContextImpl(String defaultControllerHost, int defaultControllerPort,
-            String username, char[] password,
+    CommandContextImpl(String defaultController,
+            String username, char[] password, boolean disableLocalAuth,
             InputStream consoleInput, OutputStream consoleOutput)
             throws CliInitializationException {
 
         config = CliConfigImpl.load(this);
+        addressResolver = ControllerAddressResolver.newInstance(config, defaultController);
 
         operationHandler = new OperationRequestHandler();
 
         this.username = username;
         this.password = password;
+        this.disableLocalAuth = disableLocalAuth;
         this.connectionTimeout = config.getConnectionTimeout();
 
-        if (defaultControllerHost != null) {
-            this.defaultControllerHost = defaultControllerHost;
-        } else {
-            this.defaultControllerHost = config.getDefaultControllerHost();
-        }
-        if (defaultControllerPort != -1) {
-            this.defaultControllerPort = defaultControllerPort;
-        } else {
-            this.defaultControllerPort = config.getDefaultControllerPort();
-        }
         resolveParameterValues = config.isResolveParameterValues();
         silent = config.isSilent();
         initCommands();
@@ -322,6 +330,18 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         initBasicConsole(consoleInput, consoleOutput);
         console.addCompleter(cmdCompleter);
         this.operationCandidatesProvider = new DefaultOperationCandidatesProvider();
+
+        addShutdownHook();
+        CliLauncher.runcom(this);
+    }
+
+    protected void addShutdownHook() {
+        shutdownHook = new CliShutdownHook.Handler() {
+            @Override
+            public void shutdown() {
+                terminateSession();
+            }};
+        CliShutdownHook.add(shutdownHook);
     }
 
     protected void initBasicConsole(InputStream consoleInput, OutputStream consoleOutput) throws CliInitializationException {
@@ -358,6 +378,11 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         cmdRegistry.registerHandler(new ReloadHandler(this), "reload");
         cmdRegistry.registerHandler(new ShutdownHandler(this), "shutdown");
         cmdRegistry.registerHandler(new VersionHandler(), "version");
+
+        // variables
+        cmdRegistry.registerHandler(new SetVariableHandler(), "set");
+        cmdRegistry.registerHandler(new EchoVariableHandler(), "echo");
+        cmdRegistry.registerHandler(new UnsetVariableHandler(), "unset");
 
         // deployment
         cmdRegistry.registerHandler(new DeployHandler(this), "deploy");
@@ -417,6 +442,15 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
 
         // supported but hidden from tab-completion until stable implementation
         cmdRegistry.registerHandler(new ArchiveHandler(this), false, "archive");
+
+        registerExtraHandlers();
+    }
+
+    private void registerExtraHandlers() {
+        ServiceLoader<CommandHandlerProvider> loader = ServiceLoader.load(CommandHandlerProvider.class);
+        for (CommandHandlerProvider provider : loader) {
+            cmdRegistry.registerHandler(provider.createCommandHandler(this), provider.isTabComplete(), provider.getNames());
+        }
     }
 
     public int getExitCode() {
@@ -431,8 +465,8 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
      */
     private void initSSLContext() throws CliInitializationException {
         // If the standard properties have been set don't enable and CLI specific stores.
-        if (SecurityActions.getSystemProperty("javax.net.ssl.keyStore") != null
-                || SecurityActions.getSystemProperty("javax.net.ssl.trustStore") != null) {
+        if (WildFlySecurityManager.getPropertyPrivileged("javax.net.ssl.keyStore", null) != null
+                || WildFlySecurityManager.getPropertyPrivileged("javax.net.ssl.trustStore", null) != null) {
             return;
         }
 
@@ -488,7 +522,7 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         }
 
         if (trustStore == null) {
-            final String userHome = SecurityActions.getSystemProperty("user.home");
+            final String userHome = WildFlySecurityManager.getPropertyPrivileged("user.home", null);
             File trustStoreFile = new File(userHome, ".jboss-cli.truststore");
             trustStore = trustStoreFile.getAbsolutePath();
             trustStorePassword = "cli_truststore"; // Risk of modification but no private keys to be stored in the truststore.
@@ -551,7 +585,6 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
                     DefaultBatchedCommand batchedCmd = new DefaultBatchedCommand(op.toString(), request);
                     Batch batch = getBatchManager().getActiveBatch();
                     batch.add(batchedCmd);
-                    printLine("#" + batch.size() + " " + batchedCmd.getCommand());
                 } else {
                     set("OP_REQ", request);
                     try {
@@ -573,7 +606,6 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
                                 BatchedCommand batchedCmd = new DefaultBatchedCommand(line, request);
                                 Batch batch = getBatchManager().getActiveBatch();
                                 batch.add(batchedCmd);
-                                printLine("#" + batch.size() + " " + batchedCmd.getCommand());
                             } catch (CommandFormatException e) {
                                 throw new CommandFormatException("Failed to add to batch '" + line + "'", e);
                             }
@@ -585,6 +617,10 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
                     throw new CommandLineException("Unexpected command '" + line + "'. Type 'help --commands' for the list of supported commands.");
                 }
             }
+        } catch(CommandLineException e) {
+            throw e;
+        } catch(Throwable t) {
+            throw new CommandLineException("Failed to handle '" + line + "'", t);
         } finally {
             // so that getArgumentsString() doesn't return this line
             // during the tab-completion of the next command
@@ -596,13 +632,17 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         exitCode = 0;
         try {
             handle(line);
-        } catch (CommandLineException e) {
+        } catch(Throwable t) {
             final StringBuilder buf = new StringBuilder();
-            buf.append(e.getLocalizedMessage());
-            Throwable t = e.getCause();
-            while(t != null) {
-                buf.append(": ").append(t.getLocalizedMessage());
-                t = t.getCause();
+            buf.append(t.getLocalizedMessage());
+            Throwable t1 = t.getCause();
+            while(t1 != null) {
+                if(t1.getLocalizedMessage() != null) {
+                    buf.append(": ").append(t1.getLocalizedMessage());
+                } else {
+                    t1.printStackTrace();
+                }
+                t1 = t1.getCause();
             }
             error(buf.toString());
         }
@@ -627,8 +667,13 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
 
     @Override
     public void terminateSession() {
-        terminate = true;
-        disconnectController();
+        if(!terminate) {
+            terminate = true;
+            disconnectController();
+            if (shutdownHook != null) {
+                CliShutdownHook.remove(shutdownHook);
+            }
+        }
     }
 
     @Override
@@ -763,55 +808,83 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
 
     @Override
     public void connectController() throws CommandLineException {
-        connectController(null, -1);
+        connectController(null);
     }
 
     @Override
-    public void connectController(String host, int port) throws CommandLineException {
-        if (host == null) {
-            host = defaultControllerHost;
-        }
+    public void connectController(String controller) throws CommandLineException {
+        ControllerAddress address = addressResolver.resolveAddress(controller);
 
-        if (port < 0) {
-            port = defaultControllerPort;
-        }
-
+        // In case the alias mappings cause us to enter some form of loop or a badly
+        // configured server does the same,
+        Set<ControllerAddress> visited = new HashSet<ControllerAddress>();
+        visited.add(address);
         boolean retry;
         do {
-            retry = false;
             try {
-                ModelControllerClient newClient = null;
                 CallbackHandler cbh = new AuthenticationCallbackHandler(username, password);
-                if(log.isDebugEnabled()) {
-                    log.debug("connecting to " + host + ':' + port + " as " + username);
+                if (log.isDebugEnabled()) {
+                    log.debug("connecting to " + address.getHost() + ':' + address.getPort() + " as " + username);
                 }
-                ModelControllerClient tempClient = ModelControllerClientFactory.CUSTOM.
-                        getClient(host, port, cbh, sslContext, connectionTimeout, this);
-                retry = tryConnection(tempClient, host, port);
-                if(!retry) {
-                    newClient = tempClient;
+                ModelControllerClient tempClient = ModelControllerClientFactory.CUSTOM.getClient(address, cbh,
+                        disableLocalAuth, sslContext, connectionTimeout, this, timeoutHandler);
+                retry = false;
+                tryConnection(tempClient, address);
+                initNewClient(tempClient, address);
+            } catch (RedirectException re) {
+                try {
+                    URI location = new URI(re.getLocation());
+                    if ("http-remoting".equals(address.getProtocol()) && "https".equals(location.getScheme())) {
+                        int port = location.getPort();
+                        if (port < 0) {
+                            port = 443;
+                        }
+                        address = addressResolver.resolveAddress(new URI("https-remoting", null, location.getHost(), port,
+                                null, null, null).toString());
+                        if (visited.add(address) == false) {
+                            throw new CommandLineException("Redirect to address already tried encountered Address="
+                                    + address.toString());
+                        }
+                        retry = true;
+                    } else if (address.getHost().equals(location.getHost()) && address.getPort() == location.getPort()
+                            && location.getPath() != null && location.getPath().length() > 1) {
+                        throw new CommandLineException("Server at " + address.getHost() + ":" + address.getPort()
+                                + " does not support " + address.getProtocol());
+                    } else {
+                        throw new CommandLineException("Unsupported redirect received.", re);
+                    }
+                } catch (URISyntaxException e) {
+                    throw new CommandLineException("Bad redirect location '" + re.getLocation() + "' received.", e);
                 }
-                initNewClient(newClient, host, port);
             } catch (IOException e) {
-                throw new CommandLineException("Failed to resolve host '" + host + "': " + e.getLocalizedMessage());
+                throw new CommandLineException("Failed to resolve host '" + address.getHost() + "'", e);
             }
         } while (retry);
     }
 
     @Override
-    public void bindClient(ModelControllerClient newClient) {
-        initNewClient(newClient, null, -1);
+    @Deprecated
+    public void connectController(String host, int port) throws CommandLineException {
+        try {
+            connectController(new URI(null, null, host, port, null, null, null).toString().substring(2));
+        } catch (URISyntaxException e) {
+            throw new CommandLineException("Unable to construct URI for connection.", e);
+        }
     }
 
-    private void initNewClient(ModelControllerClient newClient, String host, int port) {
+    @Override
+    public void bindClient(ModelControllerClient newClient) {
+        initNewClient(newClient, null);
+    }
+
+    private void initNewClient(ModelControllerClient newClient, ControllerAddress address) {
         if (newClient != null) {
             if (this.client != null) {
                 disconnectController();
             }
 
             client = newClient;
-            this.controllerHost = host;
-            this.controllerPort = port;
+            this.currentAddress = address;
 
             List<String> nodeTypes = Util.getNodeTypes(newClient, new DefaultOperationRequestAddress());
             domainMode = nodeTypes.contains(Util.SERVER_GROUP);
@@ -834,13 +907,9 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
     /**
      * Handle the last SSL failure, prompting the user to accept or reject the certificate of the remote server.
      *
-     * @return true if the connection should be retried.
+     * @return true if the certificate validation should be retried.
      */
-    private boolean handleSSLFailure() throws CommandLineException {
-        Certificate[] lastChain;
-        if (trustManager == null || (lastChain = trustManager.getLastFailedCertificateChain()) == null) {
-            return false;
-        }
+    private boolean handleSSLFailure(Certificate[] lastChain) throws CommandLineException {
         error("Unable to connect due to unrecognised server certificate");
         for (Certificate current : lastChain) {
             if (current instanceof X509Certificate) {
@@ -877,7 +946,6 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
                             trustManager.storeChainPermenantly(lastChain);
                             return true;
                         }
-
                 }
             }
         }
@@ -920,7 +988,7 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
     /**
      * Used to make a call to the server to verify that it is possible to connect.
      */
-    private boolean tryConnection(final ModelControllerClient client, String host, int port) throws CommandLineException {
+    private void tryConnection(final ModelControllerClient client, ControllerAddress address) throws CommandLineException, RedirectException {
         try {
             DefaultOperationRequestBuilder builder = new DefaultOperationRequestBuilder();
             builder.setOperationName(Util.READ_ATTRIBUTE);
@@ -929,26 +997,27 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
             client.execute(builder.buildRequest());
             // We don't actually care what the response is we just want to be sure the ModelControllerClient
             // does not throw an Exception.
-            return false;
         } catch (Exception e) {
             try {
                 Throwable current = e;
                 while (current != null) {
                     if (current instanceof SaslException) {
-                        throw new CommandLineException("Unable to authenticate against controller at " + host + ":" + port, current);
+                        throw new CommandLineException("Unable to authenticate against controller at " + address.getHost() + ":" + address.getPort(), current);
                     }
                     if (current instanceof SSLException) {
-                        if (!handleSSLFailure()) {
-                            throw new CommandLineException("Unable to negotiate SSL connection with controller at " + host + ":" + port);
-                        } else {
-                            return true;
-                        }
+                        throw new CommandLineException("Unable to negotiate SSL connection with controller at "+ address.getHost() + ":" + address.getPort());
+                    }
+                    if (current instanceof RedirectException) {
+                        throw (RedirectException) current;
+                    }
+                    if (current instanceof CommandLineException) {
+                        throw (CommandLineException) current;
                     }
                     current = current.getCause();
                 }
 
                 // We don't know what happened, most likely a timeout.
-                throw new CommandLineException("The controller is not available at " + host + ":" + port, e);
+                throw new CommandLineException("The controller is not available at " + address.getHost() + ":" + address.getPort(), e);
             } finally {
                 StreamUtils.safeClose(client);
             }
@@ -964,8 +1033,7 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
             // this.controllerPort);
             // }
             client = null;
-            this.controllerHost = null;
-            this.controllerPort = -1;
+            this.currentAddress = null;
             domainMode = false;
             notifyListeners(CliEvent.DISCONNECTED);
         }
@@ -973,13 +1041,30 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
     }
 
     @Override
+    @Deprecated
+    public String getDefaultControllerHost() {
+        return config.getDefaultControllerHost();
+    }
+
+    @Override
+    @Deprecated
+    public int getDefaultControllerPort() {
+        return config.getDefaultControllerPort();
+    }
+
+    @Override
+    public ControllerAddress getDefaultControllerAddress() {
+        return config.getDefaultControllerAddress();
+    }
+
+    @Override
     public String getControllerHost() {
-        return controllerHost;
+        return currentAddress != null ? currentAddress.getHost() : null;
     }
 
     @Override
     public int getControllerPort() {
-        return controllerPort;
+        return currentAddress != null ? currentAddress.getPort() : -1;
     }
 
     @Override
@@ -998,13 +1083,14 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         StringBuilder buffer = new StringBuilder();
         if (promptConnectPart == null) {
             buffer.append('[');
+            String controllerHost = getControllerHost();
             if (controllerHost != null) {
                 if (domainMode) {
                     buffer.append("domain@");
                 } else {
                     buffer.append("standalone@");
                 }
-                buffer.append(controllerHost).append(':').append(controllerPort).append(' ');
+                buffer.append(controllerHost).append(':').append(getControllerPort()).append(' ');
                 promptConnectPart = buffer.toString();
             } else {
                 buffer.append("disconnected ");
@@ -1042,19 +1128,9 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         return console.getHistory();
     }
 
-    @Override
-    public String getDefaultControllerHost() {
-        return defaultControllerHost;
-    }
-
-    @Override
-    public int getDefaultControllerPort() {
-        return defaultControllerPort;
-    }
-
     private void resetArgs(String cmdLine) throws CommandFormatException {
         if (cmdLine != null) {
-            parsedCmd.parse(prefix, cmdLine);
+            parsedCmd.parse(prefix, cmdLine, this);
             setOutputTarget(parsedCmd.getOutputTarget());
         }
         this.cmdLine = cmdLine;
@@ -1211,7 +1287,7 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
                 printLine("");
                 printLine("The connection to the controller has been closed as the result of the shutdown operation.");
                 printLine("(Although the command prompt will wrongly indicate connection until the next line is entered)");
-            }
+            } // else maybe still notify the listeners that the connection has been closed
         }
     }
 
@@ -1251,6 +1327,44 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         return console.getTerminalHeight();
     }
 
+    @Override
+    public void setVariable(String name, String value) throws CommandLineException {
+        if(name == null || name.isEmpty()) {
+            throw new CommandLineException("Variable name can't be null or an empty string");
+        }
+        if(!Character.isJavaIdentifierStart(name.charAt(0))) {
+            throw new CommandLineException("Variable name must be a valid Java identifier (and not contain '$'): '" + name + "'");
+        }
+        for(int i = 1; i < name.length(); ++i) {
+            final char c = name.charAt(i);
+            if(!Character.isJavaIdentifierPart(c) || c == '$') {
+                throw new CommandLineException("Variable name must be a valid Java identifier (and not contain '$'): '" + name + "'");
+            }
+        }
+
+        if(value == null) {
+            if(variables == null) {
+                return;
+            }
+            variables.remove(name);
+        } else {
+            if(variables == null) {
+                variables = new HashMap<String,String>();
+            }
+            variables.put(name, value);
+        }
+    }
+
+    @Override
+    public String getVariable(String name) {
+        return variables == null ? null : variables.get(name);
+    }
+
+    @Override
+    public Collection<String> getVariables() {
+        return variables == null ? Collections.<String>emptySet() : variables.keySet();
+    }
+
     private class AuthenticationCallbackHandler implements CallbackHandler {
 
         // After the CLI has connected the physical connection may be re-established numerous times.
@@ -1276,7 +1390,35 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
             this.digest = digest;
         }
 
-        public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+        @Override
+        public void handle(final Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+            try {
+                timeoutHandler.suspendAndExecute(new Runnable() {
+
+                    @Override
+                    public void run() {
+
+                        try {
+                            dohandle(callbacks);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        } catch (UnsupportedCallbackException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                });
+            } catch (RuntimeException e) {
+                if (e.getCause() instanceof IOException) {
+                    throw (IOException) e.getCause();
+                } else if (e.getCause() instanceof UnsupportedCallbackException) {
+                    throw (UnsupportedCallbackException) e.getCause();
+                }
+                throw e;
+            }
+
+        }
+
+        private void dohandle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
             // Special case for anonymous authentication to avoid prompting user for their name.
             if (callbacks.length == 1 && callbacks[0] instanceof NameCallback) {
                 ((NameCallback) callbacks[0]).setName("anonymous CLI user");
@@ -1342,9 +1484,9 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
 
     /**
      * A trust manager that by default delegates to a lazily initialised TrustManager, this TrustManager also support both
-     * temporarily and permenantly accepting unknown server certificate chains.
+     * temporarily and permanently accepting unknown server certificate chains.
      *
-     * This class also acts as an agregation of the configuration related to TrustStore handling.
+     * This class also acts as an aggregation of the configuration related to TrustStore handling.
      *
      * It is not intended that Certificate management requests occur if this class is registered to a SSLContext
      * with multiple concurrent clients.
@@ -1358,7 +1500,6 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         private final boolean modifyTrustStore;
 
         private Set<X509Certificate> temporarilyTrusted = new HashSet<X509Certificate>();
-        private Certificate[] lastFailedCert;
         private X509TrustManager delegate;
 
         LazyDelagatingTrustManager(String trustStore, String trustStorePassword, boolean modifyTrustStore) {
@@ -1373,19 +1514,6 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
 
         boolean isModifyTrustStore() {
             return modifyTrustStore;
-        }
-
-        void setFailedCertChain(final Certificate[] chain) {
-            this.lastFailedCert = chain;
-        }
-
-        Certificate[] getLastFailedCertificateChain() {
-            try {
-                return lastFailedCert;
-            } finally {
-                // Only one chance to accept it.
-                lastFailedCert = null;
-            }
         }
 
         synchronized void storeChainTemporarily(final Certificate[] chain) {
@@ -1487,13 +1615,36 @@ class CommandContextImpl implements CommandContext, ModelControllerClientFactory
         }
 
         @Override
-        public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
-            try {
-                getDelegate().checkServerTrusted(chain, authType);
-            } catch (CertificateException ce) {
-                setFailedCertChain(chain);
-                throw ce;
-            }
+        public void checkServerTrusted(final X509Certificate[] chain, String authType) throws CertificateException {
+            boolean retry;
+            do {
+                retry = false;
+                try {
+                    getDelegate().checkServerTrusted(chain, authType);
+                } catch (CertificateException ce) {
+                    if (retry == false) {
+                        timeoutHandler.suspendAndExecute(new Runnable() {
+
+                            @Override
+                            public void run() {
+                                try {
+                                    handleSSLFailure(chain);
+                                } catch (CommandLineException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                        });
+
+                        if (delegate == null) {
+                            retry = true;
+                        } else {
+                            throw ce;
+                        }
+                    } else {
+                        throw ce;
+                    }
+                }
+            } while (retry);
         }
 
         @Override

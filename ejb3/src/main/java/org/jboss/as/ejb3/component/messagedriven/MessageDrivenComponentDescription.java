@@ -23,7 +23,6 @@ package org.jboss.as.ejb3.component.messagedriven;
 
 
 import java.util.Properties;
-import java.util.Set;
 
 import javax.ejb.MessageDrivenBean;
 import javax.ejb.TransactionManagementType;
@@ -69,14 +68,13 @@ import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceName;
 
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
-
 /**
  * @author <a href="mailto:cdewolf@redhat.com">Carlo de Wolf</a>
  */
 public class MessageDrivenComponentDescription extends EJBComponentDescription {
     private final Properties activationProps;
     private String resourceAdapterName;
+    private boolean deliveryActive;
 
     private String mdbPoolConfigName;
     private final String messageListenerInterfaceName;
@@ -100,6 +98,7 @@ public class MessageDrivenComponentDescription extends EJBComponentDescription {
             throw EjbMessages.MESSAGES.stringParamCannotBeNullOrEmpty("Default resource adapter name");
         }
         this.resourceAdapterName = defaultResourceAdapterName;
+        this.deliveryActive = true;
         this.activationProps = activationProps;
 
         this.messageListenerInterfaceName = messageListenerInterfaceName;
@@ -173,6 +172,14 @@ public class MessageDrivenComponentDescription extends EJBComponentDescription {
 
     public Properties getActivationProps() {
         return activationProps;
+    }
+
+    public boolean isDeliveryActive() {
+        return deliveryActive;
+    }
+
+    public void setDeliveryActive(boolean deliveryActive) {
+        this.deliveryActive = deliveryActive;
     }
 
     public String getResourceAdapterName() {
@@ -306,25 +313,10 @@ public class MessageDrivenComponentDescription extends EJBComponentDescription {
 
         @Override
         public void configureDependency(ServiceBuilder<?> serviceBuilder, MessageDrivenComponentCreateService service) throws DeploymentUnitProcessingException {
-            final String suffixStrippedRaName = this.stripDotRarSuffix(MessageDrivenComponentDescription.this.resourceAdapterName);
-            final Set<ServiceName> raServiceNames = ConnectorServices.getResourceAdapterServiceNames(suffixStrippedRaName);
-            if (raServiceNames == null || raServiceNames.isEmpty()) {
-                throw MESSAGES.failToFindResourceAdapter(suffixStrippedRaName);
-            }
-            final ServiceName raServiceName = raServiceNames.iterator().next();
+            final ServiceName raServiceName =
+                ConnectorServices.getResourceAdapterServiceName(MessageDrivenComponentDescription.this.resourceAdapterName);
             // add the dependency on the RA service
             serviceBuilder.addDependency(raServiceName, ResourceAdapter.class, service.getResourceAdapterInjector());
-        }
-
-        private String stripDotRarSuffix(final String raName) {
-            if (raName == null) {
-                return null;
-            }
-            // See RaDeploymentParsingProcessor
-            if (raName.endsWith(".rar")) {
-                return raName.substring(0, raName.indexOf(".rar"));
-            }
-            return raName;
         }
     }
 

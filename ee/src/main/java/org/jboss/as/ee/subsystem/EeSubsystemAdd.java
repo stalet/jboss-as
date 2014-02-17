@@ -31,6 +31,7 @@ import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.ee.beanvalidation.BeanValidationFactoryDeployer;
+import org.jboss.as.ee.component.ReflectiveClassIntrospector;
 import org.jboss.as.ee.component.deployers.ApplicationClassesAggregationProcessor;
 import org.jboss.as.ee.component.deployers.AroundInvokeAnnotationParsingProcessor;
 import org.jboss.as.ee.component.deployers.ComponentInstallProcessor;
@@ -38,12 +39,15 @@ import org.jboss.as.ee.component.deployers.DefaultEarSubDeploymentsIsolationProc
 import org.jboss.as.ee.component.deployers.DescriptorEnvironmentLifecycleMethodProcessor;
 import org.jboss.as.ee.component.deployers.EEAnnotationProcessor;
 import org.jboss.as.ee.component.deployers.EECleanUpProcessor;
+import org.jboss.as.ee.component.deployers.EEDefaultPermissionsProcessor;
 import org.jboss.as.ee.component.deployers.EEDistinctNameProcessor;
 import org.jboss.as.ee.component.deployers.EEModuleConfigurationProcessor;
 import org.jboss.as.ee.component.deployers.EEModuleInitialProcessor;
 import org.jboss.as.ee.component.deployers.EEModuleNameProcessor;
 import org.jboss.as.ee.component.deployers.EarApplicationNameProcessor;
 import org.jboss.as.ee.component.deployers.EarMessageDestinationProcessor;
+import org.jboss.as.ee.concurrent.deployers.EEConcurrentDefaultBindingProcessor;
+import org.jboss.as.ee.concurrent.deployers.EEConcurrentContextProcessor;
 import org.jboss.as.ee.naming.InApplicationClientBindingProcessor;
 import org.jboss.as.ee.component.deployers.InterceptorAnnotationProcessor;
 import org.jboss.as.ee.component.deployers.LifecycleAnnotationParsingProcessor;
@@ -65,6 +69,7 @@ import org.jboss.as.ee.metadata.property.SystemPropertyResolverProcessor;
 import org.jboss.as.ee.metadata.property.VaultPropertyResolverProcessor;
 import org.jboss.as.ee.naming.ApplicationContextProcessor;
 import org.jboss.as.ee.naming.ModuleContextProcessor;
+import org.jboss.as.ee.structure.AnnotationPropertyReplacementProcessor;
 import org.jboss.as.ee.structure.ApplicationClientDeploymentProcessor;
 import org.jboss.as.ee.structure.ComponentAggregationProcessor;
 import org.jboss.as.ee.structure.EJBClientDescriptorParsingProcessor;
@@ -98,14 +103,16 @@ public class EeSubsystemAdd extends AbstractBoottimeAddStepHandler {
     private final GlobalModuleDependencyProcessor moduleDependencyProcessor;
     private final DescriptorPropertyReplacementProcessor specDescriptorPropertyReplacementProcessor;
     private final DescriptorPropertyReplacementProcessor jbossDescriptorPropertyReplacementProcessor;
+    private final AnnotationPropertyReplacementProcessor ejbAnnotationPropertyReplacementProcessor;
 
 
     public EeSubsystemAdd(final DefaultEarSubDeploymentsIsolationProcessor isolationProcessor,
-                          final GlobalModuleDependencyProcessor moduleDependencyProcessor, final DescriptorPropertyReplacementProcessor specDescriptorPropertyReplacementProcessor, final DescriptorPropertyReplacementProcessor jbossDescriptorPropertyReplacementProcessor) {
+                          final GlobalModuleDependencyProcessor moduleDependencyProcessor, final DescriptorPropertyReplacementProcessor specDescriptorPropertyReplacementProcessor, final DescriptorPropertyReplacementProcessor jbossDescriptorPropertyReplacementProcessor, final AnnotationPropertyReplacementProcessor ejbAnnotationPropertyReplacementProcessor) {
         this.isolationProcessor = isolationProcessor;
         this.moduleDependencyProcessor = moduleDependencyProcessor;
         this.specDescriptorPropertyReplacementProcessor = specDescriptorPropertyReplacementProcessor;
         this.jbossDescriptorPropertyReplacementProcessor = jbossDescriptorPropertyReplacementProcessor;
+        this.ejbAnnotationPropertyReplacementProcessor = ejbAnnotationPropertyReplacementProcessor;
     }
 
     protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
@@ -131,11 +138,13 @@ public class EeSubsystemAdd extends AbstractBoottimeAddStepHandler {
         final boolean earSubDeploymentsIsolated = EeSubsystemRootResource.EAR_SUBDEPLOYMENTS_ISOLATED.resolveModelAttribute(context, model).asBoolean();
         final boolean specDescriptorPropertyReplacement = EeSubsystemRootResource.SPEC_DESCRIPTOR_PROPERTY_REPLACEMENT.resolveModelAttribute(context, model).asBoolean();
         final boolean jbossDescriptorPropertyReplacement = EeSubsystemRootResource.JBOSS_DESCRIPTOR_PROPERTY_REPLACEMENT.resolveModelAttribute(context, model).asBoolean();
+        final boolean ejbAnnotationPropertyReplacement = EeSubsystemRootResource.ANNOTATION_PROPERTY_REPLACEMENT.resolveModelAttribute(context, model).asBoolean();
 
         moduleDependencyProcessor.setGlobalModules(GlobalModulesDefinition.createModuleList(context, globalModules));
         isolationProcessor.setEarSubDeploymentsIsolated(earSubDeploymentsIsolated);
         specDescriptorPropertyReplacementProcessor.setDescriptorPropertyReplacement(specDescriptorPropertyReplacement);
         jbossDescriptorPropertyReplacementProcessor.setDescriptorPropertyReplacement(jbossDescriptorPropertyReplacement);
+        ejbAnnotationPropertyReplacementProcessor.setDescriptorPropertyReplacement(ejbAnnotationPropertyReplacement);
 
         context.addStep(new AbstractDeploymentChainStep() {
             protected void execute(DeploymentProcessorTarget processorTarget) {
@@ -147,9 +156,10 @@ public class EeSubsystemAdd extends AbstractBoottimeAddStepHandler {
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_EE_VAULT_PROPERTY_RESOLVER, new VaultPropertyResolverProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_EE_SYSTEM_PROPERTY_RESOLVER, new SystemPropertyResolverProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_EE_PROPERTY_RESOLVER, new PropertyResolverProcessor());
-                processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_REGISTER_JBOSS_ALL_XML_PARSER, new JBossAllXmlParserRegisteringProcessor<JBossAppMetaData>(AppJBossAllParser.ROOT_ELEMENT, AppJBossAllParser.ATTACHMENT_KEY, new AppJBossAllParser()));
+                processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_REGISTER_JBOSS_ALL_EE_APP, new JBossAllXmlParserRegisteringProcessor<JBossAppMetaData>(AppJBossAllParser.ROOT_ELEMENT, AppJBossAllParser.ATTACHMENT_KEY, new AppJBossAllParser()));
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_EE_SPEC_DESC_PROPERTY_REPLACEMENT, specDescriptorPropertyReplacementProcessor);
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_EE_JBOSS_DESC_PROPERTY_REPLACEMENT, jbossDescriptorPropertyReplacementProcessor);
+                processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_EE_EJB_ANNOTATION_PROPERTY_REPLACEMENT, ejbAnnotationPropertyReplacementProcessor);
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_EAR_DEPLOYMENT_INIT, new EarInitializationProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_EAR_APP_XML_PARSE, new EarMetaDataParsingProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_JBOSS_EJB_CLIENT_XML_PARSE, new EJBClientDescriptorParsingProcessor());
@@ -173,7 +183,7 @@ public class EeSubsystemAdd extends AbstractBoottimeAddStepHandler {
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_MANAGED_BEAN_ANNOTATION, new ManagedBeanAnnotationProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_DESCRIPTOR_LIFECYCLE_METHOD_RESOLUTION, new DescriptorEnvironmentLifecycleMethodProcessor());
 
-
+                processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_EE_PERMISSIONS, new EEDefaultPermissionsProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_MANAGED_BEAN, new JavaEEDependencyProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_EE_CLASS_DESCRIPTIONS, new ApplicationClassesAggregationProcessor());
 
@@ -187,9 +197,12 @@ public class EeSubsystemAdd extends AbstractBoottimeAddStepHandler {
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_IN_APP_CLIENT, new InApplicationClientBindingProcessor(appclient));
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EE_INSTANCE_NAME, new InstanceNameBindingProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_APP_NAMING_CONTEXT, new ApplicationContextProcessor());
+                processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EE_CONCURRENT_CONTEXT, new EEConcurrentContextProcessor());
 
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_RESOLVE_MESSAGE_DESTINATIONS, new MessageDestinationResolutionProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_COMPONENT_AGGREGATION, new ComponentAggregationProcessor());
+                processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_DEFAULT_BINDINGS_EE_CONCURRENCY, new EEConcurrentDefaultBindingProcessor());
+
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_MODULE_JNDI_BINDINGS, new ModuleJndiBindingProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_EE_MODULE_CONFIG, new EEModuleConfigurationProcessor());
                 processorTarget.addDeploymentProcessor(EeExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_EE_COMPONENT, new ComponentInstallProcessor());
@@ -198,6 +211,8 @@ public class EeSubsystemAdd extends AbstractBoottimeAddStepHandler {
 
             }
         }, OperationContext.Stage.RUNTIME);
+
+        newControllers.add(context.getServiceTarget().addService(ReflectiveClassIntrospector.SERVICE_NAME, new ReflectiveClassIntrospector()).addListener(verificationHandler).install());
 
     }
 

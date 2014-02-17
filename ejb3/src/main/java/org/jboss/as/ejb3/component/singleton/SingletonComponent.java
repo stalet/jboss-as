@@ -24,10 +24,8 @@ package org.jboss.as.ejb3.component.singleton;
 
 import java.lang.reflect.Method;
 import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import javax.ejb.LockType;
 
@@ -39,10 +37,8 @@ import org.jboss.as.ejb3.component.allowedmethods.AllowedMethodsInformation;
 import org.jboss.as.ejb3.component.session.SessionBeanComponent;
 import org.jboss.as.ejb3.concurrency.AccessTimeoutDetails;
 import org.jboss.as.ejb3.concurrency.LockableComponent;
-import org.jboss.as.naming.ManagedReference;
 import org.jboss.as.server.CurrentServiceContainer;
 import org.jboss.invocation.Interceptor;
-import org.jboss.invocation.InterceptorFactoryContext;
 import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
@@ -96,7 +92,7 @@ public class SingletonComponent extends SessionBeanComponent implements Lockable
     }
 
     @Override
-    protected BasicComponentInstance instantiateComponentInstance(AtomicReference<ManagedReference> instanceReference, Interceptor preDestroyInterceptor, Map<Method, Interceptor> methodInterceptors, final InterceptorFactoryContext interceptorContext) {
+    protected BasicComponentInstance instantiateComponentInstance(Interceptor preDestroyInterceptor, Map<Method, Interceptor> methodInterceptors, Map<Object, Object> context) {
         // synchronized from getComponentInstance
         assert Thread.holdsLock(creationLock);
 
@@ -109,7 +105,7 @@ public class SingletonComponent extends SessionBeanComponent implements Lockable
                 }
             }
         }
-        return new SingletonComponentInstance(this, instanceReference, preDestroyInterceptor, methodInterceptors);
+        return new SingletonComponentInstance(this, preDestroyInterceptor, methodInterceptors);
     }
 
     /**
@@ -200,11 +196,9 @@ public class SingletonComponent extends SessionBeanComponent implements Lockable
     }
 
     private static ServiceContainer currentServiceContainer() {
-        return AccessController.doPrivileged(new PrivilegedAction<ServiceContainer>() {
-            @Override
-            public ServiceContainer run() {
-                return CurrentServiceContainer.getServiceContainer();
-            }
-        });
+        if(System.getSecurityManager() == null) {
+            return CurrentServiceContainer.getServiceContainer();
+        }
+        return AccessController.doPrivileged(CurrentServiceContainer.GET_ACTION);
     }
 }

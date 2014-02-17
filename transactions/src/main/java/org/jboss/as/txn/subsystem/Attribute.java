@@ -42,10 +42,12 @@ enum Attribute {
     DEFAULT_TIMEOUT("default-timeout"),
     RECOVERY_LISTENER("recovery-listener"),
     RELATIVE_TO("relative-to"),
+    STATISTICS_ENABLED("statistics-enabled"),
     PATH("path"),
     DATASOURCE_JNDI_NAME("datasource-jndi-name"),
     TABLE_PREFIX("table-prefix"),
     DROP_TABLE("drop-table"),
+    ENABLE_ASYNC_IO("enable-async-io"),
     ;
     private final String name;
 

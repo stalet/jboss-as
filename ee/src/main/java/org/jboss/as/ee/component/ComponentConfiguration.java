@@ -22,6 +22,8 @@
 
 package org.jboss.as.ee.component;
 
+import static org.jboss.as.ee.EeMessages.MESSAGES;
+
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -33,13 +35,12 @@ import java.util.Map;
 import java.util.Set;
 
 import org.jboss.as.ee.component.interceptors.OrderedItemContainer;
+import org.jboss.as.ee.concurrent.ConcurrentContext;
 import org.jboss.as.naming.context.NamespaceContextSelector;
 import org.jboss.as.server.deployment.reflect.ClassIndex;
 import org.jboss.invocation.InterceptorFactory;
 import org.jboss.modules.ModuleLoader;
 import org.jboss.msc.service.Service;
-
-import static org.jboss.as.ee.EeMessages.MESSAGES;
 
 /**
  * The construction parameter set passed in to an abstract component.
@@ -59,9 +60,12 @@ public class ComponentConfiguration {
     private final ModuleLoader moduleLoader;
     private final ClassLoader moduleClassLoader;
 
+    private final ConcurrentContext concurrentContext;
+
     private ComponentCreateServiceFactory componentCreateServiceFactory = ComponentCreateServiceFactory.BASIC;
 
     // Interceptor config
+    private final OrderedItemContainer<InterceptorFactory> aroundConstructInterceptors = new OrderedItemContainer<InterceptorFactory>();
     private final OrderedItemContainer<InterceptorFactory> postConstructInterceptors = new OrderedItemContainer<InterceptorFactory>();
     private final OrderedItemContainer<InterceptorFactory> preDestroyInterceptors = new OrderedItemContainer<InterceptorFactory>();
     private final OrderedItemContainer<InterceptorFactory> prePassivateInterceptors = new OrderedItemContainer<InterceptorFactory>();
@@ -91,6 +95,7 @@ public class ComponentConfiguration {
         this.classIndex = classIndex;
         this.moduleClassLoader = moduleClassLoader;
         this.moduleLoader = moduleLoader;
+        this.concurrentContext = new ConcurrentContext();
     }
 
     /**
@@ -255,6 +260,27 @@ public class ComponentConfiguration {
      */
     public List<ViewConfiguration> getViews() {
         return views;
+    }
+
+    /**
+     * Get the around-construct interceptors.
+     * <p/>
+     * This method should only be called after all interceptors have been added
+     *
+     * @return the sorted interceptors
+     */
+    public List<InterceptorFactory> getAroundConstructInterceptors() {
+        return aroundConstructInterceptors.getSortedItems();
+    }
+
+    /**
+     * Adds an around-construct interceptor
+     *
+     * @param interceptorFactory The interceptor to add
+     * @param priority           The priority
+     */
+    public void addAroundConstructInterceptor(InterceptorFactory interceptorFactory, int priority) {
+        aroundConstructInterceptors.add(interceptorFactory, priority);
     }
 
     /**
@@ -435,5 +461,9 @@ public class ComponentConfiguration {
 
     public Set<Object> getInterceptorContextKeys() {
         return interceptorContextKeys;
+    }
+
+    public ConcurrentContext getConcurrentContext() {
+        return concurrentContext;
     }
 }

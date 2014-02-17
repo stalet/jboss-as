@@ -22,6 +22,8 @@
 
 package org.jboss.as.ejb3.subsystem;
 
+import java.util.Map;
+
 import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
@@ -29,6 +31,7 @@ import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.SubsystemRegistration;
+import org.jboss.as.controller.access.management.SensitiveTargetAccessConstraintDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
 import org.jboss.as.controller.operations.validation.LongRangeValidator;
@@ -44,6 +47,7 @@ import org.jboss.as.controller.transform.description.ResourceTransformationDescr
 import org.jboss.as.controller.transform.description.TransformationDescription;
 import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
 import org.jboss.as.ejb3.EjbMessages;
+import org.jboss.as.ejb3.deployment.processors.EJBDefaultPermissionsProcessor;
 import org.jboss.as.ejb3.deployment.processors.EJBDefaultSecurityDomainProcessor;
 import org.jboss.as.ejb3.deployment.processors.merging.MissingMethodPermissionsDenyAccessMergingProcessor;
 import org.jboss.as.threads.ThreadFactoryResolver;
@@ -51,8 +55,6 @@ import org.jboss.as.threads.ThreadsServices;
 import org.jboss.as.threads.UnboundedQueueThreadPoolResourceDefinition;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
-
-import java.util.Map;
 
 /**
  * {@link org.jboss.as.controller.ResourceDefinition} for the EJB3 subsystem's root management resource.
@@ -104,11 +106,11 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
                     .setXmlName(EJB3SubsystemXMLAttribute.PASSIVATION_DISABLED_CACHE_REF.getLocalName())
                     .setAllowExpression(true)
                     .build();
-
     static final SimpleAttributeDefinition DEFAULT_CLUSTERED_SFSB_CACHE =
             new SimpleAttributeDefinitionBuilder(EJB3SubsystemModel.DEFAULT_CLUSTERED_SFSB_CACHE, ModelType.STRING, true)
                     .setAllowExpression(true)
                     .setAllowNull(true)
+                    .setDeprecated(ModelVersion.create(2))
                     .build();
 
     static final SimpleAttributeDefinition ENABLE_STATISTICS =
@@ -125,6 +127,7 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
     public static final SimpleAttributeDefinition DEFAULT_SECURITY_DOMAIN =
             new SimpleAttributeDefinitionBuilder(EJB3SubsystemModel.DEFAULT_SECURITY_DOMAIN, ModelType.STRING, true)
                     .setAllowExpression(true)
+                    .addAccessConstraint(SensitiveTargetAccessConstraintDefinition.SECURITY_DOMAIN_REF)
                     .build();
 
     public static final SimpleAttributeDefinition PASS_BY_VALUE =
@@ -140,8 +143,15 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
                     .setDefaultValue(new ModelNode(false))
                     .build();
 
+    public static final SimpleAttributeDefinition DISABLE_DEFAULT_EJB_PERMISSIONS =
+            new SimpleAttributeDefinitionBuilder(EJB3SubsystemModel.DISABLE_DEFAULT_EJB_PERMISSIONS, ModelType.BOOLEAN, true)
+                    .setAllowExpression(true)
+                    .setDefaultValue(new ModelNode(false))
+                    .build();
+
     private static final EJBDefaultSecurityDomainProcessor defaultSecurityDomainDeploymentProcessor = new EJBDefaultSecurityDomainProcessor(null);
     private static final MissingMethodPermissionsDenyAccessMergingProcessor missingMethodPermissionsDenyAccessMergingProcessor = new MissingMethodPermissionsDenyAccessMergingProcessor();
+    private static final EJBDefaultPermissionsProcessor ejbDefaultPermissionsProcessor = new EJBDefaultPermissionsProcessor();
 
 
     private final boolean registerRuntimeOnly;
@@ -150,7 +160,7 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
     EJB3SubsystemRootResourceDefinition(boolean registerRuntimeOnly, PathManager pathManager) {
         super(PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, EJB3Extension.SUBSYSTEM_NAME),
                 EJB3Extension.getResourceDescriptionResolver(EJB3Extension.SUBSYSTEM_NAME),
-                new EJB3SubsystemAdd(defaultSecurityDomainDeploymentProcessor, missingMethodPermissionsDenyAccessMergingProcessor), EJB3SubsystemRemove.INSTANCE,
+                new EJB3SubsystemAdd(defaultSecurityDomainDeploymentProcessor, ejbDefaultPermissionsProcessor, missingMethodPermissionsDenyAccessMergingProcessor), EJB3SubsystemRemove.INSTANCE,
                 OperationEntry.Flag.RESTART_ALL_SERVICES, OperationEntry.Flag.RESTART_ALL_SERVICES);
         this.registerRuntimeOnly = registerRuntimeOnly;
         this.pathManager = pathManager;
@@ -171,7 +181,8 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
             DEFAULT_DISTINCT_NAME,
             DEFAULT_SECURITY_DOMAIN,
             DEFAULT_MISSING_METHOD_PERMISSIONS_DENY_ACCESS,
-            DEFAULT_SFSB_PASSIVATION_DISABLED_CACHE
+            DEFAULT_SFSB_PASSIVATION_DISABLED_CACHE,
+            DISABLE_DEFAULT_EJB_PERMISSIONS,
     };
 
     @Override
@@ -195,6 +206,9 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
 
         final EJBDefaultMissingMethodPermissionsWriteHandler defaultMissingMethodPermissionsWriteHandler = new EJBDefaultMissingMethodPermissionsWriteHandler(DEFAULT_MISSING_METHOD_PERMISSIONS_DENY_ACCESS, missingMethodPermissionsDenyAccessMergingProcessor);
         resourceRegistration.registerReadWriteAttribute(DEFAULT_MISSING_METHOD_PERMISSIONS_DENY_ACCESS, null, defaultMissingMethodPermissionsWriteHandler);
+
+        final EJBDisableDefaultEJBPermissionsWriteHandler ejbDisableDefaultEJBPermissionsWriteHandler = new EJBDisableDefaultEJBPermissionsWriteHandler(DISABLE_DEFAULT_EJB_PERMISSIONS, ejbDefaultPermissionsProcessor);
+        resourceRegistration.registerReadWriteAttribute(DISABLE_DEFAULT_EJB_PERMISSIONS, null, ejbDisableDefaultEJBPermissionsWriteHandler);
     }
 
     @Override
@@ -216,6 +230,7 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
         subsystemRegistration.registerSubModel(StrictMaxPoolResourceDefinition.INSTANCE);
 
         subsystemRegistration.registerSubModel(CacheFactoryResourceDefinition.INSTANCE);
+        subsystemRegistration.registerSubModel(PassivationStoreResourceDefinition.INSTANCE);
         subsystemRegistration.registerSubModel(FilePassivationStoreResourceDefinition.INSTANCE);
         subsystemRegistration.registerSubModel(ClusterPassivationStoreResourceDefinition.INSTANCE);
 
@@ -233,6 +248,7 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
     static void registerTransformers(SubsystemRegistration subsystemRegistration) {
         registerTransformers_1_1_0(subsystemRegistration);
         registerTransformers_1_2_0(subsystemRegistration);
+        registerTransformers_1_2_1(subsystemRegistration);
     }
 
     private static void registerTransformers_1_1_0(SubsystemRegistration subsystemRegistration) {
@@ -244,6 +260,7 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
                 .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, EJB3SubsystemRootResourceDefinition.ENABLE_STATISTICS)
                 .addRejectCheck(RejectAttributeChecker.DEFINED, EJB3SubsystemRootResourceDefinition.DEFAULT_SECURITY_DOMAIN)
                 .addRejectCheck(RejectAttributeChecker.DEFINED, EJB3SubsystemRootResourceDefinition.DEFAULT_SFSB_PASSIVATION_DISABLED_CACHE)
+                .addRejectCheck(RejectAttributeChecker.DEFINED, EJB3SubsystemRootResourceDefinition.DISABLE_DEFAULT_EJB_PERMISSIONS)
                 .addRejectCheck(new RejectAttributeChecker.DefaultRejectAttributeChecker() {
 
                     @Override
@@ -259,11 +276,15 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
                 }, EJB3SubsystemRootResourceDefinition.DEFAULT_MISSING_METHOD_PERMISSIONS_DENY_ACCESS)
                 .setDiscard(DiscardAttributeChecker.UNDEFINED, EJB3SubsystemRootResourceDefinition.DEFAULT_SECURITY_DOMAIN)
                 .setDiscard(DiscardAttributeChecker.UNDEFINED, EJB3SubsystemRootResourceDefinition.DEFAULT_SFSB_PASSIVATION_DISABLED_CACHE)
+                // We can always discard this attribute, because it's meaningless without the security-manager subsystem, and
+                // a legacy slave can't have that subsystem in its profile.
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(new ModelNode(false)), EJB3SubsystemRootResourceDefinition.DISABLE_DEFAULT_EJB_PERMISSIONS)
                 .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(new ModelNode(false)), EJB3SubsystemRootResourceDefinition.DEFAULT_MISSING_METHOD_PERMISSIONS_DENY_ACCESS)
                 .end();
         EJB3RemoteResourceDefinition.registerTransformers_1_1_0(builder);
         UnboundedQueueThreadPoolResourceDefinition.registerTransformers1_0(builder, EJB3SubsystemModel.THREAD_POOL);
         StrictMaxPoolResourceDefinition.registerTransformers_1_1_0(builder);
+        PassivationStoreResourceDefinition.registerTransformers_1_1_0(builder);
         FilePassivationStoreResourceDefinition.registerTransformers_1_1_0(builder);
         ClusterPassivationStoreResourceDefinition.registerTransformers_1_1_0(builder);
         TimerServiceResourceDefinition.registerTransformers_1_1_0(builder);
@@ -271,14 +292,26 @@ public class EJB3SubsystemRootResourceDefinition extends SimpleResourceDefinitio
     }
 
     private static void registerTransformers_1_2_0(SubsystemRegistration subsystemRegistration) {
+        registerTransformers1_2(subsystemRegistration, ModelVersion.create(1, 2, 0));
+    }
 
-        final ModelVersion subsystem120 = ModelVersion.create(1, 2);
+    private static void registerTransformers_1_2_1(SubsystemRegistration subsystemRegistration) {
+        registerTransformers1_2(subsystemRegistration, ModelVersion.create(1, 2, 1));
+    }
+
+    private static void registerTransformers1_2(SubsystemRegistration subsystemRegistration, ModelVersion subsystem12) {
         final ResourceTransformationDescriptionBuilder builder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
         builder.getAttributeBuilder().addRejectCheck(RejectAttributeChecker.DEFINED, EJB3SubsystemRootResourceDefinition.DEFAULT_SFSB_PASSIVATION_DISABLED_CACHE);
         builder.getAttributeBuilder().setDiscard(DiscardAttributeChecker.UNDEFINED, EJB3SubsystemRootResourceDefinition.DEFAULT_SFSB_PASSIVATION_DISABLED_CACHE);
 
+        builder.getAttributeBuilder().addRejectCheck(RejectAttributeChecker.DEFINED, EJB3SubsystemRootResourceDefinition.DISABLE_DEFAULT_EJB_PERMISSIONS);
+        // We can always discard this attribute, because it's meaningless without the security-manager subsystem, and
+        // a legacy slave can't have that subsystem in its profile.
+        builder.getAttributeBuilder().setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(new ModelNode(false)), EJB3SubsystemRootResourceDefinition.DISABLE_DEFAULT_EJB_PERMISSIONS);
+        PassivationStoreResourceDefinition.registerTransformers_1_2_0(builder);
         TimerServiceResourceDefinition.registerTransformers_1_2_0(builder);
-        TransformationDescription.Tools.register(builder.build(), subsystemRegistration, subsystem120);
+        TransformationDescription.Tools.register(builder.build(), subsystemRegistration, subsystem12);
+
     }
 
     private static class EJB3ThreadFactoryResolver extends ThreadFactoryResolver.SimpleResolver {

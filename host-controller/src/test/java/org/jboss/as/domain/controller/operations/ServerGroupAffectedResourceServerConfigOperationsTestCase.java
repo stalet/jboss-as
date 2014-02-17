@@ -63,7 +63,6 @@ import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceListener;
-import org.jboss.msc.service.ServiceListener.Inheritance;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceNotFoundException;
 import org.jboss.msc.service.ServiceRegistry;
@@ -550,10 +549,6 @@ public class ServerGroupAffectedResourceServerConfigOperationsTestCase extends A
                             }
 
                             @Override
-                            public void addListener(Inheritance arg0, ServiceListener<Object> arg1) {
-                            }
-
-                            @Override
                             public MasterDomainControllerClient awaitValue() throws IllegalStateException, InterruptedException {
                                 return null;
                             }
@@ -660,6 +655,10 @@ public class ServerGroupAffectedResourceServerConfigOperationsTestCase extends A
 
                                     @Override
                                     public void unregister() {
+                                    }
+
+                                    @Override
+                                    public void fetchDomainWideConfiguration() {
                                     }
 
                                     @Override

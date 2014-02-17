@@ -22,6 +22,8 @@
 
 package org.jboss.as.jpa.processor;
 
+import static org.jboss.as.jpa.messages.JpaMessages.MESSAGES;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -30,6 +32,7 @@ import java.util.Map;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.PersistenceContextType;
+import javax.persistence.SynchronizationType;
 
 import org.jboss.as.ee.component.BindingConfiguration;
 import org.jboss.as.ee.component.ComponentDescription;
@@ -39,13 +42,14 @@ import org.jboss.as.ee.component.InjectionSource;
 import org.jboss.as.ee.component.LookupInjectionSource;
 import org.jboss.as.ee.component.ResourceInjectionTarget;
 import org.jboss.as.ee.component.deployers.AbstractDeploymentDescriptorBindingsProcessor;
+import org.jboss.as.jpa.config.JPADeploymentSettings;
 import org.jboss.as.jpa.container.PersistenceUnitSearch;
 import org.jboss.as.jpa.injectors.PersistenceContextInjectionSource;
 import org.jboss.as.jpa.injectors.PersistenceUnitInjectionSource;
 import org.jboss.as.jpa.service.PersistenceUnitServiceImpl;
-import org.jboss.as.jpa.spi.PersistenceUnitMetadata;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
+import org.jboss.as.server.deployment.DeploymentUtils;
 import org.jboss.as.server.deployment.JPADeploymentMarker;
 import org.jboss.as.server.deployment.reflect.DeploymentReflectionIndex;
 import org.jboss.metadata.javaee.spec.Environment;
@@ -57,8 +61,7 @@ import org.jboss.metadata.javaee.spec.PropertiesMetaData;
 import org.jboss.metadata.javaee.spec.PropertyMetaData;
 import org.jboss.metadata.javaee.spec.RemoteEnvironment;
 import org.jboss.msc.service.ServiceName;
-
-import static org.jboss.as.jpa.JpaMessages.MESSAGES;
+import org.jipijapa.plugin.spi.PersistenceUnitMetadata;
 
 /**
  * Deployment processor responsible for processing persistence unit / context references from deployment descriptors.
@@ -180,7 +183,12 @@ public class PersistenceRefProcessor extends AbstractDeploymentDescriptorBinding
                             }
                         }
                         PersistenceContextType type = puRef.getPersistenceContextType() == null ? PersistenceContextType.TRANSACTION : puRef.getPersistenceContextType();
-                        InjectionSource pcBindingSource = this.getPersistenceContextBindingSource(deploymentUnit, persistenceUnitName, type, map);
+                        // create a EE 7 branch of
+                        SynchronizationType synchronizationType =  SynchronizationType.SYNCHRONIZED;
+//                                (puRef.()== null || SynchronizationType.SYNCHRONIZED.name().equals(stType.asString()))?
+//                                        SynchronizationType.SYNCHRONIZED: SynchronizationType.UNSYNCHRONIZED;
+
+                        InjectionSource pcBindingSource = this.getPersistenceContextBindingSource(deploymentUnit, persistenceUnitName, type, synchronizationType, map);
                         bindingConfiguration = new BindingConfiguration(name, pcBindingSource);
                     }
                     bindingConfigurations.add(bindingConfiguration);
@@ -200,17 +208,27 @@ public class PersistenceRefProcessor extends AbstractDeploymentDescriptorBinding
             searchName = unitName;
         }
         final PersistenceUnitMetadata pu = PersistenceUnitSearch.resolvePersistenceUnitSupplier(deploymentUnit, searchName);
+        if (null == pu) {
+            throw new DeploymentUnitProcessingException(MESSAGES.persistenceUnitNotFound(searchName, deploymentUnit));
+        }
         String scopedPuName = pu.getScopedPersistenceUnitName();
         ServiceName puServiceName = getPuServiceName(scopedPuName);
-        return new PersistenceUnitInjectionSource(puServiceName, deploymentUnit, EntityManagerFactory.class.getName(), pu);
+        return new PersistenceUnitInjectionSource(puServiceName, deploymentUnit.getServiceRegistry(), EntityManagerFactory.class.getName(), pu);
     }
 
-    private InjectionSource getPersistenceContextBindingSource(final DeploymentUnit deploymentUnit, final String unitName, PersistenceContextType type, Map properties) throws
+    private InjectionSource getPersistenceContextBindingSource(
+            final DeploymentUnit deploymentUnit,
+            final String unitName,
+            PersistenceContextType type,
+            SynchronizationType synchronizationType,
+            Map properties) throws
         DeploymentUnitProcessingException {
         PersistenceUnitMetadata pu = getPersistenceUnit(deploymentUnit, unitName);
         String scopedPuName = pu.getScopedPersistenceUnitName();
         ServiceName puServiceName = getPuServiceName(scopedPuName);
-        return new PersistenceContextInjectionSource(type, properties, puServiceName, deploymentUnit, scopedPuName, EntityManager.class.getName(), pu);
+        // get deployment settings from top level du (jboss-all.xml is only parsed at the top level).
+        final JPADeploymentSettings jpaDeploymentSettings = DeploymentUtils.getTopDeploymentUnit(deploymentUnit).getAttachment(JpaAttachments.DEPLOYMENT_SETTINGS_KEY);
+        return new PersistenceContextInjectionSource(type, synchronizationType, properties, puServiceName, deploymentUnit.getServiceRegistry(), scopedPuName, EntityManager.class.getName(), pu, jpaDeploymentSettings);
     }
 
     private PersistenceUnitMetadata getPersistenceUnit(final DeploymentUnit deploymentUnit, final String puName)

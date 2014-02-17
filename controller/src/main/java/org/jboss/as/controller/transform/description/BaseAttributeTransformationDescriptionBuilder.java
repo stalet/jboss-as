@@ -22,6 +22,7 @@
 
 package org.jboss.as.controller.transform.description;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -32,8 +33,9 @@ import org.jboss.as.controller.AttributeDefinition;
  * Builder for the attribute transformer for a resource/operation. The transformer created by this interface executes the following phases in the following order:
  *
  * <li>
- * <ul>{@code DISCARD} - All attributes with a {@link DiscardAttributeChecker} registered are checked to see if the attribute should be discarded</ul>
- * <ul>{@code REJECT} - All attributes with a {@link RejectAttributeChecker}s registered are checked to see if the attribute should be rejected</ul>
+ * <ul>{@code DISCARD} - All attributes with a {@link DiscardAttributeChecker} registered are checked to see if the attribute should be discarded, and gets
+ * discarded if that is the outcome. If an attribute is discarded it does not get passed to the next phases.</ul>
+ * <ul>{@code REJECT} - All attributes with a {@link RejectAttributeChecker}s registered (and which have not been discarded) are checked to see if the attribute should be rejected</ul>
  * <ul>{@code CONVERT} - All attributes with a {@link AttributeConverter} registered are checked to see if the attribute should be converted. If the attribute does not
  *      exist in the original operation/resource the {@link AttributeConverter} may register a new attribute</ul>
  * <ul>{@code RENAME} - All attributes with a rename registered are renamed</ul>
@@ -122,6 +124,18 @@ public interface BaseAttributeTransformationDescriptionBuilder<T extends BaseAtt
      * @return this builder
      */
     T setDiscard(DiscardAttributeChecker discardChecker, AttributeDefinition...discardedAttributes);
+
+    /**
+     * Sets the DiscardChecker to be used to check if an attribute should be discarded. Only one discard checker can be used
+     * for an attribute.
+     * <p>
+     * Discard is done in the {@code DISCARD} phase.
+     *
+     * @param discardChecker the checkers
+     * @param discardedAttributes the attributes to check
+     * @return this builder
+     */
+    T setDiscard(DiscardAttributeChecker discardChecker, Collection<AttributeDefinition> discardedAttributes);
 
     /**
      * Rename an attribute. An attribute can only be renamed once.
